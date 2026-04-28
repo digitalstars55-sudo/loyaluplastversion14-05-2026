@@ -58,7 +58,7 @@ class Delivery(TimeStampedModel):
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     duration = models.PositiveIntegerField(
-        default=5,
+        default=8,
         verbose_name='Длительность (ч)',
         help_text='Часов, в течение которых клиент может активировать код.',
     )
