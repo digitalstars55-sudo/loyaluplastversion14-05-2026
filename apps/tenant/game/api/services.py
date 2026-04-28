@@ -180,7 +180,10 @@ def start_game(vk_id: int, branch_id: int, code: str | None = None, delivery: bo
 
     # Attempt 3+ → require daily code unless the guest came via delivery
     if attempt_num >= 3:
-        is_delivery = delivery or client_branch.activated_deliveries.exists()
+        has_active_delivery = client_branch.activated_deliveries.filter(
+            expires_at__gt=timezone.now(),
+        ).exists()
+        is_delivery = delivery or has_active_delivery
         if not is_delivery:
             if not code:
                 raise CodeRequired
@@ -250,8 +253,12 @@ def claim_game(session_token: str, employee_id: int | None = None, delivery: boo
     # Delivery sessions require an activated delivery code before claiming.
     # Check both the token flag (set at start) and the claim-time flag (passed
     # explicitly by the client in case the token was started without delivery=True).
+    # Only count deliveries whose activation window hasn't expired yet.
     if delivery or payload.get('dl'):
-        if not client_branch.activated_deliveries.exists():
+        has_active_delivery = client_branch.activated_deliveries.filter(
+            expires_at__gt=timezone.now(),
+        ).exists()
+        if not has_active_delivery:
             raise DeliveryCodeNotActivated
 
     # VK subscription gate: guest must be subscribed to BOTH the community
