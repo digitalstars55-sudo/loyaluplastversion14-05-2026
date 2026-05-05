@@ -90,6 +90,10 @@ class RFStatsAPIView(APIView):
             'matrix':     rf['matrix'],
             'trend':      rf['trend'],
             'migrations': rf['migrations'],
+            # Активные пороги и их источник — фронт может использовать для
+            # отрисовки заголовков матрицы и подсказок «Все точки vs точка X».
+            'thresholds':        rf['matrix'].get('thresholds'),
+            'thresholds_source': rf['matrix'].get('thresholds_source'),
         })
 
 

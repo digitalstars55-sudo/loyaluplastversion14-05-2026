@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views import View
@@ -152,6 +153,8 @@ class RFAnalysisView(View):
     template_name = 'analytics/rf_analysis.html'
 
     def get(self, request):
+        from apps.tenant.analytics.models import RFSettings
+
         branches, branch_ids, active_branches = _branches_context(request)
         mode = request.GET.get('mode', 'restaurant')  # restaurant | delivery
         start, end, active_period = _parse_period(request)
@@ -160,6 +163,27 @@ class RFAnalysisView(View):
         rf_delivery   = get_rf_stats(branch_ids, mode='delivery',   start_date=start, end_date=end)
 
         period_days = (end - start).days + 1
+
+        # ── Текущие пороги для выбранной области (для показа в подсказке) ──
+        settings_obj, thresholds, thresholds_source = RFSettings.resolve_for_scope(branch_ids)
+        scope_label = (
+            settings_obj.scope_label if settings_obj else
+            ('Все точки' if not branch_ids else 'выбранные точки')
+        )
+        thresholds_source_label = {
+            'branch':  'настройки выбранной точки',
+            'global':  'общие настройки «Все точки»',
+            'default': 'дефолтные значения (настроек ещё нет)',
+        }.get(thresholds_source, thresholds_source)
+
+        # Для удобства: ссылка на редактирование настроек выбранной области.
+        # Если объект существует — ведём на change-страницу; иначе — на add.
+        if settings_obj is not None:
+            settings_edit_url = reverse(
+                'admin:analytics_rfsettings_change', args=[settings_obj.pk],
+            )
+        else:
+            settings_edit_url = reverse('admin:analytics_rfsettings_add')
 
         context = {
             'title':              'RF-анализ',
@@ -182,6 +206,12 @@ class RFAnalysisView(View):
             # Delivery
             'rf_delivery':        rf_delivery,
             'rf_delivery_json':   json.dumps(rf_delivery['matrix']),
+            # Thresholds info (для информационной панели в шаблоне)
+            'thresholds':              thresholds,
+            'thresholds_source':       thresholds_source,
+            'thresholds_source_label': thresholds_source_label,
+            'thresholds_scope_label':  scope_label,
+            'thresholds_edit_url':     settings_edit_url,
         }
         return render(request, self.template_name, context)
 

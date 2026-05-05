@@ -1,5 +1,7 @@
+from django import forms
 from django.contrib import admin, messages
 from django.http import HttpResponse, HttpResponseRedirect
+from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html, mark_safe
 
@@ -393,28 +395,292 @@ class RFMigrationLogAdmin(admin.ModelAdmin):
 
 # ── RFSettings admin ──────────────────────────────────────────────────────────
 
+
+class RFSettingsAdminForm(forms.ModelForm):
+    """
+    Форма с дополнительным служебным полем «Применить настройки ко всем кафе».
+
+    Если чекбокс установлен — после сохранения записи её R/F-пороги
+    и analysis_period будут скопированы во все RFSettings активных торговых
+    точек. На странице подтверждения пользователь увидит сводку и сможет
+    отменить операцию.
+    """
+
+    apply_to_all_branches = forms.BooleanField(
+        required=False,
+        label='Применить настройки ко всем кафе',
+        help_text=(
+            'После сохранения скопировать пороги R/F и период анализа во все '
+            'торговые точки. Текущие значения этих полей будут перезаписаны. '
+            'Поле «Дата обнуления статистики» НЕ копируется.'
+        ),
+    )
+
+    class Meta:
+        model = RFSettings
+        fields = '__all__'
+
+
 @admin.register(RFSettings, site=tenant_admin)
 class RFSettingsAdmin(admin.ModelAdmin):
-    list_display = ('branch', 'analysis_period', 'stats_reset_date', 'updated_at')
-    readonly_fields = ('created_at', 'updated_at')
+    form = RFSettingsAdminForm
+
+    list_display = (
+        'scope_col', 'analysis_period',
+        'r_thresholds_col', 'f_thresholds_col',
+        'stats_reset_date', 'updated_at',
+    )
+    list_filter = ('analysis_period',)
+    search_fields = ('branch__name',)
+    readonly_fields = ('created_at', 'updated_at', 'effective_thresholds_preview')
+    actions = ['apply_to_all_action', 'apply_to_selected_action']
 
     fieldsets = (
         (None, {
             'fields': ('branch', 'analysis_period'),
-            'description': 'Период определяет, сколько дней назад учитываются визиты при расчёте частоты.',
+            'description': (
+                'Оставьте поле «Торговая точка» пустым, чтобы создать общие настройки '
+                'для режима «Все точки» (используются как fallback для точек без своих '
+                'настроек и применяются, когда пользователь смотрит общую RF-матрицу).'
+            ),
+        }),
+        ('R-пороги (давность последнего визита)', {
+            'fields': (('r_fresh_max', 'r_warm_max', 'r_cooling_max'),),
+            'description': (
+                '<b>R3 «Свежий»</b> — гости с давностью ≤ R3-границы.<br>'
+                '<b>R2 «Тёплый»</b> — давность от (R3+1) до R2-границы.<br>'
+                '<b>R1 «Остывший»</b> — давность от (R2+1) до R1-границы.<br>'
+                '<b>R0 «Холодный»</b> — давность больше R1-границы.'
+            ),
+        }),
+        ('F-пороги (количество визитов)', {
+            'fields': (('f_rare_max', 'f_moderate_max'),),
+            'description': (
+                '<b>F1 «Редко»</b> — визитов ≤ F1-границы.<br>'
+                '<b>F2 «Умеренно»</b> — визитов от (F1+1) до F2-границы.<br>'
+                '<b>F3 «Часто»</b> — визитов больше F2-границы.'
+            ),
+        }),
+        ('Применить ко всем точкам', {
+            'fields': ('apply_to_all_branches',),
+            'description': (
+                'Удобно при первичной настройке сети: задайте пороги один раз '
+                'и одной галочкой раскопируйте их во все кафе. '
+                'После применения для отдельной точки можно индивидуально '
+                'переопределить значения — общие настройки используются как fallback.'
+            ),
         }),
         ('Обнуление статистики', {
             'fields': ('stats_reset_date',),
             'description': (
                 'Если задана дата — визиты ДО неё игнорируются при RF-расчёте. '
-                'Полезно после смены концепции или ребрендинга.'
+                'Полезно после смены концепции или ребрендинга. '
+                '<b>Это поле НЕ копируется при «Применить ко всем кафе»</b>.'
             ),
         }),
         ('Служебное', {
-            'fields': ('created_at', 'updated_at'),
+            'fields': ('effective_thresholds_preview', 'created_at', 'updated_at'),
             'classes': ('collapse',),
         }),
     )
+
+    # ── List columns ──────────────────────────────────────────────────────────
+
+    @admin.display(description='Область применения', ordering='branch__name')
+    def scope_col(self, obj):
+        if obj.is_global:
+            return format_html(
+                '<span style="background:#e0f2fe;color:#0369a1;padding:3px 10px;'
+                'border-radius:10px;font-weight:700;font-size:11px;">'
+                '🌐 Все точки</span>'
+            )
+        return obj.branch.name if obj.branch else '—'
+
+    @admin.display(description='R: ≤ R3 / ≤ R2 / ≤ R1')
+    def r_thresholds_col(self, obj):
+        return format_html(
+            '<span style="font-family:monospace;">{} / {} / {}</span>',
+            obj.r_fresh_max, obj.r_warm_max, obj.r_cooling_max,
+        )
+
+    @admin.display(description='F: ≤ F1 / ≤ F2')
+    def f_thresholds_col(self, obj):
+        return format_html(
+            '<span style="font-family:monospace;">{} / {}</span>',
+            obj.f_rare_max, obj.f_moderate_max,
+        )
+
+    @admin.display(description='Текущие пороги (предпросмотр)')
+    def effective_thresholds_preview(self, obj):
+        if not obj.pk:
+            return '—'
+        t = obj.thresholds_dict()
+        return format_html(
+            '<div style="font-family:monospace;line-height:1.6;">'
+            'R3: 0–{r_fresh_max} дн. &nbsp;|&nbsp; '
+            'R2: {r2_lo}–{r_warm_max} дн. &nbsp;|&nbsp; '
+            'R1: {r1_lo}–{r_cooling_max} дн. &nbsp;|&nbsp; '
+            'R0: &gt;{r_cooling_max} дн.<br>'
+            'F1: 1–{f_rare_max} виз. &nbsp;|&nbsp; '
+            'F2: {f2_lo}–{f_moderate_max} виз. &nbsp;|&nbsp; '
+            'F3: {f3_lo}+ виз.'
+            '</div>',
+            r_fresh_max    = t['r_fresh_max'],
+            r_warm_max     = t['r_warm_max'],
+            r_cooling_max  = t['r_cooling_max'],
+            f_rare_max     = t['f_rare_max'],
+            f_moderate_max = t['f_moderate_max'],
+            r2_lo          = t['r_fresh_max'] + 1,
+            r1_lo          = t['r_warm_max'] + 1,
+            f2_lo          = t['f_rare_max'] + 1,
+            f3_lo          = t['f_moderate_max'] + 1,
+        )
+
+    # ── Save logic: handle the apply_to_all checkbox ─────────────────────────
+
+    def save_model(self, request, obj, form, change):
+        """
+        Обычное сохранение + опциональное массовое применение настроек.
+
+        Подтверждение реализовано в два этапа:
+          1) Если стоит галочка «Применить ко всем кафе» и в POST ещё нет
+             confirm-токена — сохраняем запись, рендерим страницу подтверждения
+             и ВЫХОДИМ (не делаем массовое копирование).
+          2) Если confirm-токен пришёл (пользователь нажал «Подтвердить» на
+             промежуточной странице — см. response_change/_apply_to_all_view) —
+             выполняем копирование.
+
+        Чтобы не плодить отдельный URL, делаем «два щелчка»: при первом
+        сохранении показываем сообщение со ссылкой на отдельный экшн.
+        """
+        super().save_model(request, obj, form, change)
+
+        if form.cleaned_data.get('apply_to_all_branches'):
+            confirmed = request.POST.get('_apply_all_confirmed') == '1'
+            if confirmed:
+                affected = obj.apply_thresholds_to_all_branches()
+                self.message_user(
+                    request,
+                    f'Настройки RF-порогов применены к {affected} торговым точкам. '
+                    f'Запустите пересчёт RF, чтобы матрицы обновились.',
+                    level=messages.SUCCESS,
+                )
+            else:
+                self.message_user(
+                    request,
+                    mark_safe(
+                        'Настройки сохранены. '
+                        'Для массового применения ко всем кафе перейдите в '
+                        f'<a href="{reverse("admin:analytics_rfsettings_apply_all", args=[obj.pk])}">'
+                        'окно подтверждения</a> — там будет сводка и кнопка '
+                        '«Применить».'
+                    ),
+                    level=messages.WARNING,
+                )
+
+    # ── Custom URLs: confirmation page for mass-apply ─────────────────────────
+
+    def get_urls(self):
+        urls = super().get_urls()
+        return [
+            path(
+                '<int:pk>/apply-all/',
+                self.admin_site.admin_view(self._apply_to_all_view),
+                name='analytics_rfsettings_apply_all',
+            ),
+        ] + urls
+
+    def _apply_to_all_view(self, request, pk):
+        """
+        Промежуточная страница «Вы уверены, что хотите применить
+        настройки ко всем точкам? Текущие значения будут заменены».
+        """
+        from apps.tenant.branch.models import Branch
+        try:
+            obj = RFSettings.objects.get(pk=pk)
+        except RFSettings.DoesNotExist:
+            self.message_user(request, 'Запись не найдена.', level=messages.ERROR)
+            return HttpResponseRedirect(reverse('admin:analytics_rfsettings_changelist'))
+
+        # POST = пользователь подтвердил.
+        if request.method == 'POST' and request.POST.get('_apply_all_confirmed') == '1':
+            affected = obj.apply_thresholds_to_all_branches()
+            self.message_user(
+                request,
+                f'Готово: настройки применены к {affected} торговым точкам.',
+                level=messages.SUCCESS,
+            )
+            return HttpResponseRedirect(reverse('admin:analytics_rfsettings_changelist'))
+
+        # GET = показываем подтверждение.
+        active_branches = list(Branch.objects.filter(is_active=True).order_by('name'))
+        ctx = {
+            'title': 'Применить RF-настройки ко всем кафе?',
+            'object': obj,
+            'thresholds': obj.thresholds_dict(),
+            'branches': active_branches,
+            'branches_count': len(active_branches),
+            'opts': self.model._meta,
+            'app_label': self.model._meta.app_label,
+            'has_view_permission': True,
+            'site_header': getattr(self.admin_site, 'site_header', 'Администрирование'),
+            'site_title':  getattr(self.admin_site, 'site_title',  'Администрирование'),
+        }
+        return TemplateResponse(
+            request,
+            'admin/analytics/rfsettings/apply_all_confirm.html',
+            ctx,
+        )
+
+    # ── Admin actions ─────────────────────────────────────────────────────────
+
+    @admin.action(description='Применить пороги выбранной записи ко ВСЕМ точкам')
+    def apply_to_all_action(self, request, queryset):
+        if queryset.count() != 1:
+            self.message_user(
+                request,
+                'Выберите ровно одну запись-источник: её пороги будут раскопированы '
+                'во все активные торговые точки.',
+                level=messages.WARNING,
+            )
+            return
+        source = queryset.first()
+        affected = source.apply_thresholds_to_all_branches()
+        self.message_user(
+            request,
+            f'Пороги из «{source.scope_label}» применены к {affected} торговым точкам.',
+            level=messages.SUCCESS,
+        )
+
+    @admin.action(description='Скопировать пороги из «Все точки» в выбранные записи')
+    def apply_to_selected_action(self, request, queryset):
+        global_obj = RFSettings.get_global()
+        if not global_obj:
+            self.message_user(
+                request,
+                'Запись «Все точки» (с пустым полем «Торговая точка») ещё не создана. '
+                'Сначала создайте её на этой странице.',
+                level=messages.WARNING,
+            )
+            return
+
+        # Применяем только к записям с непустой точкой (саму глобальную не трогаем).
+        target_ids = list(
+            queryset.exclude(branch__isnull=True).values_list('branch_id', flat=True)
+        )
+        if not target_ids:
+            self.message_user(
+                request,
+                'В выборке нет записей конкретных торговых точек.',
+                level=messages.WARNING,
+            )
+            return
+        affected = global_obj.apply_thresholds_to_branches(target_ids)
+        self.message_user(
+            request,
+            f'Пороги из «Все точки» скопированы в {affected} записей.',
+            level=messages.SUCCESS,
+        )
 
 
 # ── BranchSegmentSnapshot admin ───────────────────────────────────────────────

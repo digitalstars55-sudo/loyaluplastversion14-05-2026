@@ -263,17 +263,44 @@ class RFMigrationLog(models.Model):
 
 # ── RFSettings ────────────────────────────────────────────────────────────────
 
+# Дефолтные пороги — единая точка истины. Используются как fallback,
+# если для текущей торговой точки и для режима «Все точки» не заданы свои.
+RF_DEFAULT_THRESHOLDS: dict[str, int] = {
+    'r_fresh_max':    14,   # ≤ → R3 (свежий)
+    'r_warm_max':     30,   # ≤ → R2 (тёплый)
+    'r_cooling_max':  60,   # ≤ → R1 (остывший);  > → R0 (холодный)
+    'f_rare_max':      3,   # ≤ → F1 (редко)
+    'f_moderate_max':  5,   # ≤ → F2 (умеренно);  > → F3 (часто)
+}
+
+
 class RFSettings(TimeStampedModel):
     """
-    Настройки RF-анализа для конкретной торговой точки.
-    Одна запись на Branch.
+    Настройки RF-анализа.
+
+    Одна запись на Branch ИЛИ одна запись с branch=NULL — это и есть
+    «Все точки» (общие настройки сети). Пороги берутся в порядке:
+      1) настройки выбранной точки (если заданы);
+      2) настройки «Все точки» (branch=NULL);
+      3) дефолтные значения RF_DEFAULT_THRESHOLDS.
+
+    Пороги применяются:
+      • при пересчёте RF-метрик (recalculate_rf_scores);
+      • при построении RF-матрицы и отображении заголовков
+        строк/колонок в клиентской админ-панели.
     """
 
     branch = models.OneToOneField(
         'branch.Branch',
         on_delete=models.CASCADE,
         related_name='rf_settings',
+        null=True,
+        blank=True,
         verbose_name='Торговая точка',
+        help_text=(
+            'Оставьте пустым, чтобы создать общие настройки для режима «Все точки». '
+            'Допустима только одна запись с пустым полем.'
+        ),
     )
     analysis_period = models.PositiveIntegerField(
         default=365,
@@ -291,12 +318,187 @@ class RFSettings(TimeStampedModel):
         ),
     )
 
+    # ── R-пороги (давность последнего визита, в днях) ─────────────────────────
+
+    r_fresh_max = models.PositiveIntegerField(
+        default=14,
+        verbose_name='R3 «Свежий»: до (дней)',
+        help_text='Гость попадает в R3, если с последнего визита прошло НЕ БОЛЕЕ этого числа дней.',
+    )
+    r_warm_max = models.PositiveIntegerField(
+        default=30,
+        verbose_name='R2 «Тёплый»: до (дней)',
+        help_text='Граница R2: больше «R3 до» и не больше этого числа.',
+    )
+    r_cooling_max = models.PositiveIntegerField(
+        default=60,
+        verbose_name='R1 «Остывший»: до (дней)',
+        help_text='Граница R1: больше «R2 до» и не больше этого числа. '
+                  'Гости с большей давностью попадают в R0 «Холодный».',
+    )
+
+    # ── F-пороги (количество визитов за период анализа) ───────────────────────
+
+    f_rare_max = models.PositiveIntegerField(
+        default=3,
+        verbose_name='F1 «Редко»: до (визитов)',
+        help_text='Гость попадает в F1, если визитов НЕ БОЛЕЕ этого числа.',
+    )
+    f_moderate_max = models.PositiveIntegerField(
+        default=5,
+        verbose_name='F2 «Умеренно»: до (визитов)',
+        help_text='Граница F2: больше «F1 до» и не больше этого числа. '
+                  'Гости с большим числом визитов попадают в F3 «Часто».',
+    )
+
+    # ── Validation ────────────────────────────────────────────────────────────
+
+    def clean(self):
+        errors: dict[str, str] = {}
+
+        # R-границы должны идти строго возрастающе.
+        if self.r_fresh_max >= self.r_warm_max:
+            errors['r_warm_max'] = 'Должно быть больше «R3 до».'
+        if self.r_warm_max >= self.r_cooling_max:
+            errors['r_cooling_max'] = 'Должно быть больше «R2 до».'
+
+        # F-границы аналогично.
+        if self.f_rare_max >= self.f_moderate_max:
+            errors['f_moderate_max'] = 'Должно быть больше «F1 до».'
+
+        if errors:
+            raise ValidationError(errors)
+
+    # ── Display helpers ───────────────────────────────────────────────────────
+
+    @property
+    def is_global(self) -> bool:
+        """True для записи «Все точки» (branch=None)."""
+        return self.branch_id is None
+
+    @property
+    def scope_label(self) -> str:
+        """Человекочитаемая область применения настроек."""
+        return 'Все точки' if self.is_global else str(self.branch)
+
     def __str__(self):
-        return f'RF-настройки: {self.branch}'
+        return f'RF-настройки: {self.scope_label}'
+
+    # ── Threshold accessors ───────────────────────────────────────────────────
+
+    def thresholds_dict(self) -> dict[str, int]:
+        """Текущие пороги в виде словаря (тот же набор ключей, что в RF_DEFAULT_THRESHOLDS)."""
+        return {
+            'r_fresh_max':    self.r_fresh_max,
+            'r_warm_max':     self.r_warm_max,
+            'r_cooling_max':  self.r_cooling_max,
+            'f_rare_max':     self.f_rare_max,
+            'f_moderate_max': self.f_moderate_max,
+        }
+
+    @classmethod
+    def get_global(cls) -> 'RFSettings | None':
+        """Запись «Все точки» (branch=NULL) или None, если её ещё не создали."""
+        return cls.objects.filter(branch__isnull=True).first()
+
+    @classmethod
+    def resolve_for_scope(
+        cls, branch_ids: list[int] | None,
+    ) -> tuple['RFSettings | None', dict[str, int], str]:
+        """
+        Возвращает (settings_obj, thresholds_dict, source).
+
+        source ∈ {'branch', 'global', 'default'} — откуда взяты пороги.
+
+        Логика:
+          • ровно одна точка в выборке и для неё есть запись → её пороги;
+          • иначе берём «Все точки» (branch=NULL);
+          • иначе — RF_DEFAULT_THRESHOLDS.
+        """
+        # 1) Точечные настройки имеют смысл только при выборе одной точки.
+        if branch_ids and len(branch_ids) == 1:
+            obj = cls.objects.filter(branch_id=branch_ids[0]).first()
+            if obj is not None:
+                return obj, obj.thresholds_dict(), 'branch'
+
+        # 2) Общие настройки «Все точки».
+        glob = cls.get_global()
+        if glob is not None:
+            return glob, glob.thresholds_dict(), 'global'
+
+        # 3) Захардкоженные дефолты.
+        return None, dict(RF_DEFAULT_THRESHOLDS), 'default'
+
+    @classmethod
+    def thresholds_for_scope(cls, branch_ids: list[int] | None) -> dict[str, int]:
+        """Удобная обёртка: только пороги, без объекта и метаданных."""
+        _, thresholds, _ = cls.resolve_for_scope(branch_ids)
+        return thresholds
+
+    # ── Mass-apply (Task 3) ───────────────────────────────────────────────────
+
+    def apply_thresholds_to_all_branches(self) -> int:
+        """
+        Копирует пороги (R/F и analysis_period) в RFSettings всех активных торговых точек.
+
+        - Для точек, у которых ещё нет RFSettings — создаёт запись.
+        - Для существующих — перезаписывает значения порогов.
+        - Не трогает stats_reset_date (это индивидуальная настройка).
+        - Не трогает запись «Все точки» (branch=NULL): источник остаётся отдельным.
+
+        Возвращает количество затронутых точек.
+        """
+        from apps.tenant.branch.models import Branch
+
+        affected = 0
+        defaults = {
+            'analysis_period': self.analysis_period,
+            'r_fresh_max':     self.r_fresh_max,
+            'r_warm_max':      self.r_warm_max,
+            'r_cooling_max':   self.r_cooling_max,
+            'f_rare_max':      self.f_rare_max,
+            'f_moderate_max':  self.f_moderate_max,
+        }
+
+        for branch in Branch.objects.filter(is_active=True):
+            type(self).objects.update_or_create(branch=branch, defaults=defaults)
+            affected += 1
+        return affected
+
+    def apply_thresholds_to_branches(self, branch_ids: list[int]) -> int:
+        """То же, что и apply_thresholds_to_all_branches, но только для указанных PK."""
+        from apps.tenant.branch.models import Branch
+
+        if not branch_ids:
+            return 0
+
+        defaults = {
+            'analysis_period': self.analysis_period,
+            'r_fresh_max':     self.r_fresh_max,
+            'r_warm_max':      self.r_warm_max,
+            'r_cooling_max':   self.r_cooling_max,
+            'f_rare_max':      self.f_rare_max,
+            'f_moderate_max':  self.f_moderate_max,
+        }
+        affected = 0
+        for branch in Branch.objects.filter(pk__in=branch_ids, is_active=True):
+            type(self).objects.update_or_create(branch=branch, defaults=defaults)
+            affected += 1
+        return affected
 
     class Meta:
         verbose_name = 'RF-настройки'
         verbose_name_plural = 'RF-настройки'
+        # Гарантируем не более одной записи «Все точки» (branch=NULL).
+        # OneToOne уже даёт уникальность для не-NULL значений; добавляем
+        # отдельный частичный уникальный индекс для NULL.
+        constraints = [
+            models.UniqueConstraint(
+                fields=['branch'],
+                condition=models.Q(branch__isnull=True),
+                name='analytics_rfsettings_one_global',
+            ),
+        ]
 
 
 # ── BranchSegmentSnapshot ─────────────────────────────────────────────────────

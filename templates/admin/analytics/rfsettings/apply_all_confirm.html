@@ -1,0 +1,98 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url 'admin:analytics_rfsettings_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; <a href="{% url 'admin:analytics_rfsettings_change' object.pk %}">{{ object }}</a>
+  &rsaquo; Применить ко всем кафе
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div style="background:#fff8e1;border:1px solid #ffd54f;border-radius:8px;padding:18px 22px;margin-bottom:18px;max-width:780px;">
+    <h2 style="margin:0 0 8px 0;color:#7c5e00;">⚠️ Подтверждение массового применения</h2>
+    <p style="margin:0;color:#5d4500;">
+      Вы собираетесь применить пороги <strong>«{{ object.scope_label }}»</strong> ко всем
+      <strong>{{ branches_count }}</strong> активным торговым точкам.
+      Текущие значения R/F-порогов и периода анализа в каждой точке будут <u>перезаписаны</u>.
+    </p>
+    <p style="margin:8px 0 0 0;color:#5d4500;">
+      Поле <em>«Дата обнуления статистики»</em> у точек НЕ затрагивается.
+    </p>
+  </div>
+
+  <div style="max-width:780px;margin-bottom:22px;">
+    <h3 style="margin:0 0 8px 0;">Какие пороги будут применены</h3>
+    <table style="border-collapse:collapse;width:100%;font-family:monospace;">
+      <thead>
+        <tr style="background:#f5f5f5;">
+          <th style="text-align:left;padding:8px 12px;border:1px solid #e0e0e0;">Параметр</th>
+          <th style="text-align:left;padding:8px 12px;border:1px solid #e0e0e0;">Значение</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:6px 12px;border:1px solid #e0e0e0;">Период анализа</td>
+          <td style="padding:6px 12px;border:1px solid #e0e0e0;">{{ object.analysis_period }} дн.</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 12px;border:1px solid #e0e0e0;">R3 «Свежий» (≤ дн.)</td>
+          <td style="padding:6px 12px;border:1px solid #e0e0e0;">{{ thresholds.r_fresh_max }}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 12px;border:1px solid #e0e0e0;">R2 «Тёплый» (≤ дн.)</td>
+          <td style="padding:6px 12px;border:1px solid #e0e0e0;">{{ thresholds.r_warm_max }}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 12px;border:1px solid #e0e0e0;">R1 «Остывший» (≤ дн.)</td>
+          <td style="padding:6px 12px;border:1px solid #e0e0e0;">{{ thresholds.r_cooling_max }}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 12px;border:1px solid #e0e0e0;">F1 «Редко» (≤ виз.)</td>
+          <td style="padding:6px 12px;border:1px solid #e0e0e0;">{{ thresholds.f_rare_max }}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 12px;border:1px solid #e0e0e0;">F2 «Умеренно» (≤ виз.)</td>
+          <td style="padding:6px 12px;border:1px solid #e0e0e0;">{{ thresholds.f_moderate_max }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <details style="max-width:780px;margin-bottom:22px;">
+    <summary style="cursor:pointer;font-weight:600;">
+      Затронутые торговые точки ({{ branches_count }})
+    </summary>
+    <ul style="margin-top:8px;column-count:2;column-gap:32px;">
+      {% for b in branches %}
+        <li>{{ b.name }}</li>
+      {% empty %}
+        <li><em>Активных точек нет.</em></li>
+      {% endfor %}
+    </ul>
+  </details>
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="_apply_all_confirmed" value="1">
+    <div style="display:flex;gap:10px;align-items:center;">
+      <button type="submit"
+              style="background:#dc2626;color:#fff;border:0;padding:10px 22px;
+                     border-radius:6px;font-weight:700;cursor:pointer;">
+        ✅ Подтвердить и применить ко всем
+      </button>
+      <a href="{% url 'admin:analytics_rfsettings_change' object.pk %}"
+         style="padding:10px 22px;border:1px solid #d0d7de;border-radius:6px;
+                color:#374151;text-decoration:none;background:#fff;">
+        Отмена
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

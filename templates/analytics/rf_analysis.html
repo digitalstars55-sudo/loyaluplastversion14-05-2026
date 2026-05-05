@@ -82,6 +82,30 @@
 
   </div>
 
+  <!-- ── Thresholds info bar ─────────────────────────────── -->
+  <div class="rf-thresholds-bar"
+       style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;
+              padding:10px 14px;margin-bottom:14px;font-size:12px;color:#374151;
+              display:flex;flex-wrap:wrap;gap:14px;align-items:center;">
+    <span style="font-weight:700;color:#0f172a;">⚙️ Активные пороги ({{ thresholds_scope_label }}):</span>
+    <span style="font-family:monospace;">
+      R3: 0–{{ thresholds.r_fresh_max }} дн.
+      &nbsp;|&nbsp; R2: до {{ thresholds.r_warm_max }}
+      &nbsp;|&nbsp; R1: до {{ thresholds.r_cooling_max }}
+      &nbsp;|&nbsp; R0: &gt;{{ thresholds.r_cooling_max }}
+    </span>
+    <span style="font-family:monospace;">
+      F1: до {{ thresholds.f_rare_max }}
+      &nbsp;|&nbsp; F2: до {{ thresholds.f_moderate_max }}
+      &nbsp;|&nbsp; F3: {{ thresholds.f_moderate_max|add:'1' }}+ виз.
+    </span>
+    <span style="margin-left:auto;color:#64748b;">
+      Источник: <em>{{ thresholds_source_label }}</em>
+      &nbsp;·&nbsp;
+      <a href="{{ thresholds_edit_url }}" style="color:#1565c0;font-weight:600;">⚙ Изменить</a>
+    </span>
+  </div>
+
   <!-- ── Summary cards ───────────────────────────────────── -->
   <div class="summary-cards">
     <div class="sc sc-blue">
