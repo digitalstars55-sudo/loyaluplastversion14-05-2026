@@ -21,14 +21,14 @@ function donut(id, vals, colors) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  donut('ch-repeat',  [D.repeat_visits.repeat,       D.repeat_visits.first_time],                          ['#2e7d32', '#d1d5db']);
-  donut('ch-sources', [D.sources.from_cafe,           D.sources.from_stories],                              ['#1565c0', '#00897b']);
-  donut('ch-stories', [D.vk_stories.uploaded,         D.vk_stories.not_uploaded],                           ['#c62828', '#d1d5db']);
-  donut('ch-gifts',   [D.gift_sources.free,            D.gift_sources.coins],                                ['#0d9488', '#6a1b9a']);
-  donut('ch-staff',   [D.staff_involvement.served,     D.staff_involvement.not_served],                      ['#00897b', '#d1d5db']);
-  donut('ch-quality', [D.reviews_sentiment.positive,  D.reviews_sentiment.partial, D.reviews_sentiment.negative], ['#16a34a', '#eab308', '#dc2626']);
-  donut('ch-reviews', [D.reviews_ratio.left,           D.reviews_ratio.not_left],                            ['#3b82f6', '#d1d5db']);
-  donut('ch-quests',  [D.quests.completed,             D.quests.pending],                                    ['#00bcd4', '#d1d5db']);
+  donut('ch-repeat',  [D.repeat_visits.repeat,        D.repeat_visits.first_time],                                ['#2e7d32', '#d1d5db']);
+  donut('ch-sources', [D.sources.from_cafe,           D.sources.from_stories],                                    ['#1565c0', '#00897b']);
+  donut('ch-stories', [D.vk_stories.uploaded,         D.vk_stories.not_uploaded],                                 ['#c62828', '#d1d5db']);
+  donut('ch-gifts',   [D.gift_sources.free,           D.gift_sources.coins,         D.gift_sources.not_taken],    ['#0d9488', '#6a1b9a', '#d1d5db']);
+  donut('ch-staff',   [D.staff_involvement.served,    D.staff_involvement.not_served],                            ['#00897b', '#d1d5db']);
+  donut('ch-quality', [D.reviews_sentiment.positive,  D.reviews_sentiment.partial,  D.reviews_sentiment.negative], ['#16a34a', '#eab308', '#dc2626']);
+  donut('ch-reviews', [D.reviews_ratio.left,          D.reviews_ratio.not_left],                                  ['#3b82f6', '#d1d5db']);
+  donut('ch-quests',  [D.quests.completed,            D.quests.pending,             D.quests.not_entered],        ['#00bcd4', '#fb923c', '#d1d5db']);
 
   (function loadSlowStats() {
     const params = new URLSearchParams(window.location.search);

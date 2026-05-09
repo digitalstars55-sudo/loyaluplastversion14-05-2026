@@ -39,7 +39,7 @@ def send_birthday_broadcasts_task() -> dict:
     from apps.tenant.branch.models import ClientBranch
     from apps.tenant.senler.models import (
         AutoBroadcastLog, AutoBroadcastTemplate, AutoBroadcastType,
-        BroadcastSend, SendStatus, TriggerType,
+        BroadcastRecipient, BroadcastSend, RecipientStatus, SendStatus, TriggerType,
     )
     from apps.tenant.senler.services import send_vk_message, upload_vk_photo
 
@@ -137,17 +137,34 @@ def send_birthday_broadcasts_task() -> dict:
                         else:
                             attachment = None
 
-                        ok, err, _ = send_vk_message(
+                        ok, err, vk_msg_id = send_vk_message(
                             senler_cfg, vk_id, template.message_text, attachment
                         )
                         if ok:
                             AutoBroadcastLog.objects.create(
                                 trigger_type=trigger_type, vk_id=vk_id
                             )
+                            # Запись в историю рассылок: участвует в подсчётах
+                            # «% открываемости» и в ежечасном опросе read_at.
+                            BroadcastRecipient.objects.create(
+                                send=bs,
+                                client_branch=cb,
+                                vk_id=vk_id,
+                                status=RecipientStatus.SENT,
+                                sent_at=timezone.now(),
+                                vk_message_id=vk_msg_id,
+                            )
                             already_sent.add(vk_id)
                             total_sent += 1
                             sent_count += 1
                         else:
+                            BroadcastRecipient.objects.create(
+                                send=bs,
+                                client_branch=cb,
+                                vk_id=vk_id,
+                                status=RecipientStatus.FAILED,
+                                error=(err or '')[:512],
+                            )
                             failed_count += 1
                             logger.warning(
                                 'Birthday broadcast failed vk_id=%s trigger=%s: %s',
@@ -197,7 +214,7 @@ def send_after_game_broadcast_task(process_evening: bool = False) -> dict:
     from apps.tenant.game.models import ClientAttempt
     from apps.tenant.senler.models import (
         AutoBroadcastLog, AutoBroadcastTemplate, AutoBroadcastType,
-        BroadcastSend, SendStatus, TriggerType,
+        BroadcastRecipient, BroadcastSend, RecipientStatus, SendStatus, TriggerType,
     )
     from apps.tenant.senler.services import send_vk_message, upload_vk_photo
 
@@ -298,7 +315,7 @@ def send_after_game_broadcast_task(process_evening: bool = False) -> dict:
                     else:
                         attachment = None
 
-                    ok, err, _ = send_vk_message(
+                    ok, err, vk_msg_id = send_vk_message(
                         senler_cfg, vk_id, template.message_text, attachment
                     )
                     if ok:
@@ -306,10 +323,25 @@ def send_after_game_broadcast_task(process_evening: bool = False) -> dict:
                             trigger_type=AutoBroadcastType.AFTER_GAME_3H,
                             vk_id=vk_id,
                         )
+                        BroadcastRecipient.objects.create(
+                            send=bs,
+                            client_branch=cb,
+                            vk_id=vk_id,
+                            status=RecipientStatus.SENT,
+                            sent_at=timezone.now(),
+                            vk_message_id=vk_msg_id,
+                        )
                         already_sent_today.add(vk_id)
                         total_sent += 1
                         sent_count += 1
                     else:
+                        BroadcastRecipient.objects.create(
+                            send=bs,
+                            client_branch=cb,
+                            vk_id=vk_id,
+                            status=RecipientStatus.FAILED,
+                            error=(err or '')[:512],
+                        )
                         failed_count += 1
                         logger.warning(
                             'After-game broadcast failed vk_id=%s: %s', vk_id, err
@@ -421,6 +453,10 @@ def check_read_status_task() -> dict:
         try:
             with schema_context(tenant.schema_name):
                 # ── 1. BroadcastRecipient (рассылки и авторассылки) ──────────
+                # Авто-рассылки (ДР, after-game) идут с send.broadcast=None,
+                # поэтому senler_config берётся через client_branch.branch.
+                # Для ручных рассылок client_branch может быть SET_NULL —
+                # тогда fallback на send.broadcast.branch.
                 unread_broadcasts = list(
                     BroadcastRecipient.objects.filter(
                         status=RecipientStatus.SENT,
@@ -428,23 +464,30 @@ def check_read_status_task() -> dict:
                         read_at__isnull=True,
                         sent_at__gte=cutoff,
                     ).select_related(
+                        'client_branch__branch__senler_config',
                         'send__broadcast__branch__senler_config',
                     )
                 )
 
                 by_config: dict[int, list] = defaultdict(list)
                 for r in unread_broadcasts:
+                    cfg = None
                     try:
-                        cfg = r.send.broadcast.branch.senler_config
-                        if cfg.is_active:
-                            def _save_broadcast(now, _r=r):
-                                _r.read_at = now
-                                _r.save(update_fields=['read_at'])
-                            by_config[cfg.pk].append(
-                                (r.vk_id, r.vk_message_id, _save_broadcast)
-                            )
+                        if r.client_branch_id:
+                            cfg = r.client_branch.branch.senler_config
+                        elif r.send.broadcast_id:
+                            cfg = r.send.broadcast.branch.senler_config
                     except (SenlerConfig.DoesNotExist, AttributeError):
+                        cfg = None
+                    if not cfg or not cfg.is_active:
                         continue
+
+                    def _save_broadcast(now, _r=r):
+                        _r.read_at = now
+                        _r.save(update_fields=['read_at'])
+                    by_config[cfg.pk].append(
+                        (r.vk_id, r.vk_message_id, _save_broadcast)
+                    )
 
                 # ── 2. TestimonialMessage ADMIN_REPLY (ответы на отзывы) ─────
                 from apps.tenant.branch.models import TestimonialMessage

@@ -80,6 +80,17 @@
     </button>
     <span id="recalc-status" style="font-size:13px;color:#94a3b8;display:none;"></span>
 
+    <!-- Send broadcast to all guests (bold primary action) -->
+    <a href="{% url 'analytics-broadcast-all' %}{% if active_branch_ids %}?branches={% for id in active_branch_ids %}{{ id }}{% if not forloop.last %},{% endif %}{% endfor %}{% endif %}"
+       style="margin-left:auto;font-size:13px;font-weight:800;padding:9px 20px;border:none;
+              border-radius:8px;background:#1565c0;color:#fff;text-decoration:none;
+              box-shadow:0 2px 6px rgba(21,101,192,0.25);transition:all .15s;
+              letter-spacing:0.2px;"
+       onmouseover="this.style.background='#0d47a1';this.style.boxShadow='0 4px 10px rgba(21,101,192,0.35)';"
+       onmouseout="this.style.background='#1565c0';this.style.boxShadow='0 2px 6px rgba(21,101,192,0.25)';">
+      📨 Отправить рассылки всем
+    </a>
+
   </div>
 
   <!-- ── Thresholds info bar ─────────────────────────────── -->

@@ -657,6 +657,48 @@ class SegmentCreateBroadcastView(View):
 
 
 @method_decorator(staff_member_required, name='dispatch')
+class CreateBroadcastForAllGuestsView(View):
+    """
+    GET /analytics/rf/broadcast-all/
+    Создаёт пустую рассылку всем оцифрованным гостям (audience=ALL,
+    rf_segments не привязаны) для каждой выбранной точки и редиректит
+    администратора на её редактирование.
+
+    Если выбрана одна точка — редирект на change-страницу созданной рассылки.
+    Если несколько/все — редирект на список рассылок.
+    """
+
+    def get(self, request):
+        from apps.tenant.senler.models import Broadcast
+
+        branch_ids_raw = request.GET.get('branches', '')
+        if branch_ids_raw:
+            try:
+                ids = [int(x) for x in branch_ids_raw.split(',') if x.strip()]
+                branches = Branch.objects.filter(is_active=True, pk__in=ids)
+            except ValueError:
+                branches = Branch.objects.filter(is_active=True)
+        else:
+            branches = Branch.objects.filter(is_active=True)
+
+        created_ids = []
+        for branch in branches:
+            broadcast = Broadcast.objects.create(
+                branch=branch,
+                name='Рассылка всем гостям',
+                message_text='',
+                audience_type='all',
+            )
+            created_ids.append(broadcast.pk)
+
+        if len(created_ids) == 1:
+            return HttpResponseRedirect(f'/admin/senler/broadcast/{created_ids[0]}/change/')
+        if created_ids:
+            return HttpResponseRedirect('/admin/senler/broadcast/')
+        return HttpResponseRedirect(request.META.get('HTTP_REFERER', '/analytics/rf/'))
+
+
+@method_decorator(staff_member_required, name='dispatch')
 class LoyaltyReportView(View):
     """
     GET /analytics/report/
@@ -705,10 +747,14 @@ class LoyaltyReportView(View):
         scan_index = stats.get('scan_index') or 0.0
         pos_guests = stats.get('pos_guests') or 0
 
-        # Sources: QR scans = cafe, stories_referrals = delivery-ish
-        from_cafe = stats['qr_scans']
-        from_delivery = stats.get('stories_referrals', 0)
-        total_sources = from_cafe + from_delivery or 1
+        # ── Sources: cafe vs delivery (непересекающиеся доли qr_scans) ──
+        # qr_scans уже включает delivery activators (см. get_qr_scan_count).
+        # Поэтому from_cafe = qr_scans − delivery_activators, чтобы
+        # проценты в отчёте формировали честные 100% от числа гостей.
+        from apps.tenant.analytics.api.services import get_delivery_activators_count
+        from_delivery = get_delivery_activators_count(branch_ids, start, end)
+        from_cafe     = max(0, stats['qr_scans'] - from_delivery)
+        total_sources = stats['qr_scans'] or 1
 
         # RF segment counts from matrix cells
         segment_counts = {}

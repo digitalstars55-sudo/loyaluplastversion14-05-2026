@@ -376,6 +376,7 @@ class SendBirthdayBroadcastsTaskTest(TestCase):
              patch(self._CB) as MockCB, \
              patch(self._LOG) as MockLog, \
              patch(self._BS) as MockBS, \
+             patch(self._BR), \
              patch(self._SEND, return_value=(False, 'VK error', None)), \
              patch(self._TIME):
 

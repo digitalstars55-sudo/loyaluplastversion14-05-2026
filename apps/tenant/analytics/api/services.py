@@ -280,29 +280,54 @@ def get_birthday_greetings_sent(
 
 # ── Metric 9: Birthday celebrants (came to redeem birthday prize) ─────────────
 
+# Минимум дней между установкой ДР и визитом, чтобы визит считался
+# «пришёл отметить». Без этого фильтра гость, поставивший ДР=сегодня
+# при первом входе и сразу пришедший, попадает в счётчик — хотя
+# поздравления ему никогда не отправлялись (см. send_birthday_broadcasts_task,
+# который применяет тот же 30-дневный антиабузный фильтр).
+BIRTHDAY_SET_MIN_DAYS_BEFORE_VISIT = 30
+
+
 def get_birthday_celebrants(
     branch_ids: list[int] | None, start_date: date, end_date: date
 ) -> int:
     """
     Unique guests who visited the cafe on their birthday (month+day of visit matches birth_date).
     Counts distinct guests from ClientBranchVisit where visit date matches their birthday.
+
+    Гости, установившие ДР менее BIRTHDAY_SET_MIN_DAYS_BEFORE_VISIT дней
+    до визита, не считаются — они не получали поздравительных рассылок
+    и фактически использовали ДР как форму регистрации.
     """
-    from django.db.models import F
-    from django.db.models.functions import ExtractMonth, ExtractDay
+    from datetime import timedelta
+    from django.db.models import F, ExpressionWrapper, DateField
+    from django.db.models.functions import ExtractMonth, ExtractDay, TruncDate
     from apps.tenant.branch.models import ClientBranchVisit
+
+    # Cutoff в DateField (без TZ): TruncDate(visited_at) − 30 дней.
+    # Сравниваем DateField с DateField, чтобы исключить TZ-сдвиги на границе
+    # суток (USE_TZ=True): иначе UTC-полночь visited_at могла бы попасть
+    # в предыдущий локальный день и фильтр работал нестабильно.
+    visit_minus_grace = ExpressionWrapper(
+        TruncDate('visited_at') - timedelta(days=BIRTHDAY_SET_MIN_DAYS_BEFORE_VISIT),
+        output_field=DateField(),
+    )
 
     qs = ClientBranchVisit.objects.filter(
         visited_at__date__gte=start_date,
         visited_at__date__lte=end_date,
         client__birth_date__isnull=False,
+        client__birth_date_set_at__isnull=False,
     ).annotate(
         visit_month=ExtractMonth('visited_at'),
         visit_day=ExtractDay('visited_at'),
         birth_month=ExtractMonth('client__birth_date'),
         birth_day=ExtractDay('client__birth_date'),
+        visit_minus_grace=visit_minus_grace,
     ).filter(
         visit_month=F('birth_month'),
         visit_day=F('birth_day'),
+        client__birth_date_set_at__lte=F('visit_minus_grace'),
     )
     qs = _branch_filter(qs, branch_ids, 'client__branch__in')
     return qs.values('client').distinct().count()
@@ -395,6 +420,35 @@ def get_stories_referrals(
         created_at__date__lte=end_date,
     )
     return _branch_filter(qs, branch_ids, 'branch__in').count()
+
+
+# ── Metric: Delivery activators ──────────────────────────────────────────────
+
+def get_delivery_activators_count(
+    branch_ids: list[int] | None, start_date: date, end_date: date
+) -> int:
+    """
+    Уникальные гости, активировавшие код доставки (Delivery.activate)
+    в указанном периоде.
+
+    Гости попадают в это множество ↔ они уже учтены в get_qr_scan_count
+    (тот включает Exists(Delivery.activated_by)). Это позволяет
+    дашборду/отчёту показывать «из кафе» vs «из доставки» как
+    непересекающиеся доли:
+        from_cafe     = qr_scans − delivery_activators
+        from_delivery = delivery_activators
+        сумма         = qr_scans
+    """
+    from apps.tenant.delivery.models import Delivery
+
+    qs = Delivery.objects.filter(
+        activated_at__isnull=False,
+        activated_at__date__gte=start_date,
+        activated_at__date__lte=end_date,
+        activated_by__isnull=False,
+    )
+    qs = _branch_filter(qs, branch_ids, 'activated_by__branch__in')
+    return qs.values('activated_by').distinct().count()
 
 
 # ── Metric 13: POS guests ────────────────────────────────────────────────────
@@ -527,40 +581,49 @@ def get_general_stats(
 def get_chart_data(
     branch_ids: list[int] | None, start_date: date, end_date: date
 ) -> dict:
-    """Returns data for all dashboard donut charts."""
-    from apps.tenant.branch.models import ClientBranchVisit, CoinTransaction, TransactionType, TransactionSource
+    """
+    Returns data for all dashboard donut charts.
+
+    Все донат-графики (повторы / подарки / истории / задания) увязаны
+    с тем же знаменателем, что показывают карточки ключевых показателей —
+    в первую очередь «Отсканировали QR-код». Это исключает рассогласования
+    между графиком и числом в карточке: цифры на одной странице больше
+    не противоречат друг другу.
+
+    Соответствие карточкам:
+      Повторы           → repeat_game_players      vs qr_scans
+      Подарки           → gift_activators / coin_purchasers
+      Задания           → QuestSubmit (uniq guests) vs qr_scans
+      Истории ВК        → vk_stories_publishers     vs qr_scans
+    """
     from apps.tenant.game.models import ClientAttempt
-    from apps.tenant.inventory.models import SuperPrizeEntry, InventoryItem, AcquisitionSource
     from apps.tenant.quest.models import QuestSubmit
 
-    # ── 1. Repeat visits ──────────────────────────────────────────────────────
-    visits_qs = ClientBranchVisit.objects.filter(
-        visited_at__date__gte=start_date,
-        visited_at__date__lte=end_date,
-    )
-    visits_qs = _branch_filter(visits_qs, branch_ids, 'client__branch__in')
-    visit_counts = visits_qs.values('client_id').annotate(cnt=Count('id'))
-    repeat_visits = visit_counts.filter(cnt__gte=2).count()
-    once_visits   = visit_counts.filter(cnt=1).count()
+    # ── Знаменатель для всех графиков: «отсканировали QR-код» ────────────────
+    qr_scans = get_qr_scan_count(branch_ids, start_date, end_date)
 
-    # ── 2. Gift sources ───────────────────────────────────────────────────────
-    sp_qs = SuperPrizeEntry.objects.filter(
-        created_at__date__gte=start_date,
-        created_at__date__lte=end_date,
-    )
-    sp_qs = _branch_filter(sp_qs, branch_ids, 'client_branch__branch__in')
-    free_prizes = sp_qs.values('client_branch').distinct().count()
+    # ── 1. Повторные визиты — увязано с «вернулись и сыграли повторно» ───────
+    # «Повторно» = repeat_game_players (≥2 разных дня игры)
+    # «Разово»   = qr_scans − repeat_game_players
+    # Сумма      = qr_scans
+    repeat_players = get_repeat_game_players(branch_ids, start_date, end_date)
+    once_visits = max(0, qr_scans - repeat_players)
 
-    coins_qs = CoinTransaction.objects.filter(
-        type=TransactionType.EXPENSE,
-        source=TransactionSource.SHOP,
-        created_at__date__gte=start_date,
-        created_at__date__lte=end_date,
-    )
-    coins_qs = _branch_filter(coins_qs, branch_ids, 'client__branch__in')
-    coin_purchases = coins_qs.values('client').distinct().count()
+    # ── 2. Подарки — формула работодателя ────────────────────────────────────
+    # Бесплатный   = «Активировали подарок» (gift_activators) — целиком
+    # За баллы     = «Купили подарки за баллы» (coin_purchasers)
+    # Не забрали   = qr_scans − gift_activators − coin_purchasers
+    #
+    # Замечание: gift_activators и coin_purchasers концептуально могут
+    # пересекаться (гость, который и купил, и активировал). Здесь формула
+    # принимает их как непересекающиеся группы — так, как читает их
+    # клиент на дашборде. max(0, …) страхует визуализацию от отрицательного
+    # «не забрали» при таких пересечениях.
+    free_activators = get_gift_activators(branch_ids, start_date, end_date)
+    coin_purchases  = get_coin_purchasers(branch_ids, start_date, end_date)
+    no_gift_taken   = max(0, qr_scans - free_activators - coin_purchases)
 
-    # ── 3. Staff involvement ──────────────────────────────────────────────────
+    # ── 3. Привлечение персонала (без изменений) ─────────────────────────────
     attempts_qs = ClientAttempt.objects.filter(
         created_at__date__gte=start_date,
         created_at__date__lte=end_date,
@@ -569,42 +632,46 @@ def get_chart_data(
     served_count     = attempts_qs.filter(served_by__isnull=False).count()
     not_served_count = attempts_qs.filter(served_by__isnull=True).count()
 
-    # ── 4. Quest completion ───────────────────────────────────────────────────
+    # ── 4. Задания — увязано с qr_scans ──────────────────────────────────────
+    # Вошли и выполнили      = uniq client_id с completed_at IS NOT NULL
+    # Вошли и не выполнили   = uniq client_id − completed
+    # Не заходили в задания  = qr_scans − uniq client_id
+    # Сумма                  = qr_scans
     quest_qs = QuestSubmit.objects.filter(
         created_at__date__gte=start_date,
         created_at__date__lte=end_date,
     )
     quest_qs = _branch_filter(quest_qs, branch_ids, 'client__branch__in')
-    quests_done    = quest_qs.filter(completed_at__isnull=False).count()
-    quests_pending = quest_qs.filter(completed_at__isnull=True).count()
 
-    # ── 5. VK stories ─────────────────────────────────────────────────────────
-    # Both sides scoped to the period: uploaded in period vs visited but didn't upload.
-    from apps.tenant.branch.models import ClientVKStatus
-    story_qs = ClientVKStatus.objects.filter(
-        is_story_uploaded=True,
-        story_uploaded_at__date__gte=start_date,
-        story_uploaded_at__date__lte=end_date,
+    quest_entered_ids = set(quest_qs.values_list('client_id', flat=True).distinct())
+    quest_completed_ids = set(
+        quest_qs.filter(completed_at__isnull=False)
+        .values_list('client_id', flat=True).distinct()
     )
-    story_qs = _branch_filter(story_qs, branch_ids, 'client__branch__in')
-    stories_uploaded = story_qs.count()
+    quests_done    = len(quest_completed_ids)
+    quests_failed  = max(0, len(quest_entered_ids) - quests_done)
+    quests_skipped = max(0, qr_scans - len(quest_entered_ids))
 
-    period_visitor_ids = (
-        _branch_filter(visits_qs, branch_ids, 'client__branch__in')
-        .values('client_id').distinct()
-    )
-    stories_not_uploaded = (
-        ClientVKStatus.objects
-        .filter(client_id__in=period_visitor_ids)
-        .exclude(client_id__in=story_qs.values('client_id'))
-        .count()
-    )
+    # ── 5. Истории ВК — увязано с qr_scans ───────────────────────────────────
+    # Опубликовали      = vk_stories_publishers (за период)
+    # Не опубликовали   = qr_scans − опубликовали
+    # Сумма             = qr_scans
+    stories_uploaded     = get_vk_stories_publishers(branch_ids, start_date, end_date)
+    stories_not_uploaded = max(0, qr_scans - stories_uploaded)
 
     return {
-        'repeat_visits':     {'repeat': repeat_visits,   'first_time': once_visits},
-        'gift_sources':      {'free': free_prizes,        'coins': coin_purchases},
-        'staff_involvement': {'served': served_count,     'not_served': not_served_count},
-        'quests':            {'completed': quests_done,   'pending': quests_pending},
+        'repeat_visits':     {'repeat': repeat_players,    'first_time': once_visits},
+        'gift_sources':      {
+            'free':       free_activators,
+            'coins':      coin_purchases,
+            'not_taken':  no_gift_taken,
+        },
+        'staff_involvement': {'served': served_count,      'not_served': not_served_count},
+        'quests':            {
+            'completed':   quests_done,
+            'pending':     quests_failed,
+            'not_entered': quests_skipped,
+        },
         'vk_stories':        {'uploaded': stories_uploaded, 'not_uploaded': stories_not_uploaded},
     }
 
@@ -1976,22 +2043,31 @@ def get_stat_clients(
         return base.filter(pk__in=cb_ids)
 
     if metric == 'birthday_celebrants':
-        from django.db.models import F
-        from django.db.models.functions import ExtractMonth, ExtractDay
+        from datetime import timedelta
+        from django.db.models import F, ExpressionWrapper, DateField
+        from django.db.models.functions import ExtractMonth, ExtractDay, TruncDate
         from apps.tenant.branch.models import ClientBranchVisit
+
+        visit_minus_grace = ExpressionWrapper(
+            TruncDate('visited_at') - timedelta(days=BIRTHDAY_SET_MIN_DAYS_BEFORE_VISIT),
+            output_field=DateField(),
+        )
 
         visits_qs = ClientBranchVisit.objects.filter(
             visited_at__date__gte=start_date,
             visited_at__date__lte=end_date,
             client__birth_date__isnull=False,
+            client__birth_date_set_at__isnull=False,
         ).annotate(
             visit_month=ExtractMonth('visited_at'),
             visit_day=ExtractDay('visited_at'),
             birth_month=ExtractMonth('client__birth_date'),
             birth_day=ExtractDay('client__birth_date'),
+            visit_minus_grace=visit_minus_grace,
         ).filter(
             visit_month=F('birth_month'),
             visit_day=F('birth_day'),
+            client__birth_date_set_at__lte=F('visit_minus_grace'),
         )
         if branch_ids:
             visits_qs = visits_qs.filter(client__branch__in=branch_ids)
