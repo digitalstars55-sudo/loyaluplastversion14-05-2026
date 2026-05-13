@@ -34,6 +34,7 @@ class PublicAdminSite(AdminSite):
         try:
             from django_tenants.utils import schema_context
             from apps.shared.clients.models import Company, Domain
+            from apps.shared.clients.billing import payment_status
 
             qs = Company.objects.exclude(schema_name='public')
             if getattr(request.user, 'role', None) == 'network_admin':
@@ -41,6 +42,7 @@ class PublicAdminSite(AdminSite):
             companies = qs.prefetch_related('domains').order_by('name')
             total_branches = 0
             cards = []
+            expiring_soon = 0  # счётчик: «осталось ≤ 10 дней» (включая просроченные)
             for c in companies:
                 primary = next((d for d in c.domains.all() if d.is_primary), None)
                 # get branch count from tenant schema
@@ -52,6 +54,11 @@ class PublicAdminSite(AdminSite):
                 except Exception:
                     pass
                 total_branches += branch_count
+
+                billing = payment_status(c.paid_until)
+                if billing['needs_attention']:
+                    expiring_soon += 1
+
                 cards.append({
                     'id': c.pk,
                     'name': c.name,
@@ -61,6 +68,7 @@ class PublicAdminSite(AdminSite):
                     'paid_until': c.paid_until,
                     'branch_count': branch_count,
                     'admin_url': f'//{primary.domain}/admin/' if primary else '#',
+                    'billing': billing,
                 })
 
             active_count = sum(1 for c in cards if c['is_active'])
@@ -71,6 +79,7 @@ class PublicAdminSite(AdminSite):
             ctx['infra_active'] = active_count
             ctx['infra_branches'] = total_branches
             ctx['infra_domains'] = domain_count
+            ctx['infra_expiring_soon'] = expiring_soon
         except Exception:
             logger.exception('Public admin: failed to load infra context')
             ctx['infra_cards'] = []
@@ -78,6 +87,7 @@ class PublicAdminSite(AdminSite):
             ctx['infra_active'] = 0
             ctx['infra_branches'] = 0
             ctx['infra_domains'] = 0
+            ctx['infra_expiring_soon'] = 0
         return ctx
 
 
@@ -119,6 +129,18 @@ class TenantAdminSite(AdminSite):
     def each_context(self, request):
         ctx = super().each_context(request)
         ctx['user_is_client'] = getattr(request.user, 'role', None) == 'client'
+
+        # Billing — статус оплаты для текущего тенанта (компании пользователя).
+        # Берётся из request.tenant, который проставляет django-tenants middleware.
+        try:
+            from apps.shared.clients.billing import payment_status
+            tenant = getattr(request, 'tenant', None)
+            if tenant is not None and getattr(tenant, 'paid_until', None):
+                ctx['tenant_billing'] = payment_status(tenant.paid_until)
+                ctx['tenant_name']    = tenant.name
+        except Exception:
+            logger.exception('Tenant admin: failed to compute billing status')
+
         try:
             from apps.tenant.branch.models import Branch, DailyCode
             today = date.today()

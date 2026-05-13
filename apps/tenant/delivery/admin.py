@@ -84,7 +84,11 @@ class DeliveryAdmin(admin.ModelAdmin):
         }),
         ('Активация', {
             'fields': ('duration', 'expires_at', 'status_display', 'activated_at', 'activated_by'),
-            'description': 'expires_at = момент создания + duration часов.',
+            'description': (
+                'Коды одноразовые и не ограничены по времени до активации. '
+                'expires_at ставится на 100 лет вперёд при создании и сбрасывается в now() '
+                'после того, как гость использовал код в игре.'
+            ),
         }),
         ('Служебное', {
             'fields': ('created_at', 'updated_at'),
@@ -125,22 +129,14 @@ class DeliveryAdmin(admin.ModelAdmin):
     def time_col(self, obj):
         status = obj.status
         if status == 'pending':
-            remaining = obj.expires_at - timezone.now()
-            hrs = int(remaining.total_seconds()) // 3600
-            mins = (int(remaining.total_seconds()) % 3600) // 60
-            if hrs > 0:
-                return format_html(
-                    '<span style="color:#f57f17;font-weight:600;">{}ч {}м</span>', hrs, mins
-                )
+            # Коды больше не ограничены по времени до активации.
             return format_html(
-                '<span style="color:#e65100;font-weight:600;">{}м</span>', mins
+                '<span style="color:#f57f17;font-weight:600;" title="Без ограничения по времени">∞</span>'
             )
         if status == 'activated':
             if obj.is_active_window:
-                remaining = obj.expires_at - timezone.now()
-                hrs = int(remaining.total_seconds()) // 3600
                 return format_html(
-                    '<span style="color:#1b5e20;font-weight:600;">{}ч</span>', hrs
+                    '<span style="color:#1b5e20;font-weight:600;" title="Не использовано в игре">✓</span>'
                 )
         return mark_safe('<span style="color:var(--body-quiet-color,#aaa);">—</span>')
 

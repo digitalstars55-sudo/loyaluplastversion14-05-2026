@@ -138,36 +138,28 @@ class RFSegmentAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         """
-        Обычное сохранение + опциональное массовое применение.
-
-        - Если стоит галочка и confirm-токен ЕЩЁ НЕ пришёл — сохраняем
-          запись и показываем warning со ссылкой на страницу подтверждения.
-        - Если confirm-токен пришёл — выполняем копирование во все точки.
+        Обычное сохранение. Если стоит галочка «Применить ко всем кафе» —
+        response_change/response_add перенаправляет на confirm-page.
         """
         super().save_model(request, obj, form, change)
 
-        if form.cleaned_data.get('apply_to_all_branches'):
-            confirmed = request.POST.get('_apply_all_confirmed') == '1'
-            if confirmed:
-                affected = obj.apply_to_all_branches()
-                self.message_user(
-                    request,
-                    f'Сегмент «{obj.emoji} {obj.name}» применён к {affected} торговым точкам. '
-                    f'Запустите пересчёт RF, чтобы матрицы обновились.',
-                    level=messages.SUCCESS,
-                )
-            else:
-                self.message_user(
-                    request,
-                    mark_safe(
-                        'Сегмент сохранён. '
-                        'Для массового применения ко всем кафе перейдите в '
-                        f'<a href="{reverse("admin:analytics_rfsegment_apply_all", args=[obj.pk])}">'
-                        'окно подтверждения</a> — там будет сводка и кнопка '
-                        '«Применить».'
-                    ),
-                    level=messages.WARNING,
-                )
+    def _redirect_to_apply_all(self, request, obj):
+        return HttpResponseRedirect(
+            reverse(
+                f'{self.admin_site.name}:analytics_rfsegment_apply_all',
+                args=[obj.pk],
+            )
+        )
+
+    def response_add(self, request, obj, post_url_continue=None):
+        if request.POST.get('apply_to_all_branches'):
+            return self._redirect_to_apply_all(request, obj)
+        return super().response_add(request, obj, post_url_continue)
+
+    def response_change(self, request, obj):
+        if request.POST.get('apply_to_all_branches'):
+            return self._redirect_to_apply_all(request, obj)
+        return super().response_change(request, obj)
 
     def _apply_to_all_view(self, request, pk):
         """
@@ -179,7 +171,7 @@ class RFSegmentAdmin(admin.ModelAdmin):
             obj = RFSegment.objects.get(pk=pk)
         except RFSegment.DoesNotExist:
             self.message_user(request, 'Сегмент не найден.', level=messages.ERROR)
-            return HttpResponseRedirect(reverse('admin:analytics_rfsegment_changelist'))
+            return HttpResponseRedirect(reverse(f'{self.admin_site.name}:analytics_rfsegment_changelist'))
 
         if request.method == 'POST' and request.POST.get('_apply_all_confirmed') == '1':
             affected = obj.apply_to_all_branches()
@@ -188,7 +180,7 @@ class RFSegmentAdmin(admin.ModelAdmin):
                 f'Готово: сегмент «{obj.emoji} {obj.name}» применён к {affected} торговым точкам.',
                 level=messages.SUCCESS,
             )
-            return HttpResponseRedirect(reverse('admin:analytics_rfsegment_changelist'))
+            return HttpResponseRedirect(reverse(f'{self.admin_site.name}:analytics_rfsegment_changelist'))
 
         active_branches = list(Branch.objects.filter(is_active=True).order_by('name'))
         ctx = {
@@ -260,7 +252,7 @@ class RFSegmentAdmin(admin.ModelAdmin):
                 level=messages.SUCCESS,
             )
             return HttpResponseRedirect(
-                reverse('admin:senler_broadcast_change', args=[created_ids[0]])
+                reverse(f'{self.admin_site.name}:senler_broadcast_change', args=[created_ids[0]])
             )
         elif created_ids:
             self.message_user(
@@ -269,14 +261,14 @@ class RFSegmentAdmin(admin.ModelAdmin):
                 f'Перейдите в раздел Рассылки, заполните тексты и отправьте.',
                 level=messages.SUCCESS,
             )
-            return HttpResponseRedirect(reverse('admin:senler_broadcast_changelist'))
+            return HttpResponseRedirect(reverse(f'{self.admin_site.name}:senler_broadcast_changelist'))
         else:
             self.message_user(
                 request,
                 'Нет активных торговых точек.',
                 level=messages.WARNING,
             )
-            return HttpResponseRedirect(reverse('admin:analytics_rfsegment_changelist'))
+            return HttpResponseRedirect(reverse(f'{self.admin_site.name}:analytics_rfsegment_changelist'))
 
     def _export_senler_view(self, request, pk):
         """
@@ -380,8 +372,8 @@ class RFSegmentAdmin(admin.ModelAdmin):
         if not obj.pk:
             return '—'
 
-        broadcast_url = reverse('admin:analytics_rfsegment_send_broadcast', args=[obj.pk])
-        export_url = reverse('admin:analytics_rfsegment_export_senler', args=[obj.pk])
+        broadcast_url = reverse(f'{self.admin_site.name}:analytics_rfsegment_send_broadcast', args=[obj.pk])
+        export_url = reverse(f'{self.admin_site.name}:analytics_rfsegment_export_senler', args=[obj.pk])
 
         return format_html(
             '<div style="white-space:nowrap;">'
@@ -592,42 +584,63 @@ class RFSettingsAdmin(admin.ModelAdmin):
     actions = ['apply_to_all_action', 'apply_to_selected_action']
 
     fieldsets = (
-        (None, {
+        ('Область применения', {
             'fields': ('branch', 'analysis_period'),
             'description': (
-                'Оставьте поле «Торговая точка» пустым, чтобы создать общие настройки '
-                'для режима «Все точки» (используются как fallback для точек без своих '
-                'настроек и применяются, когда пользователь смотрит общую RF-матрицу).'
+                '<div style="background:#f0f9ff;border-left:4px solid #0284c7;padding:10px 14px;'
+                'border-radius:4px;margin-bottom:8px;line-height:1.5;">'
+                '🌐 <b>Оставьте «Торговая точка» пустым</b> — создадутся общие настройки '
+                '«Все точки» (используются как fallback для всех кафе без своих настроек). '
+                '<br>📍 <b>Выберите конкретное кафе</b> — настройки этой точки переопределят общие.'
+                '</div>'
+                '<b>Период анализа</b> — за сколько дней назад считать визиты для расчёта частоты F.'
             ),
         }),
-        ('R-пороги (давность последнего визита)', {
+        ('🎯 Текущие пороги (предпросмотр)', {
+            'fields': ('effective_thresholds_preview',),
+            'description': (
+                'Так будут размечены гости по матрице RF. Меняйте поля ниже — превью обновится '
+                'после сохранения.'
+            ),
+        }),
+        ('R-пороги — Давность последнего визита (дни)', {
             'fields': (('r_fresh_max', 'r_warm_max', 'r_cooling_max'),),
             'description': (
-                '<b>R3 «Свежий»</b> — гости с давностью ≤ R3-границы.<br>'
-                '<b>R2 «Тёплый»</b> — давность от (R3+1) до R2-границы.<br>'
-                '<b>R1 «Остывший»</b> — давность от (R2+1) до R1-границы.<br>'
-                '<b>R0 «Холодный»</b> — давность больше R1-границы.'
+                '<div style="line-height:1.7;">'
+                '🟢 <b>R3 «Свежий»</b> — гости с давностью <b>≤ R3-границы</b> (вернулись недавно).<br>'
+                '🟡 <b>R2 «Тёплый»</b> — давность от <b>R3+1</b> до <b>R2-границы</b>.<br>'
+                '🟠 <b>R1 «Остывший»</b> — давность от <b>R2+1</b> до <b>R1-границы</b>.<br>'
+                '🔴 <b>R0 «Холодный»</b> — давность <b>больше R1-границы</b> (давно не видели).'
+                '</div>'
+                '<b>Значения должны строго возрастать:</b> R3 &lt; R2 &lt; R1.'
             ),
         }),
-        ('F-пороги (количество визитов)', {
+        ('F-пороги — Количество визитов за период', {
             'fields': (('f_rare_max', 'f_moderate_max'),),
             'description': (
-                '<b>F1 «Редко»</b> — визитов ≤ F1-границы.<br>'
-                '<b>F2 «Умеренно»</b> — визитов от (F1+1) до F2-границы.<br>'
-                '<b>F3 «Часто»</b> — визитов больше F2-границы.'
+                '<div style="line-height:1.7;">'
+                '⚪ <b>F1 «Редко»</b> — визитов <b>≤ F1-границы</b>.<br>'
+                '🔵 <b>F2 «Умеренно»</b> — от <b>F1+1</b> до <b>F2-границы</b>.<br>'
+                '🟣 <b>F3 «Часто»</b> — <b>больше F2-границы</b> (VIP-гости).'
+                '</div>'
+                '<b>F1 должно быть строго меньше F2.</b>'
             ),
         }),
-        ('Применить ко всем точкам', {
+        ('🚀 Применить ко всем точкам', {
             'fields': ('apply_to_all_branches',),
             'description': (
-                'Удобно при первичной настройке сети: задайте пороги один раз '
-                'и одной галочкой раскопируйте их во все кафе. '
-                'После применения для отдельной точки можно индивидуально '
-                'переопределить значения — общие настройки используются как fallback.'
+                '<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 14px;'
+                'border-radius:4px;line-height:1.5;">'
+                'Поставьте галочку — после нажатия «Сохранить» вы попадёте на страницу '
+                'подтверждения с предпросмотром и сможете одним кликом раскатить настройки '
+                'на все активные торговые точки. Поле «Дата обнуления статистики» '
+                '<u>НЕ копируется</u> — оно индивидуально для каждой точки.'
+                '</div>'
             ),
         }),
         ('Обнуление статистики', {
             'fields': ('stats_reset_date',),
+            'classes': ('collapse',),
             'description': (
                 'Если задана дата — визиты ДО неё игнорируются при RF-расчёте. '
                 'Полезно после смены концепции или ребрендинга. '
@@ -635,7 +648,7 @@ class RFSettingsAdmin(admin.ModelAdmin):
             ),
         }),
         ('Служебное', {
-            'fields': ('effective_thresholds_preview', 'created_at', 'updated_at'),
+            'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',),
         }),
     )
@@ -696,43 +709,30 @@ class RFSettingsAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         """
-        Обычное сохранение + опциональное массовое применение настроек.
-
-        Подтверждение реализовано в два этапа:
-          1) Если стоит галочка «Применить ко всем кафе» и в POST ещё нет
-             confirm-токена — сохраняем запись, рендерим страницу подтверждения
-             и ВЫХОДИМ (не делаем массовое копирование).
-          2) Если confirm-токен пришёл (пользователь нажал «Подтвердить» на
-             промежуточной странице — см. response_change/_apply_to_all_view) —
-             выполняем копирование.
-
-        Чтобы не плодить отдельный URL, делаем «два щелчка»: при первом
-        сохранении показываем сообщение со ссылкой на отдельный экшн.
+        Обычное сохранение. Если стоит галочка «Применить ко всем кафе» —
+        response_change/response_add ниже сам перенаправляет на confirm-page.
         """
         super().save_model(request, obj, form, change)
 
-        if form.cleaned_data.get('apply_to_all_branches'):
-            confirmed = request.POST.get('_apply_all_confirmed') == '1'
-            if confirmed:
-                affected = obj.apply_thresholds_to_all_branches()
-                self.message_user(
-                    request,
-                    f'Настройки RF-порогов применены к {affected} торговым точкам. '
-                    f'Запустите пересчёт RF, чтобы матрицы обновились.',
-                    level=messages.SUCCESS,
-                )
-            else:
-                self.message_user(
-                    request,
-                    mark_safe(
-                        'Настройки сохранены. '
-                        'Для массового применения ко всем кафе перейдите в '
-                        f'<a href="{reverse("admin:analytics_rfsettings_apply_all", args=[obj.pk])}">'
-                        'окно подтверждения</a> — там будет сводка и кнопка '
-                        '«Применить».'
-                    ),
-                    level=messages.WARNING,
-                )
+    # ── После save: если стоит галочка — сразу на confirm-page ──────────────
+
+    def _redirect_to_apply_all(self, request, obj):
+        return HttpResponseRedirect(
+            reverse(
+                f'{self.admin_site.name}:analytics_rfsettings_apply_all',
+                args=[obj.pk],
+            )
+        )
+
+    def response_add(self, request, obj, post_url_continue=None):
+        if request.POST.get('apply_to_all_branches'):
+            return self._redirect_to_apply_all(request, obj)
+        return super().response_add(request, obj, post_url_continue)
+
+    def response_change(self, request, obj):
+        if request.POST.get('apply_to_all_branches'):
+            return self._redirect_to_apply_all(request, obj)
+        return super().response_change(request, obj)
 
     # ── Custom URLs: confirmation page for mass-apply ─────────────────────────
 
@@ -756,7 +756,7 @@ class RFSettingsAdmin(admin.ModelAdmin):
             obj = RFSettings.objects.get(pk=pk)
         except RFSettings.DoesNotExist:
             self.message_user(request, 'Запись не найдена.', level=messages.ERROR)
-            return HttpResponseRedirect(reverse('admin:analytics_rfsettings_changelist'))
+            return HttpResponseRedirect(reverse(f'{self.admin_site.name}:analytics_rfsettings_changelist'))
 
         # POST = пользователь подтвердил.
         if request.method == 'POST' and request.POST.get('_apply_all_confirmed') == '1':
@@ -766,7 +766,7 @@ class RFSettingsAdmin(admin.ModelAdmin):
                 f'Готово: настройки применены к {affected} торговым точкам.',
                 level=messages.SUCCESS,
             )
-            return HttpResponseRedirect(reverse('admin:analytics_rfsettings_changelist'))
+            return HttpResponseRedirect(reverse(f'{self.admin_site.name}:analytics_rfsettings_changelist'))
 
         # GET = показываем подтверждение.
         active_branches = list(Branch.objects.filter(is_active=True).order_by('name'))

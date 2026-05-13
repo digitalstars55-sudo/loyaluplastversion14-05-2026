@@ -253,12 +253,17 @@ def claim_game(session_token: str, employee_id: int | None = None, delivery: boo
     # Delivery sessions require an activated delivery code before claiming.
     # Check both the token flag (set at start) and the claim-time flag (passed
     # explicitly by the client in case the token was started without delivery=True).
-    # Only count deliveries whose activation window hasn't expired yet.
-    if delivery or payload.get('dl'):
-        has_active_delivery = client_branch.activated_deliveries.filter(
-            expires_at__gt=timezone.now(),
-        ).exists()
-        if not has_active_delivery:
+    # Активированный код одноразовый: «активная» = ещё не погашенная (expires_at в будущем).
+    is_delivery_session = delivery or payload.get('dl')
+    active_delivery = None
+    if is_delivery_session:
+        active_delivery = (
+            client_branch.activated_deliveries
+            .filter(expires_at__gt=timezone.now())
+            .order_by('-activated_at')
+            .first()
+        )
+        if active_delivery is None:
             raise DeliveryCodeNotActivated
 
     # VK subscription gate: guest must be subscribed to BOTH the community
@@ -278,6 +283,12 @@ def claim_game(session_token: str, employee_id: int | None = None, delivery: boo
 
     ClientAttempt.objects.create(client=client_branch, served_by=served_by)
     _activate_game_cooldown(client_branch)
+
+    # Гасим использованный delivery-код: ставим expires_at=now, чтобы он больше
+    # не давал бонусы (одноразовость для пост-активационных привилегий).
+    if active_delivery is not None:
+        active_delivery.expires_at = timezone.now()
+        active_delivery.save(update_fields=['expires_at'])
 
     reward_type = payload.get('rt')
 

@@ -292,18 +292,41 @@ function getCookie(name) {
 }
 
 // ── Broadcast modal ────────────────────────────────────────────────
+// _modalCell — данные ячейки сегмента; null при режиме «всем оцифрованным».
+// _modalMode — 'segment' | 'all'. Влияет на тексты, AI-prompt и параметры запроса.
 let _modalCell = null;
+let _modalMode = 'segment';
+
+function _resetModalUI() {
+  const textarea = document.getElementById('modal-message');
+  const statusEl = document.getElementById('modal-status');
+  textarea.value = '';
+  statusEl.style.display = 'none';
+  statusEl.textContent = '';
+  document.getElementById('btn-ai').disabled = false;
+  document.getElementById('btn-send').disabled = false;
+  document.getElementById('btn-send').textContent = '📨 Отправить';
+  removeModalImage();
+  updateCharCount();
+}
+
+function _totalDigitisedFromMatrix() {
+  // Сумма ячеек матрицы = число оцифрованных гостей по текущей области.
+  if (!matrixData || !matrixData.cells) return 0;
+  let n = 0;
+  for (const k in matrixData.cells) n += (matrixData.cells[k].count || 0);
+  return n;
+}
 
 function openBroadcastModal(cellKey) {
   const cell = matrixData.cells[cellKey];
   if (!cell) return;
   _modalCell = cell;
-  const modal    = document.getElementById('broadcast-modal');
+  _modalMode = 'segment';
+
   const info     = document.getElementById('modal-segment-info');
   const hint     = document.getElementById('modal-hint');
   const hintText = document.getElementById('modal-hint-text');
-  const textarea = document.getElementById('modal-message');
-  const statusEl = document.getElementById('modal-status');
 
   const bg = cell.segment_color || '#e8e8e8';
   info.innerHTML = `
@@ -320,21 +343,43 @@ function openBroadcastModal(cellKey) {
     hint.style.display = 'none';
   }
 
-  textarea.value = '';
-  statusEl.style.display = 'none';
-  statusEl.textContent = '';
-  document.getElementById('btn-ai').disabled = false;
-  document.getElementById('btn-send').disabled = false;
-  removeModalImage();
-  updateCharCount();
-
+  _resetModalUI();
+  const modal = document.getElementById('broadcast-modal');
   modal.classList.add('active');
-  textarea.focus();
+  document.getElementById('modal-message').focus();
+}
+
+function openBroadcastModalAll() {
+  // Режим «всем оцифрованным» — без segment_id.
+  _modalCell = null;
+  _modalMode = 'all';
+
+  const info     = document.getElementById('modal-segment-info');
+  const hint     = document.getElementById('modal-hint');
+  const hintText = document.getElementById('modal-hint-text');
+
+  const total = _totalDigitisedFromMatrix();
+  info.innerHTML = `
+    <span class="modal-segment-badge" style="background:#1565c0;">📨 Все оцифрованные гости</span>
+    <span style="font-size:12px;color:#64748b;">по всем выбранным точкам</span>
+    <span class="modal-segment-count">~${total} гостей</span>
+  `;
+
+  hintText.innerHTML =
+    'Сообщение получат все активные гости с привязанным VK ID. ' +
+    'Фильтры по сегментам не применяются.';
+  hint.style.display = '';
+
+  _resetModalUI();
+  const modal = document.getElementById('broadcast-modal');
+  modal.classList.add('active');
+  document.getElementById('modal-message').focus();
 }
 
 function closeBroadcastModal() {
   document.getElementById('broadcast-modal').classList.remove('active');
   _modalCell = null;
+  _modalMode = 'segment';
   removeModalImage();
 }
 
@@ -410,17 +455,22 @@ function _setModalStatus(msg, type) {
 }
 
 function generateAIText() {
-  if (!_modalCell || !_modalCell.segment_id) return;
+  // Допустимые режимы: 'segment' (требует _modalCell.segment_id) и 'all' (без segment_id).
+  if (_modalMode === 'segment' && (!_modalCell || !_modalCell.segment_id)) return;
 
   const btn = document.getElementById('btn-ai');
   btn.disabled = true;
   btn.textContent = '⏳ Генерация...';
   _setModalStatus('AI генерирует текст рассылки...', 'loading');
 
+  const payload = _modalMode === 'segment'
+    ? { segment_id: _modalCell.segment_id }
+    : {};
+
   fetch('/api/v1/analytics/rf/generate-broadcast-text/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
-    body: JSON.stringify({ segment_id: _modalCell.segment_id }),
+    body: JSON.stringify(payload),
   })
     .then(r => r.json())
     .then(data => {
@@ -440,14 +490,21 @@ function generateAIText() {
 }
 
 function sendBroadcast() {
-  if (!_modalCell || !_modalCell.segment_id) return;
+  if (_modalMode === 'segment' && (!_modalCell || !_modalCell.segment_id)) return;
 
   const text = document.getElementById('modal-message').value.trim();
   if (!text) { _setModalStatus('Введите текст рассылки', 'error'); return; }
   if (text.length > 4096) { _setModalStatus('Текст превышает 4096 символов', 'error'); return; }
 
-  const segName = (_modalCell.segment_emoji || '') + ' ' + (_modalCell.segment_name || '');
-  if (!confirm(`Отправить рассылку сегменту «${segName.trim()}» (${_modalCell.count} гостей)?`)) return;
+  let confirmMsg;
+  if (_modalMode === 'segment') {
+    const segName = (_modalCell.segment_emoji || '') + ' ' + (_modalCell.segment_name || '');
+    confirmMsg = `Отправить рассылку сегменту «${segName.trim()}» (${_modalCell.count} гостей)?`;
+  } else {
+    const total = _totalDigitisedFromMatrix();
+    confirmMsg = `Отправить рассылку ВСЕМ оцифрованным гостям (~${total} получателей)?`;
+  }
+  if (!confirm(confirmMsg)) return;
 
   const btnSend = document.getElementById('btn-send');
   const btnAI   = document.getElementById('btn-ai');
@@ -459,7 +516,9 @@ function sendBroadcast() {
   const branchIds = BRANCH_PARAM ? BRANCH_PARAM.replace('branches=', '') : '';
 
   const formData = new FormData();
-  formData.append('segment_id', _modalCell.segment_id);
+  if (_modalMode === 'segment') {
+    formData.append('segment_id', _modalCell.segment_id);
+  }
   formData.append('message_text', text);
   formData.append('mode', ACTIVE_MODE);
   formData.append('branch_ids', branchIds);

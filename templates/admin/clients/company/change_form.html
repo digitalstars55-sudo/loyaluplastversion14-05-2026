@@ -1,0 +1,27 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block field_sets %}
+  {% if billing and billing.needs_attention %}
+    <div style="margin:0 0 18px 0;padding:14px 18px;border-radius:10px;
+                background:{{ billing.bg }};border:1px solid {{ billing.border }};
+                color:{{ billing.color }};display:flex;gap:12px;align-items:flex-start;
+                box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+      <div style="font-size:24px;line-height:1;flex-shrink:0;">{{ billing.icon }}</div>
+      <div style="flex:1;font-size:13px;line-height:1.45;">
+        <div style="font-weight:800;font-size:14px;margin-bottom:2px;">
+          {{ billing.label }}
+        </div>
+        <div>{{ billing.long_label }}</div>
+      </div>
+    </div>
+  {% elif billing and billing.state == 'ok' %}
+    <div style="margin:0 0 18px 0;padding:10px 14px;border-radius:8px;
+                background:{{ billing.bg }};border:1px solid {{ billing.border }};
+                color:{{ billing.color }};font-size:12px;display:flex;gap:8px;align-items:center;">
+      <span style="font-size:14px;">{{ billing.icon }}</span>
+      <span>{{ billing.long_label }}</span>
+    </div>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

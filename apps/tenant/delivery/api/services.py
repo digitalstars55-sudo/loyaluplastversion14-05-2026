@@ -6,7 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.tenant.branch.models import Branch, ClientBranch
-from ..models import Delivery, OrderSource
+from ..models import Delivery, OrderSource, _NO_EXPIRY_DAYS
 
 
 # ── Exceptions ────────────────────────────────────────────────────────────────
@@ -80,7 +80,8 @@ def register_delivery(*, source: str, branch_id: str, code: str) -> tuple[Delive
     if not created and delivery.status in ('expired', 'activated'):
         delivery.activated_at = None
         delivery.activated_by = None
-        delivery.expires_at = timezone.now() + timedelta(hours=delivery.duration)
+        # Pending bez vremennogo limita: выставляем «бесконечное» окно.
+        delivery.expires_at = timezone.now() + timedelta(days=_NO_EXPIRY_DAYS)
         delivery.save(update_fields=['activated_at', 'activated_by', 'expires_at'])
         return delivery, True
 
@@ -121,9 +122,8 @@ def activate_delivery(*, short_code: str, vk_id: int, branch_id: int) -> Deliver
         return already
 
     # Lock the row to prevent double-activation under concurrent requests.
-    # In PostgreSQL READ COMMITTED, after the lock is released, rows that no
-    # longer satisfy the WHERE (activated_at IS NULL) are excluded — so a
-    # second concurrent request will get None here and raise DeliveryNotFound.
+    # Одноразовость обеспечивается activated_at__isnull=True: после первой
+    # активации повторная попытка не пройдёт фильтр. Окно по времени снято.
     delivery = (
         Delivery.objects
         .select_for_update()
@@ -131,7 +131,6 @@ def activate_delivery(*, short_code: str, vk_id: int, branch_id: int) -> Deliver
             branch=client_branch.branch,
             short_code=short_code,
             activated_at__isnull=True,
-            expires_at__gt=timezone.now(),
         )
         .order_by('-created_at')
         .first()

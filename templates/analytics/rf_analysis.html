@@ -80,18 +80,19 @@
     </button>
     <span id="recalc-status" style="font-size:13px;color:#94a3b8;display:none;"></span>
 
-    <!-- Send broadcast to all guests (bold primary action).
-         Hard-coded path used so an unreloaded gunicorn url-conf
-         after deploy doesn't blow up the whole page. -->
-    <a href="/analytics/rf/broadcast-all/{% if active_branch_ids %}?branches={% for id in active_branch_ids %}{{ id }}{% if not forloop.last %},{% endif %}{% endfor %}{% endif %}"
+    <!-- Send broadcast to all digitised guests (bold primary action).
+         Открывает ту же modal-window, что и рассылка по сегменту,
+         но без segment_id — рассылка уйдёт всем оцифрованным гостям
+         по всем выбранным точкам. -->
+    <button type="button" onclick="openBroadcastModalAll()"
        style="margin-left:auto;font-size:13px;font-weight:800;padding:9px 20px;border:none;
-              border-radius:8px;background:#1565c0;color:#fff;text-decoration:none;
+              border-radius:8px;background:#1565c0;color:#fff;cursor:pointer;
               box-shadow:0 2px 6px rgba(21,101,192,0.25);transition:all .15s;
               letter-spacing:0.2px;"
        onmouseover="this.style.background='#0d47a1';this.style.boxShadow='0 4px 10px rgba(21,101,192,0.35)';"
        onmouseout="this.style.background='#1565c0';this.style.boxShadow='0 2px 6px rgba(21,101,192,0.25)';">
       📨 Отправить рассылки всем
-    </a>
+    </button>
 
   </div>
 

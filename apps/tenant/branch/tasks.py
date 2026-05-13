@@ -179,14 +179,14 @@ def generate_daily_codes_task() -> dict:
     """
     Celery Beat task: generate 5-digit DailyCodes for every active branch
     in every tenant for today (game, quest, birthday purposes).
-    Runs daily at 00:00 Moscow time (configured in main/celery.py).
+    Runs daily at 03:00 Moscow time (configured in main/celery.py).
     """
     import random
-    from datetime import date
+    from django.utils import timezone
     from django_tenants.utils import get_tenant_model, schema_context
 
     TenantModel = get_tenant_model()
-    today       = date.today()
+    today       = timezone.localdate()  # дата по TIME_ZONE Django (Europe/Moscow)
     created_total = 0
     skipped_total = 0
 

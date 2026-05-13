@@ -178,12 +178,16 @@ class RFAnalysisView(View):
 
         # Для удобства: ссылка на редактирование настроек выбранной области.
         # Если объект существует — ведём на change-страницу; иначе — на add.
+        # Используем имя именно tenant_admin (analytics живёт в тенант-схеме),
+        # чтобы избежать NoReverseMatch при двух AdminSite (tenant_admin + public_admin).
+        from apps.shared.config.admin_sites import tenant_admin
+        _admin_ns = tenant_admin.name
         if settings_obj is not None:
             settings_edit_url = reverse(
-                'admin:analytics_rfsettings_change', args=[settings_obj.pk],
+                f'{_admin_ns}:analytics_rfsettings_change', args=[settings_obj.pk],
             )
         else:
-            settings_edit_url = reverse('admin:analytics_rfsettings_add')
+            settings_edit_url = reverse(f'{_admin_ns}:analytics_rfsettings_add')
 
         context = {
             'title':              'RF-анализ',

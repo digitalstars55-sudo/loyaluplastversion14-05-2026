@@ -6,6 +6,11 @@ from django.utils import timezone
 from apps.shared.base import TimeStampedModel
 
 
+# Sentinel "no expiry" window: код активен пока не активирован.
+# 100 лет — практический эквивалент бесконечности, без миграции на nullable.
+_NO_EXPIRY_DAYS = 365 * 100
+
+
 class OrderSource(models.TextChoices):
     IIKO    = 'iiko',    'iiko'
     DOOGLYS = 'dooglys', 'Dooglys'
@@ -60,11 +65,14 @@ class Delivery(TimeStampedModel):
     duration = models.PositiveIntegerField(
         default=8,
         verbose_name='Длительность (ч)',
-        help_text='Часов, в течение которых клиент может активировать код.',
+        help_text='Историческое поле: больше не ограничивает время на активацию '
+                  '(коды действуют до первого использования).',
     )
     expires_at = models.DateTimeField(
         verbose_name='Действителен до',
-        help_text='Устанавливается автоматически: created_at + duration ч.',
+        help_text='Технический маркер: ставится на 100 лет вперёд, чтобы код был '
+                  'активен пока его не активируют; обнуляется в now() при «гашении» '
+                  'активной доставки.',
     )
     activated_at = models.DateTimeField(
         null=True, blank=True,
@@ -113,7 +121,7 @@ class Delivery(TimeStampedModel):
         if not self.pk:
             self.short_code = self.code[-5:]
             if not self.expires_at:
-                self.expires_at = timezone.now() + timedelta(hours=self.duration)
+                self.expires_at = timezone.now() + timedelta(days=_NO_EXPIRY_DAYS)
         super().save(*args, **kwargs)
 
     # ── Meta ──────────────────────────────────────────────────────────────────

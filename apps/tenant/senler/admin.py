@@ -238,7 +238,7 @@ class BroadcastAdmin(admin.ModelAdmin):
             self.message_user(request, f'Необработанная ошибка: {exc}', level=messages.ERROR)
 
         return HttpResponseRedirect(
-            reverse('admin:senler_broadcast_change', args=[pk])
+            reverse(f'{self.admin_site.name}:senler_broadcast_change', args=[pk])
         )
 
     # ── Readonly fields ────────────────────────────────────────────────────────
@@ -261,7 +261,7 @@ class BroadcastAdmin(admin.ModelAdmin):
     def send_button_detail(self, obj):
         if not obj or not obj.pk:
             return '—'
-        url = reverse('admin:senler_broadcast_send', args=[obj.pk])
+        url = reverse(f'{self.admin_site.name}:senler_broadcast_send', args=[obj.pk])
         return format_html(
             '<a class="button" href="{}" '
             'onclick="return confirm(\'Запустить рассылку прямо сейчас?\');">'
@@ -293,7 +293,7 @@ class BroadcastAdmin(admin.ModelAdmin):
     last_sent_display.short_description = 'Последняя отправка'
 
     def send_button(self, obj):
-        url = reverse('admin:senler_broadcast_send', args=[obj.pk])
+        url = reverse(f'{self.admin_site.name}:senler_broadcast_send', args=[obj.pk])
         return format_html(
             '<a class="button" href="{}" '
             'onclick="return confirm(\'Запустить рассылку?\');">'

@@ -29,11 +29,40 @@
 .lv-row-label{font-size:14px;color:#333;font-weight:500;}
 .lv-btn{display:inline-block;padding:6px 20px;background:#2e7d32;color: #fff!important;;text-decoration:none;border-radius:20px;font-size:12px;font-weight:600;transition:background .15s;}
 .lv-btn:hover{background:#1b5e20;color:#fff;}
+
+/* Billing banner — наверху главной страницы тенант-админки */
+.lv-bill{display:flex;gap:14px;align-items:flex-start;padding:16px 20px;border-radius:10px;
+  margin:0 0 20px 0;border:1px solid;line-height:1.45;
+  box-shadow:0 1px 3px rgba(0,0,0,0.04);}
+.lv-bill-icon{font-size:28px;line-height:1;flex-shrink:0;}
+.lv-bill-body{flex:1;}
+.lv-bill-title{font-size:15px;font-weight:800;margin-bottom:4px;}
+.lv-bill-text{font-size:13px;}
+.lv-bill-text small{display:block;margin-top:4px;opacity:.85;}
+@keyframes lv-bill-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
+  50%     { box-shadow: 0 0 0 6px rgba(220,38,38,0.12); }
+}
+.lv-bill.pulse{animation: lv-bill-pulse 2.2s ease-in-out infinite;}
 </style>
 {% endblock %}
 
 {% block content %}
 <div id="content-main" class="app-list">
+
+  {% if tenant_billing and tenant_billing.needs_attention %}
+  <div class="lv-bill {% if tenant_billing.state == 'urgent' or tenant_billing.state == 'expired' %}pulse{% endif %}"
+       style="background:{{ tenant_billing.bg }};border-color:{{ tenant_billing.border }};color:{{ tenant_billing.color }};">
+    <div class="lv-bill-icon">{{ tenant_billing.icon }}</div>
+    <div class="lv-bill-body">
+      <div class="lv-bill-title">{{ tenant_billing.label }}</div>
+      <div class="lv-bill-text">
+        {{ tenant_billing.long_label }}
+        <small>Свяжитесь с поддержкой LevOne, чтобы продлить подписку и не потерять доступ к мини-приложению.</small>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="lv-panel">
     <div class="lv-panel-head">Коды дня на сегодня ({{ daily_code_date|date:"d.m.Y" }})</div>

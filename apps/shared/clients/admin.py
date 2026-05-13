@@ -124,12 +124,53 @@ class DomainInline(admin.TabularInline):
 
 # ── Company admin ─────────────────────────────────────────────────────────────
 
+class PaymentStatusFilter(admin.SimpleListFilter):
+    """Фильтр по состоянию подписки. Удобно отбирать «надо позвонить»."""
+    title = 'Статус оплаты'
+    parameter_name = 'pay_state'
+
+    def lookups(self, request, model_admin):
+        return [
+            ('attention', '⚠️ Требуют внимания (≤10 дн.)'),
+            ('expired',   '🛑 Просрочены'),
+            ('urgent',    '🔥 Срочно (≤3 дн.)'),
+            ('warning',   '⏰ Скоро (4–10 дн.)'),
+            ('ok',        '✅ Активны'),
+        ]
+
+    def queryset(self, request, queryset):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .billing import URGENT_DAYS, WARNING_DAYS
+
+        today = timezone.localdate()
+        urgent_edge  = today + timedelta(days=URGENT_DAYS)
+        warning_edge = today + timedelta(days=WARNING_DAYS)
+        val = self.value()
+
+        if val == 'attention':
+            return queryset.filter(paid_until__lte=warning_edge)
+        if val == 'expired':
+            return queryset.filter(paid_until__lt=today)
+        if val == 'urgent':
+            return queryset.filter(paid_until__gte=today, paid_until__lte=urgent_edge)
+        if val == 'warning':
+            return queryset.filter(
+                paid_until__gt=urgent_edge,
+                paid_until__lte=warning_edge,
+            )
+        if val == 'ok':
+            return queryset.filter(paid_until__gt=warning_edge)
+        return queryset
+
+
 @admin.register(Company, site=public_admin)
 class CompanyAdmin(admin.ModelAdmin):
     inlines = [DomainInline]
-    list_display = ('name', 'client_id', 'schema_name', 'primary_domain', 'is_active', 'paid_until', 'config_link', 'admin_link')
-    list_filter = ('is_active',)
+    list_display = ('name', 'client_id', 'schema_name', 'primary_domain', 'is_active', 'payment_badge', 'config_link', 'admin_link')
+    list_filter = ('is_active', PaymentStatusFilter)
     search_fields = ('name', 'schema_name')
+    change_form_template = 'admin/clients/company/change_form.html'
 
     fieldsets = (
         (None, {
@@ -190,3 +231,31 @@ class CompanyAdmin(admin.ModelAdmin):
             url = f'https://{domain.domain}/admin'
             return format_html('<a href="{}" target="_blank">Перейти →</a>', url)
         return '—'
+
+    @admin.display(description='Оплачено до', ordering='paid_until')
+    def payment_badge(self, obj):
+        """Цветной бейдж со статусом подписки + дата."""
+        from .billing import payment_status
+        st = payment_status(obj.paid_until)
+        date_str = obj.paid_until.strftime('%d.%m.%Y') if obj.paid_until else '—'
+        return format_html(
+            '<span style="display:inline-flex;align-items:center;gap:6px;'
+            'padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;'
+            'background:{bg};color:{color};border:1px solid {border};white-space:nowrap;">'
+            '{icon} {date} · {label}'
+            '</span>',
+            bg=st['bg'], color=st['color'], border=st['border'],
+            icon=st['icon'], date=date_str, label=st['label'],
+        )
+
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        """Добавляет билинг-контекст для баннера в change_form."""
+        extra_context = extra_context or {}
+        try:
+            from .billing import payment_status
+            obj = self.get_object(request, object_id)
+            if obj is not None:
+                extra_context['billing'] = payment_status(obj.paid_until)
+        except Exception:
+            pass
+        return super().change_view(request, object_id, form_url, extra_context)

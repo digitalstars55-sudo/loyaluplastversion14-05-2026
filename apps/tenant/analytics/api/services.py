@@ -983,13 +983,19 @@ def get_rf_matrix(
     branch_ids: list[int] | None,
     mode: str = 'restaurant',
     client_ids: list[int] | None = None,
+    client_branch_ids: list[int] | None = None,
     thresholds: dict | None = None,
 ) -> dict:
     """
     Build the RF matrix for the given mode (restaurant | delivery).
 
-    client_ids: optional list of guest.Client PKs to restrict the matrix to
-                (used for period-based filtering — only guests active in the period).
+    client_branch_ids: optional list of ClientBranch PKs (per-branch профили) для
+                       подсчёта. Используется чтобы согласовать total матрицы
+                       с QR-сканами общей аналитики (один гость в N кафе = N
+                       профилей). RF score для каждого профиля берётся из
+                       client.rf_score (один на гостя).
+    client_ids: legacy — список guest.Client PKs (используется когда матрица
+                рисуется без периода). Один Client = одна запись в total.
     thresholds: optional thresholds dict; if omitted, derives from RFSettings
                 via get_rf_thresholds(branch_ids).
 
@@ -1018,17 +1024,41 @@ def get_rf_matrix(
     else:
         source = 'explicit'
 
-    ScoreModel = _get_score_model(mode)
-    qs = ScoreModel.objects.all()
-    qs = _branch_filter(qs, branch_ids, 'client__branch_profiles__branch__in')
-    if branch_ids:
-        qs = qs.distinct()
-    if client_ids is not None:
-        qs = qs.filter(client_id__in=client_ids)
+    # 2) Достаём «сырые» recency/frequency и пересчитываем r/f.
+    #    Если передан client_branch_ids — считаем per-profile (как QR-сканы):
+    #    один ClientBranch = одна строка, RF score достаётся из client.rf_score.
+    #    Иначе — legacy режим: per-Client из ScoreModel напрямую.
+    if client_branch_ids is not None:
+        from apps.tenant.branch.models import ClientBranch
+        score_field_base = (
+            'client__rf_score_delivery' if mode == 'delivery' else 'client__rf_score'
+        )
+        cb_qs = ClientBranch.objects.filter(
+            pk__in=client_branch_ids,
+            **{f'{score_field_base}__isnull': False},
+        )
+        rows = list(cb_qs.values(
+            f'{score_field_base}__recency_days',
+            f'{score_field_base}__frequency',
+        ))
+        # Унифицируем ключи под единый формат
+        rows = [
+            {
+                'recency_days': r[f'{score_field_base}__recency_days'],
+                'frequency':    r[f'{score_field_base}__frequency'],
+            }
+            for r in rows
+        ]
+    else:
+        ScoreModel = _get_score_model(mode)
+        qs = ScoreModel.objects.all()
+        qs = _branch_filter(qs, branch_ids, 'client__branch_profiles__branch__in')
+        if branch_ids:
+            qs = qs.distinct()
+        if client_ids is not None:
+            qs = qs.filter(client_id__in=client_ids)
+        rows = list(qs.values('id', 'recency_days', 'frequency'))
 
-    # 2) Достаём «сырые» recency/frequency и пересчитываем r/f
-    #    с учётом актуальных порогов выбранной области.
-    rows = list(qs.values('id', 'recency_days', 'frequency'))
     total = len(rows)
 
     cell_counts: dict[tuple[int, int], int] = defaultdict(int)
@@ -1094,6 +1124,9 @@ def _get_active_client_ids(
     """
     Return guest.Client PKs with at least one visit/delivery in [start_date, end_date].
     Used to scope the RF matrix to guests active in the selected period.
+
+    Note: используется только legacy-путями. Новый код предпочитает
+    _get_active_client_branch_ids(), который согласует подсчёт с QR-сканами.
     """
     if mode == 'restaurant':
         from apps.tenant.branch.models import ClientBranchVisit
@@ -1114,6 +1147,80 @@ def _get_active_client_ids(
         if branch_ids:
             qs = qs.filter(activated_by__branch__in=branch_ids)
         return list(qs.values_list('activated_by__client_id', flat=True).distinct())
+
+
+def _get_active_client_branch_ids(
+    branch_ids: list[int] | None, start_date: date, end_date: date, mode: str,
+) -> list[int]:
+    """
+    Return ClientBranch PKs (per-branch профили) активные в периоде —
+    та же логика, что у get_qr_scan_count(), чтобы итоги RF матрицы совпадали
+    с «отсканировали QR» из общей аналитики.
+
+    Для mode='restaurant':
+      ClientBranch с визитом в периоде И с любым из:
+        - community_via_app / newsletter_via_app / is_story_uploaded
+        - сыграл в игру
+        - оставил отзыв в приложении
+        - активировал delivery-код
+        - потратил монеты в магазине
+
+    Для mode='delivery':
+      ClientBranch с активированным delivery в периоде.
+    """
+    from django.db.models import Exists, OuterRef
+    from apps.tenant.branch.models import (
+        ClientBranch, ClientBranchVisit, CoinTransaction,
+        TransactionType, TransactionSource, TestimonialMessage,
+    )
+    from apps.tenant.game.models import ClientAttempt
+    from apps.tenant.delivery.models import Delivery
+
+    if mode == 'delivery':
+        qs = Delivery.objects.filter(
+            activated_at__date__gte=start_date,
+            activated_at__date__lte=end_date,
+            activated_by__isnull=False,
+        )
+        if branch_ids:
+            qs = qs.filter(activated_by__branch__in=branch_ids)
+        return list(qs.values_list('activated_by_id', flat=True).distinct())
+
+    visited_ids = ClientBranchVisit.objects.filter(
+        visited_at__date__gte=start_date,
+        visited_at__date__lte=end_date,
+    )
+    visited_ids = _branch_filter(visited_ids, branch_ids, 'client__branch__in').values('client_id')
+
+    cb_qs = ClientBranch.objects.filter(pk__in=visited_ids).filter(
+        Q(vk_status__community_via_app=True)
+        | Q(vk_status__newsletter_via_app=True)
+        | Q(vk_status__is_story_uploaded=True)
+        | Exists(ClientAttempt.objects.filter(
+            client=OuterRef('pk'),
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date,
+        ))
+        | Exists(TestimonialMessage.objects.filter(
+            conversation__client=OuterRef('pk'),
+            source=TestimonialMessage.Source.APP,
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date,
+        ))
+        | Exists(Delivery.objects.filter(
+            activated_by=OuterRef('pk'),
+            activated_at__date__gte=start_date,
+            activated_at__date__lte=end_date,
+        ))
+        | Exists(CoinTransaction.objects.filter(
+            client=OuterRef('pk'),
+            type=TransactionType.EXPENSE,
+            source=TransactionSource.SHOP,
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date,
+        ))
+    )
+    return list(cb_qs.values_list('pk', flat=True))
 
 
 # ── RF Matrix from snapshot (period-based) ───────────────────────────────────
@@ -1283,28 +1390,97 @@ def get_rf_summary_stats(branch_ids: list[int] | None, mode: str = 'restaurant')
 def get_rf_segment_guests(
     branch_ids: list[int] | None, r_score: int, f_score: int,
     mode: str = 'restaurant', limit: int = 50,
+    client_branch_ids: list[int] | None = None,
 ) -> list[dict]:
     """
     Guest list for a specific RF segment cell.
 
     Фильтрация выполняется по «свежим» r/f-баллам, пересчитанным на лету
     из стораженых recency_days/frequency с учётом актуальных порогов
-    выбранной области, чтобы клиник по ячейке всегда совпадал с тем,
+    выбранной области, чтобы клик по ячейке всегда совпадал с тем,
     что нарисовано в матрице.
+
+    Если передан client_branch_ids — список строится per-ClientBranch (та же
+    логика, что в QR-сканах общей аналитики). Иначе — legacy per-Client.
     """
     from apps.tenant.analytics.models import RFSettings
     _, thresholds, _ = RFSettings.resolve_for_scope(branch_ids)
 
+    from django.db.models import Max, Sum, Q as _Q
+    from apps.tenant.branch.models import ClientBranch, ClientBranchVisit, CoinTransaction
+
+    score_attr = 'rf_score_delivery' if mode == 'delivery' else 'rf_score'
+
+    if client_branch_ids is not None:
+        cb_qs = (
+            ClientBranch.objects
+            .select_related('client', f'client__{score_attr}', 'branch')
+            .filter(
+                pk__in=client_branch_ids,
+                **{f'client__{score_attr}__isnull': False},
+            )
+        )
+
+        matching: list[ClientBranch] = []
+        for cb in cb_qs.iterator():
+            rf = getattr(cb.client, score_attr, None)
+            if rf is None:
+                continue
+            if (_r_score(rf.recency_days, thresholds) == r_score
+                    and _f_score(rf.frequency, thresholds) == f_score):
+                matching.append(cb)
+                if len(matching) >= limit:
+                    break
+
+        if not matching:
+            return []
+
+        cb_pks = [cb.pk for cb in matching]
+        last_visit_map = {
+            r['client_id']: r['last']
+            for r in ClientBranchVisit.objects
+            .filter(client_id__in=cb_pks)
+            .values('client_id')
+            .annotate(last=Max('visited_at'))
+        }
+        balance_map = {
+            r['client_id']: (r['income'] or 0) - (r['expense'] or 0)
+            for r in CoinTransaction.objects
+            .filter(client_id__in=cb_pks)
+            .values('client_id')
+            .annotate(
+                income=Sum('amount', filter=_Q(type='income')),
+                expense=Sum('amount', filter=_Q(type='expense')),
+            )
+        }
+
+        result = []
+        for cb in matching:
+            rf = getattr(cb.client, score_attr)
+            guest = cb.client
+            last_visit = last_visit_map.get(cb.pk)
+            result.append({
+                'id':           guest.pk,
+                'vk_id':        guest.vk_id,
+                'first_name':   guest.first_name,
+                'last_name':    guest.last_name,
+                'branch':       cb.branch.name if cb.branch_id else '',
+                'recency_days': rf.recency_days,
+                'frequency':    rf.frequency,
+                'r_score':      r_score,
+                'f_score':      f_score,
+                'last_visit':   last_visit.strftime('%d.%m.%Y') if last_visit else '—',
+                'coins':        balance_map.get(cb.pk, 0),
+            })
+        return result
+
+    # Legacy per-Client path (без периода): сохранён для обратной совместимости.
     ScoreModel = _get_score_model(mode)
     qs = ScoreModel.objects.select_related('client', 'segment').all()
     qs = _branch_filter(qs, branch_ids, 'client__branch_profiles__branch__in')
     if branch_ids:
         qs = qs.distinct()
 
-    from django.db.models import Max, Sum, Q as _Q
-    from apps.tenant.branch.models import ClientBranchVisit, CoinTransaction
-
-    # Берём сначала всех гостей из qs, фильтруем по пересчитанным r/f.
     matching_scores = []
     for s in qs.iterator():
         if (_r_score(s.recency_days, thresholds) == r_score
@@ -1318,7 +1494,6 @@ def get_rf_segment_guests(
 
     guest_ids = [s.client_id for s in matching_scores]
 
-    # Aggregate across ALL branches for each unique guest
     last_visit_map = {
         r['client__client_id']: r['last']
         for r in ClientBranchVisit.objects
@@ -1340,7 +1515,7 @@ def get_rf_segment_guests(
 
     result = []
     for score in matching_scores:
-        guest = score.client  # guest.Client
+        guest = score.client
         last_visit = last_visit_map.get(guest.pk)
         result.append({
             'id':           guest.pk,
@@ -1531,8 +1706,11 @@ def get_rf_stats(
     if end_date is None:
         end_date = today
 
-    active_ids = _get_active_client_ids(branch_ids, start_date, end_date, mode)
-    matrix = get_rf_matrix(branch_ids, mode=mode, client_ids=active_ids)
+    # Считаем матрицу по тем же ClientBranch профилям, что попадают в QR-сканы
+    # общей аналитики (per-branch профиль = строка матрицы). Это гарантирует,
+    # что total RF матрицы и QR-сканы в общей аналитике совпадают.
+    active_cb_ids = _get_active_client_branch_ids(branch_ids, start_date, end_date, mode)
+    matrix = get_rf_matrix(branch_ids, mode=mode, client_branch_ids=active_cb_ids)
 
     # Derive summary cards directly from the period matrix
     total   = matrix['total']

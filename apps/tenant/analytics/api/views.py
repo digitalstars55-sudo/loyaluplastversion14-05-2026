@@ -74,10 +74,22 @@ class RFStatsAPIView(APIView):
         start_date = ser.validated_data.get('start')
         end_date   = ser.validated_data.get('end')
 
-        # Guest list for a specific matrix cell
+        # Guest list for a specific matrix cell.
+        # Если есть период — фильтруем список тем же набором ClientBranch,
+        # что попадает в матрицу (чтобы count и длина списка были согласованы).
         if r_score is not None and f_score is not None:
-            guests = services.get_rf_segment_guests(branch_ids, r_score, f_score, mode=mode)
-            matrix = services.get_rf_matrix(branch_ids, mode=mode)
+            active_cb_ids = None
+            if start_date and end_date:
+                active_cb_ids = services._get_active_client_branch_ids(
+                    branch_ids, start_date, end_date, mode,
+                )
+            guests = services.get_rf_segment_guests(
+                branch_ids, r_score, f_score, mode=mode,
+                client_branch_ids=active_cb_ids,
+            )
+            matrix = services.get_rf_matrix(
+                branch_ids, mode=mode, client_branch_ids=active_cb_ids,
+            )
             cell   = matrix['cells'].get(f'{r_score}_{f_score}', {})
             return Response({
                 'guests':       guests,
@@ -166,17 +178,21 @@ class SendSegmentBroadcastAPIView(APIView):
     """
     POST /api/v1/analytics/rf/send-broadcast/
 
-    Creates a Broadcast + BroadcastSend and immediately sends VK messages
-    to all guests in the specified RF segment.
+    Creates a Broadcast + BroadcastSend per branch and sends VK messages.
 
     Accepts both JSON and multipart form data (for image upload).
 
     Body:
-      segment_id   — RFSegment PK (required)
+      segment_id   — RFSegment PK (опционально; без него — рассылка всем оцифрованным)
       message_text — broadcast text (required, max 4096 chars)
       mode         — restaurant | delivery (default: restaurant)
-      branch_ids   — comma-separated Branch PKs (omit = all active)
+      branch_ids   — comma-separated Branch PKs (omit = все активные)
       image        — image file (optional, multipart only)
+
+    Если segment_id передан — Broadcast привязывается к указанному RFSegment
+    (audience_type=ALL + rf_segments=[segment]). Если segment_id опущен —
+    создаётся Broadcast БЕЗ rf_segments (audience_type=ALL → все оцифрованные
+    в данной точке).
     """
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
@@ -193,17 +209,18 @@ class SendSegmentBroadcastAPIView(APIView):
         branch_ids   = request.data.get('branch_ids', '')
         image_file   = request.FILES.get('image')
 
-        if not segment_id:
-            return Response({'error': 'segment_id обязателен'}, status=status.HTTP_400_BAD_REQUEST)
         if not message_text:
             return Response({'error': 'Текст рассылки не может быть пустым'}, status=status.HTTP_400_BAD_REQUEST)
         if len(message_text) > 4096:
             return Response({'error': 'Текст превышает лимит VK (4096 символов)'}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            segment = RFSegment.objects.get(pk=segment_id)
-        except RFSegment.DoesNotExist:
-            return Response({'error': 'Сегмент не найден'}, status=status.HTTP_404_NOT_FOUND)
+        # Optional segment lookup — без segment_id рассылаем всем оцифрованным.
+        segment = None
+        if segment_id:
+            try:
+                segment = RFSegment.objects.get(pk=segment_id)
+            except RFSegment.DoesNotExist:
+                return Response({'error': 'Сегмент не найден'}, status=status.HTTP_404_NOT_FOUND)
 
         # Resolve target branches
         if branch_ids:
@@ -218,19 +235,25 @@ class SendSegmentBroadcastAPIView(APIView):
         if not branches.exists():
             return Response({'error': 'Нет активных торговых точек'}, status=status.HTTP_400_BAD_REQUEST)
 
+        broadcast_label = (
+            f'RF: {segment.emoji} {segment.name} ({segment.code})' if segment
+            else 'Рассылка всем оцифрованным гостям'
+        )
+
         results = []
         for branch in branches:
-            # Create broadcast (with optional image)
             broadcast = Broadcast.objects.create(
                 branch=branch,
-                name=f'RF: {segment.emoji} {segment.name} ({segment.code})',
+                name=broadcast_label,
                 message_text=message_text,
                 audience_type=AudienceType.ALL,
                 image=image_file if image_file else None,
             )
-            broadcast.rf_segments.set([segment])
+            if segment is not None:
+                broadcast.rf_segments.set([segment])
+            # Без сегмента rf_segments остаются пустыми → resolve_recipients
+            # вернёт всех активных оцифрованных гостей этой точки.
 
-            # Create send and run it
             triggered_by = getattr(request.user, 'username', 'api')
             send = create_send(broadcast, triggered_by=triggered_by, trigger_type='manual')
 
@@ -257,9 +280,9 @@ class SendSegmentBroadcastAPIView(APIView):
 
         total_sent = sum(r.get('sent', 0) for r in results)
         return Response({
-            'ok':      True,
-            'segment': f'{segment.emoji} {segment.name}',
-            'results': results,
+            'ok':         True,
+            'segment':    f'{segment.emoji} {segment.name}' if segment else 'Все оцифрованные гости',
+            'results':    results,
             'total_sent': total_sent,
         })
 
@@ -268,10 +291,12 @@ class GenerateBroadcastTextAPIView(APIView):
     """
     POST /api/v1/analytics/rf/generate-broadcast-text/
 
-    Uses Claude AI to generate a broadcast message for an RF segment.
+    Uses Claude AI to generate a broadcast message.
 
     Body (JSON):
-      segment_id — RFSegment PK (required)
+      segment_id — RFSegment PK (опционально). Если передан — текст пишется
+                   с подсказкой по сегменту. Без него — общий текст для всех
+                   оцифрованных гостей.
     """
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT, 500: OpenApiTypes.OBJECT})
@@ -280,19 +305,14 @@ class GenerateBroadcastTextAPIView(APIView):
         from django.conf import settings as _settings
 
         segment_id = request.data.get('segment_id')
-        if not segment_id:
-            return Response({'error': 'segment_id обязателен'}, status=status.HTTP_400_BAD_REQUEST)
 
-        from apps.tenant.analytics.models import RFSegment
-        try:
-            segment = RFSegment.objects.get(pk=segment_id)
-        except RFSegment.DoesNotExist:
-            return Response({'error': 'Сегмент не найден'}, status=status.HTTP_404_NOT_FOUND)
-
-        # Get standard hint for the segment
-        code = segment.code
-        std = services._STANDARD_SEGMENT_DATA.get(code, {})
-        hint = std.get('hint', segment.hint or segment.strategy or '')
+        segment = None
+        if segment_id:
+            from apps.tenant.analytics.models import RFSegment
+            try:
+                segment = RFSegment.objects.get(pk=segment_id)
+            except RFSegment.DoesNotExist:
+                return Response({'error': 'Сегмент не найден'}, status=status.HTTP_404_NOT_FOUND)
 
         # Get tenant/company name for context
         try:
@@ -319,12 +339,23 @@ class GenerateBroadcastTextAPIView(APIView):
             '- Верни ТОЛЬКО текст рассылки, без пояснений.'
         )
 
-        user_message = (
-            f'Кафе: {company_name}\n'
-            f'Сегмент гостей: {segment.name} ({segment.code})\n'
-            f'Подсказка по сегменту:\n{hint}\n\n'
-            f'Напиши короткое VK-сообщение для этого сегмента.'
-        )
+        if segment is not None:
+            code = segment.code
+            std = services._STANDARD_SEGMENT_DATA.get(code, {})
+            hint = std.get('hint', segment.hint or segment.strategy or '')
+            user_message = (
+                f'Кафе: {company_name}\n'
+                f'Сегмент гостей: {segment.name} ({segment.code})\n'
+                f'Подсказка по сегменту:\n{hint}\n\n'
+                f'Напиши короткое VK-сообщение для этого сегмента.'
+            )
+        else:
+            user_message = (
+                f'Кафе: {company_name}\n'
+                f'Аудитория: ВСЕ оцифрованные гости заведения (любая давность и частота визитов).\n'
+                f'Напиши универсальное короткое VK-сообщение — приветственное, '
+                f'мотивирующее заглянуть в кафе, без привязки к конкретному поводу.'
+            )
 
         try:
             import os

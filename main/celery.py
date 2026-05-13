@@ -60,10 +60,10 @@ app.conf.beat_schedule = {
         'schedule': crontab(hour=9, minute=0),
         'kwargs': {'process_evening': True},
     },
-    # Generate daily codes (game, quest, birthday) for all branches at midnight
+    # Generate daily codes (game, quest, birthday) for all branches at 03:00 MSK
     'generate-daily-codes': {
         'task': 'apps.tenant.branch.tasks.generate_daily_codes_task',
-        'schedule': crontab(hour=0, minute=0),
+        'schedule': crontab(hour=3, minute=0),
     },
     # VK membership catchup: catch group_join/leave/message_allow/deny missed while server was down
     'vk-membership-catchup': {
