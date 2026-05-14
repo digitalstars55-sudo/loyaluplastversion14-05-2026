@@ -288,3 +288,13 @@ TENANT_DOMAIN_ROOT = os.getenv('TENANT_DOMAIN_ROOT', 'levelupapp.ru')
 SUPER_ADMIN_EMAILS = [
     e.strip() for e in os.getenv('SUPER_ADMIN_EMAILS', '').split(',') if e.strip()
 ]
+
+
+# ── LoyalUP ↔ CheckUp relay (Stage 2 support chat integration) ─────────────────
+# Shared secret to authenticate inbound replies from CheckUp side.
+# Same value must be set on CheckUp .env. Loopback-only check enforced
+# in apps.shared.relay.views.InboundReplyView.
+LOYALUP_RELAY_SECRET = os.getenv("LOYALUP_RELAY_SECRET", "")
+# CheckUp inbound URL (where outbound _safe_relay_to_checkup POSTs).
+CHECKUP_RELAY_URL = os.getenv("CHECKUP_RELAY_URL", "http://localhost:8000/api/v1/loyalup/inbound/")
+
