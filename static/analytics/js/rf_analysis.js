@@ -294,20 +294,104 @@ function getCookie(name) {
 // ── Broadcast modal ────────────────────────────────────────────────
 // _modalCell — данные ячейки сегмента; null при режиме «всем оцифрованным».
 // _modalMode — 'segment' | 'all'. Влияет на тексты, AI-prompt и параметры запроса.
+// _variants — массив {percent, text} для A/B/% сплита; всегда минимум 1 элемент.
 let _modalCell = null;
 let _modalMode = 'segment';
+let _variants  = [{ percent: 100, text: '' }];
 
 function _resetModalUI() {
-  const textarea = document.getElementById('modal-message');
   const statusEl = document.getElementById('modal-status');
-  textarea.value = '';
   statusEl.style.display = 'none';
   statusEl.textContent = '';
-  document.getElementById('btn-ai').disabled = false;
   document.getElementById('btn-send').disabled = false;
   document.getElementById('btn-send').textContent = '📨 Отправить';
+  document.getElementById('modal-warning').style.display = 'none';
+  document.getElementById('modal-branches').style.display = 'none';
+  _variants = [{ text: '' }];
+  _renderVariants();
   removeModalImage();
-  updateCharCount();
+}
+
+// ── Single message block + AI ────────────────────────────────────
+function _renderVariants() {
+  const container = document.getElementById('modal-variants');
+  if (!container) return;
+  container.innerHTML = '';
+  const v = _variants[0];
+  const lenColor = v.text.length > 4096 ? '#dc2626' : '#94a3b8';
+  const card = document.createElement('div');
+  card.style.cssText = 'border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:10px;background:#fff;';
+  card.innerHTML = `
+    <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:8px;">Текст сообщения</div>
+    <textarea class="modal-textarea" oninput="updateVariantText(this.value)"
+              placeholder="Введите текст или нажмите «🤖 AI»..."
+              maxlength="4096">${_escapeHtml(v.text)}</textarea>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
+      <button type="button" id="btn-ai-0" onclick="generateAIText()"
+              style="font-size:12px;padding:6px 12px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;color:#0f172a;font-weight:600;">
+        🤖 Сгенерировать AI
+      </button>
+      <div style="font-size:12px;color:${lenColor};">${v.text.length} / 4096</div>
+    </div>
+  `;
+  container.appendChild(card);
+}
+
+function _escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function updateVariantText(value) {
+  if (!_variants[0]) return;
+  _variants[0].text = value;
+  const card = document.getElementById('modal-variants').firstElementChild;
+  if (!card) return;
+  const counter = card.querySelector('div[style*="4096"]');
+  if (counter) {
+    counter.textContent = `${value.length} / 4096`;
+    counter.style.color = value.length > 4096 ? '#dc2626' : '#94a3b8';
+  }
+}
+
+// ── Branch picker (показывается только в режиме «всем») ───────────────
+function _renderModalBranches() {
+  const container = document.getElementById('modal-branches-list');
+  container.innerHTML = '';
+  const preselect = new Set((ACTIVE_BRANCH_IDS && ACTIVE_BRANCH_IDS.length) ? ACTIVE_BRANCH_IDS : ALL_BRANCHES.map(b => b.id));
+  ALL_BRANCHES.forEach(b => {
+    const id = `modal-branch-cb-${b.id}`;
+    const label = document.createElement('label');
+    label.style.cssText = 'display:inline-flex;align-items:center;gap:10px;font-size:15px;color:#0f172a;cursor:pointer;user-select:none;padding:6px 10px;border-radius:6px;font-weight:500;';
+    label.innerHTML = `<input type="checkbox" id="${id}" value="${b.id}" ${preselect.has(b.id) ? 'checked' : ''} onchange="updateModalBranchSummary()" style="width:18px;height:18px;cursor:pointer;"> ${b.name}`;
+    container.appendChild(label);
+  });
+  updateModalBranchSummary();
+}
+
+function modalBranchesSelectAll(checked) {
+  document.querySelectorAll('#modal-branches-list input[type=checkbox]').forEach(cb => { cb.checked = checked; });
+  updateModalBranchSummary();
+}
+
+function _getSelectedBranchIds() {
+  return Array.from(document.querySelectorAll('#modal-branches-list input[type=checkbox]:checked'))
+              .map(cb => parseInt(cb.value, 10))
+              .filter(n => !isNaN(n));
+}
+
+function updateModalBranchSummary() {
+  const selected = _getSelectedBranchIds();
+  const summary = document.getElementById('modal-branches-summary');
+  if (selected.length === 0) {
+    summary.style.color = '#dc2626';
+    summary.textContent = '⚠️ Не выбрано ни одной точки — рассылка не уйдёт';
+  } else if (selected.length === ALL_BRANCHES.length) {
+    summary.style.color = '#64748b';
+    summary.textContent = `Выбраны ВСЕ ${ALL_BRANCHES.length} торговых точек`;
+  } else {
+    summary.style.color = '#64748b';
+    summary.textContent = `Выбрано ${selected.length} из ${ALL_BRANCHES.length} торговых точек`;
+  }
 }
 
 function _totalDigitisedFromMatrix() {
@@ -323,6 +407,7 @@ function openBroadcastModal(cellKey) {
   if (!cell) return;
   _modalCell = cell;
   _modalMode = 'segment';
+  document.querySelector('.modal-header-title').textContent = '📨 Рассылка по сегменту';
 
   const info     = document.getElementById('modal-segment-info');
   const hint     = document.getElementById('modal-hint');
@@ -346,7 +431,9 @@ function openBroadcastModal(cellKey) {
   _resetModalUI();
   const modal = document.getElementById('broadcast-modal');
   modal.classList.add('active');
-  document.getElementById('modal-message').focus();
+  // Фокус на textarea первого варианта
+  const ta = document.querySelector('#modal-variants textarea');
+  if (ta) ta.focus();
 }
 
 function openBroadcastModalAll() {
@@ -354,32 +441,37 @@ function openBroadcastModalAll() {
   _modalCell = null;
   _modalMode = 'all';
 
-  const info     = document.getElementById('modal-segment-info');
-  const hint     = document.getElementById('modal-hint');
-  const hintText = document.getElementById('modal-hint-text');
+  const info = document.getElementById('modal-segment-info');
+  const hint = document.getElementById('modal-hint');
 
   const total = _totalDigitisedFromMatrix();
   info.innerHTML = `
-    <span class="modal-segment-badge" style="background:#1565c0;">📨 Все оцифрованные гости</span>
-    <span style="font-size:12px;color:#64748b;">по всем выбранным точкам</span>
+    <span class="modal-segment-badge" style="background:#1565c0;color:#fff;">📨 Рассылка ВСЕЙ базе</span>
     <span class="modal-segment-count">~${total} гостей</span>
   `;
 
-  hintText.innerHTML =
-    'Сообщение получат все активные гости с привязанным VK ID. ' +
-    'Фильтры по сегментам не применяются.';
-  hint.style.display = '';
+  // Подсказка по сегменту здесь не нужна — есть отдельный warning.
+  hint.style.display = 'none';
 
   _resetModalUI();
+  // _resetModalUI скрывает warning/branches — для режима «всем» показываем.
+  document.getElementById('modal-warning').style.display = '';
+  document.getElementById('modal-branches').style.display = '';
+  _renderModalBranches();
+
+  document.querySelector('.modal-header-title').textContent = '📨 Рассылка всем гостям';
+
   const modal = document.getElementById('broadcast-modal');
   modal.classList.add('active');
-  document.getElementById('modal-message').focus();
+  const ta = document.querySelector('#modal-variants textarea');
+  if (ta) ta.focus();
 }
 
 function closeBroadcastModal() {
   document.getElementById('broadcast-modal').classList.remove('active');
   _modalCell = null;
   _modalMode = 'segment';
+  _variants  = [{ text: '' }];
   removeModalImage();
 }
 
@@ -439,14 +531,6 @@ document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeBroadcastModal();
 });
 
-function updateCharCount() {
-  const textarea = document.getElementById('modal-message');
-  const counter  = document.getElementById('modal-char-count');
-  const len = textarea.value.length;
-  counter.textContent = `${len} / 4096`;
-  counter.className = 'modal-char-count' + (len > 4096 ? ' over' : '');
-}
-
 function _setModalStatus(msg, type) {
   const el = document.getElementById('modal-status');
   el.textContent = msg;
@@ -455,12 +539,10 @@ function _setModalStatus(msg, type) {
 }
 
 function generateAIText() {
-  // Допустимые режимы: 'segment' (требует _modalCell.segment_id) и 'all' (без segment_id).
   if (_modalMode === 'segment' && (!_modalCell || !_modalCell.segment_id)) return;
 
-  const btn = document.getElementById('btn-ai');
-  btn.disabled = true;
-  btn.textContent = '⏳ Генерация...';
+  const btn = document.getElementById('btn-ai-0');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Генерация...'; }
   _setModalStatus('AI генерирует текст рассылки...', 'loading');
 
   const payload = _modalMode === 'segment'
@@ -475,45 +557,52 @@ function generateAIText() {
     .then(r => r.json())
     .then(data => {
       if (data.error) {
-        _setModalStatus('Ошибка: ' + data.error, 'error');
+        _setModalStatus('Ошибка AI: ' + data.error, 'error');
       } else {
-        document.getElementById('modal-message').value = data.text || '';
-        updateCharCount();
+        _variants[0].text = data.text || '';
+        _renderVariants();
         _setModalStatus('✓ Текст сгенерирован — проверьте и нажмите «Отправить»', 'success');
       }
     })
     .catch(() => _setModalStatus('Ошибка соединения', 'error'))
     .finally(() => {
-      btn.disabled = false;
-      btn.textContent = '🤖 Сгенерировать AI';
+      const btn2 = document.getElementById('btn-ai-0');
+      if (btn2) { btn2.disabled = false; btn2.textContent = '🤖 Сгенерировать AI'; }
     });
 }
 
 function sendBroadcast() {
   if (_modalMode === 'segment' && (!_modalCell || !_modalCell.segment_id)) return;
 
-  const text = document.getElementById('modal-message').value.trim();
+  const text = (_variants[0] && _variants[0].text || '').trim();
   if (!text) { _setModalStatus('Введите текст рассылки', 'error'); return; }
   if (text.length > 4096) { _setModalStatus('Текст превышает 4096 символов', 'error'); return; }
 
+  let branchIds;
   let confirmMsg;
+
   if (_modalMode === 'segment') {
     const segName = (_modalCell.segment_emoji || '') + ' ' + (_modalCell.segment_name || '');
     confirmMsg = `Отправить рассылку сегменту «${segName.trim()}» (${_modalCell.count} гостей)?`;
+    branchIds = BRANCH_PARAM ? BRANCH_PARAM.replace('branches=', '') : '';
   } else {
+    const selected = _getSelectedBranchIds();
+    if (selected.length === 0) {
+      _setModalStatus('Выберите хотя бы одну торговую точку', 'error');
+      return;
+    }
+    const allSelected = selected.length === ALL_BRANCHES.length;
+    const pointsLabel = allSelected ? `ВСЕМ ${ALL_BRANCHES.length} точкам` : `${selected.length} точкам`;
     const total = _totalDigitisedFromMatrix();
-    confirmMsg = `Отправить рассылку ВСЕМ оцифрованным гостям (~${total} получателей)?`;
+    confirmMsg = `Отправить рассылку ВСЕМ гостям по ${pointsLabel}? (~${total} получателей)`;
+    branchIds = selected.join(',');
   }
   if (!confirm(confirmMsg)) return;
 
   const btnSend = document.getElementById('btn-send');
-  const btnAI   = document.getElementById('btn-ai');
   btnSend.disabled = true;
-  btnAI.disabled   = true;
   btnSend.textContent = '⏳ Отправка...';
   _setModalStatus('Рассылка отправляется, подождите...', 'loading');
-
-  const branchIds = BRANCH_PARAM ? BRANCH_PARAM.replace('branches=', '') : '';
 
   const formData = new FormData();
   if (_modalMode === 'segment') {
@@ -534,7 +623,6 @@ function sendBroadcast() {
       if (data.error) {
         _setModalStatus('Ошибка: ' + data.error, 'error');
         btnSend.disabled = false;
-        btnAI.disabled   = false;
         btnSend.textContent = '📨 Отправить';
         return;
       }
@@ -555,14 +643,12 @@ function sendBroadcast() {
       setTimeout(() => {
         closeBroadcastModal();
         btnSend.disabled = false;
-        btnAI.disabled   = false;
         btnSend.textContent = '📨 Отправить';
       }, 3000);
     })
     .catch(() => {
       _setModalStatus('Ошибка соединения', 'error');
       btnSend.disabled = false;
-      btnAI.disabled   = false;
       btnSend.textContent = '📨 Отправить';
     });
 }

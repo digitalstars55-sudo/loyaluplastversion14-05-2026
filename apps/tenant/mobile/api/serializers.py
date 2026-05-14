@@ -1,0 +1,160 @@
+"""
+Сериализаторы для мобильного API. Все поля соответствуют интерфейсам
+в `levelup-back-mobile/rf-mobile/src/types.ts`.
+
+ВАЖНО: модели не правим. Если поле отсутствует — сериализатор отдаёт
+безопасное значение по умолчанию (null/false/empty), мобайл готов это
+проглотить.
+"""
+
+from __future__ import annotations
+
+from rest_framework import serializers
+
+from apps.tenant.branch.models import (
+    Branch,
+    TestimonialConversation,
+    TestimonialMessage,
+)
+
+
+# ════════════════════════════════════════════════════════════════════
+# Branch (точка)
+# ════════════════════════════════════════════════════════════════════
+class BranchSerializer(serializers.ModelSerializer):
+    address = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Branch
+        fields = ['id', 'branch_id', 'name', 'is_active', 'address']
+        read_only_fields = fields
+
+    def get_address(self, obj) -> str | None:
+        cfg = getattr(obj, 'config', None)
+        return getattr(cfg, 'address', None) if cfg else None
+
+
+# ════════════════════════════════════════════════════════════════════
+# Reviews (отзывы) — TestimonialConversation в публичном виде для мобайла
+# ════════════════════════════════════════════════════════════════════
+class ReviewListSerializer(serializers.ModelSerializer):
+    """
+    Соответствует мобильному `Review` interface.
+
+    Сериализатор НЕ создаёт draft-полей (`has_draft`, `draft_text`,
+    `draft_created_at`) пока их нет в модели. Возвращаем безопасные
+    дефолты — мобайл это переварит.
+    """
+    branch_id     = serializers.SerializerMethodField()
+    branch_name   = serializers.SerializerMethodField()
+    customer_name = serializers.SerializerMethodField()
+    text          = serializers.SerializerMethodField()
+    rating        = serializers.SerializerMethodField()
+    source        = serializers.SerializerMethodField()
+    has_draft       = serializers.SerializerMethodField()
+    draft_text      = serializers.SerializerMethodField()
+    draft_created_at = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TestimonialConversation
+        fields = [
+            'id',
+            'source',
+            'sentiment',
+            'ai_comment',
+            'branch_id',
+            'branch_name',
+            'customer_name',
+            'vk_sender_id',
+            'text',
+            'rating',
+            'last_message_at',
+            'has_unread',
+            'is_replied',
+            'has_draft',
+            'draft_text',
+            'draft_created_at',
+        ]
+
+    def _last_message(self, obj):
+        # Кэш на инстансе чтобы не дёргать БД повторно
+        cached = getattr(obj, '_last_msg_cache', None)
+        if cached is not None:
+            return cached
+        msg = (
+            obj.messages.exclude(source=TestimonialMessage.Source.ADMIN_REPLY)
+            .order_by('-created_at').first()
+            or obj.messages.order_by('-created_at').first()
+        )
+        obj._last_msg_cache = msg
+        return msg
+
+    def get_branch_id(self, obj) -> int | None:
+        return obj.branch_id
+
+    def get_branch_name(self, obj) -> str:
+        return obj.branch.name if obj.branch_id else 'ВК группа'
+
+    def get_customer_name(self, obj) -> str:
+        # Зарегистрированный гость → имя из ClientBranch.client
+        if obj.client_id and obj.client and obj.client.client:
+            full = (f'{obj.client.client.first_name} {obj.client.client.last_name}').strip()
+            return full or f'VK {obj.vk_sender_id}'
+        # VK-гость
+        if obj.vk_guest_id and obj.vk_guest:
+            full = (f'{obj.vk_guest.first_name} {obj.vk_guest.last_name}').strip()
+            return full or f'VK {obj.vk_sender_id}'
+        return f'VK {obj.vk_sender_id}' if obj.vk_sender_id else 'Гость'
+
+    def get_text(self, obj) -> str:
+        msg = self._last_message(obj)
+        return msg.text if msg else ''
+
+    def get_rating(self, obj) -> int | None:
+        msg = self._last_message(obj)
+        return msg.rating if msg and msg.rating else None
+
+    def get_source(self, obj) -> str:
+        # APP если в треде есть APP-сообщения, иначе VK_MESSAGE
+        if obj.messages.filter(source=TestimonialMessage.Source.APP).exists():
+            return 'APP'
+        return 'VK_MESSAGE'
+
+    def get_has_draft(self, obj) -> bool:
+        # AI-черновики реализованы: показываем флаг если есть актуальный (не отвергнутый) черновик
+        return bool(obj.ai_draft) and not obj.ai_draft_rejected
+
+    def get_draft_text(self, obj) -> str | None:
+        if obj.ai_draft and not obj.ai_draft_rejected:
+            return obj.ai_draft
+        return None
+
+    def get_draft_created_at(self, obj):
+        # Используем updated_at как proxy для времени генерации черновика
+        if obj.ai_draft and not obj.ai_draft_rejected:
+            return obj.updated_at.isoformat() if obj.updated_at else None
+        return None
+
+
+# ════════════════════════════════════════════════════════════════════
+# Review messages
+# ════════════════════════════════════════════════════════════════════
+class ReviewMessageSerializer(serializers.ModelSerializer):
+    admin_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TestimonialMessage
+        fields = ['id', 'source', 'text', 'rating', 'created_at', 'admin_name']
+        read_only_fields = fields
+
+    def get_admin_name(self, obj):
+        # У TestimonialMessage сейчас нет поля admin — отдаём None.
+        # Когда добавится связь TestimonialMessage.admin = FK(User), сюда вернём имя.
+        return None
+
+
+# ════════════════════════════════════════════════════════════════════
+# Reply
+# ════════════════════════════════════════════════════════════════════
+class ReviewReplySerializer(serializers.Serializer):
+    text = serializers.CharField(required=True, allow_blank=False, max_length=4000)

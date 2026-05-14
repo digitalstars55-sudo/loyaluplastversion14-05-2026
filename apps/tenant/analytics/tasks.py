@@ -59,6 +59,11 @@ def process_ai_review_task(self, conversation_id: int, schema_name: str) -> dict
             ) or ''
 
             ok = analyze_and_save(conv.id, full_text, first_source)
+            if ok:
+                try:
+                    auto_generate_draft_task.delay(conv.id, schema_name)
+                except Exception:
+                    logger.warning('auto_generate_draft_task dispatch failed', exc_info=True)
             return {'ok': ok, 'conversation_id': conversation_id}
 
     except TestimonialConversation.DoesNotExist:
@@ -213,4 +218,86 @@ def calculate_rf_all_tenants_task(self) -> dict:
     if summary['errors']:
         logger.warning('RF recalc finished with errors: %s', summary['errors'])
 
+    return summary
+
+
+# ════════════════════════════════════════════════════════════════════
+# AUTO-REPLY: AI draft generation + push notifications
+# (added by hot-patch 2026-05-14)
+# ════════════════════════════════════════════════════════════════════
+@shared_task(name='apps.tenant.analytics.tasks.auto_generate_draft_task')
+def auto_generate_draft_task(conversation_id: int, schema_name: str) -> dict:
+    """
+    После AI-классификации тональности:
+    — генерит черновик ответа (если auto-reply включён и фильтры пройдены)
+    — шлёт push 'draft_ready' админам тенанта
+    Идемпотентен: если черновик уже есть/отвергнут/отвечен — skip.
+    """
+    from django_tenants.utils import schema_context, get_tenant_model
+    from apps.tenant.analytics.auto_reply import (
+        maybe_generate_auto_draft, push_draft_ready,
+    )
+
+    try:
+        with schema_context(schema_name):
+            text = maybe_generate_auto_draft(conversation_id)
+        if not text:
+            return {'skipped': True}
+
+        TenantModel = get_tenant_model()
+        tenant = TenantModel.objects.filter(schema_name=schema_name).first()
+        tenant_name = tenant.name if tenant else schema_name
+
+        push_result = push_draft_ready(schema_name, tenant_name, conversation_id)
+        return {'ok': True, 'draft_len': len(text), 'push': push_result}
+    except Exception as exc:
+        logger.exception(
+            'auto_generate_draft_task failed conv=%s schema=%s',
+            conversation_id, schema_name,
+        )
+        return {'error': str(exc)}
+
+
+@shared_task(name='apps.tenant.analytics.tasks.send_draft_reminders_task')
+def send_draft_reminders_task() -> dict:
+    """
+    Beat-task (например каждые 30 мин): для каждого тенанта
+    проверяет конверсации с черновиком, не ответом, и старше reminder_minutes —
+    шлёт повторный push 'draft_ready'.
+    """
+    from django.utils import timezone
+    from datetime import timedelta
+    from django_tenants.utils import get_tenant_model, schema_context
+    from apps.tenant.analytics.auto_reply import push_draft_ready
+
+    TenantModel = get_tenant_model()
+    summary = {'tenants': 0, 'reminders_sent': 0}
+
+    for tenant in TenantModel.objects.exclude(schema_name='public'):
+        try:
+            with schema_context(tenant.schema_name):
+                from apps.tenant.branch.models import (
+                    TestimonialConversation, ReviewAutoReplyConfig,
+                )
+                cfg = ReviewAutoReplyConfig.get_singleton()
+                if not cfg.enabled:
+                    continue
+                reminder_min = int(cfg.reminder_minutes or 180)
+                cutoff = timezone.now() - timedelta(minutes=reminder_min)
+
+                qs = TestimonialConversation.objects.filter(
+                    is_replied=False,
+                    ai_draft_rejected=False,
+                    updated_at__lt=cutoff,
+                ).exclude(ai_draft='').exclude(ai_draft__isnull=True)
+                ids = list(qs.values_list('pk', flat=True)[:50])
+                summary['tenants'] += 1
+            for conv_id in ids:
+                push_draft_ready(tenant.schema_name, tenant.name, conv_id)
+                summary['reminders_sent'] += 1
+        except Exception as e:
+            logger.warning(
+                'send_draft_reminders_task failed for %s: %s',
+                tenant.schema_name, e,
+            )
     return summary

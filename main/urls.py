@@ -26,8 +26,11 @@ urlpatterns = [
     path('api/v1/', include('apps.tenant.quest.api.urls')),
     path('telegram/', include('apps.tenant.telegram.api.urls')),
     path('api/v1/', include('apps.tenant.analytics.api.urls')),
-    path('api/v1/', include('apps.tenant.offline_promo.api.urls')),
     path('analytics/', include('apps.tenant.analytics.urls')),
+
+    # Мобильное API: auth (JWT) + push register + tenant data. Аддитивно, веб не трогает.
+    path('api/v1/', include('apps.shared.users.api.urls')),
+    path('api/v1/', include('apps.tenant.mobile.api.urls')),
 
     # API Docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

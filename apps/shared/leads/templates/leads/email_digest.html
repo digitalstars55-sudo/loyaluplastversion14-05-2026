@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>ЛоялUP — Понедельная сводка</title>
+</head>
+<body style="margin:0;padding:0;background:#F5F2EC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:36px 16px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:#A855F7;padding:28px 32px;text-align:left;">
+              <p style="margin:0;color:rgba(255,255,255,0.85);font-size:11px;font-weight:700;letter-spacing:1.4px;">ПОНЕДЕЛЬНЫЙ ДАЙДЖЕСТ · {{ m.week_start }} — {{ m.week_end }}</p>
+              <h1 style="margin:8px 0 0;color:#FFFFFF;font-size:22px;letter-spacing:-0.4px;font-weight:800;">
+                {{ status_emoji }} «{{ m.company_name }}»
+              </h1>
+              <p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:13px;">
+                Скоринг активности: <b style="color:#FFFFFF">{{ m.score }}/100</b>
+                {% if m.status == 'red' %}— требует внимания{% elif m.status == 'yellow' %}— нормально, но есть зоны роста{% else %}— всё на месте{% endif %}
+              </p>
+            </td>
+          </tr>
+
+          <!-- KPI grid -->
+          <tr>
+            <td style="padding:24px 32px 4px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td width="33%" style="padding:0 6px 12px;">
+                    <div style="background:#F5EBFE;border-radius:12px;padding:14px;">
+                      <p style="margin:0;color:#71717A;font-size:11px;font-weight:600;letter-spacing:0.4px;">ТОЧЕК АКТИВНО</p>
+                      <p style="margin:4px 0 0;font-size:24px;font-weight:800;color:#18181B;">{{ m.branches_count }}</p>
+                    </div>
+                  </td>
+                  <td width="33%" style="padding:0 6px 12px;">
+                    <div style="background:#F4FAD9;border-radius:12px;padding:14px;">
+                      <p style="margin:0;color:#71717A;font-size:11px;font-weight:600;letter-spacing:0.4px;">ОТЗЫВЫ</p>
+                      <p style="margin:4px 0 0;font-size:24px;font-weight:800;color:#18181B;">{{ m.reviews_total_week }}</p>
+                    </div>
+                  </td>
+                  <td width="33%" style="padding:0 6px 12px;">
+                    <div style="background:#EEF2FF;border-radius:12px;padding:14px;">
+                      <p style="margin:0;color:#71717A;font-size:11px;font-weight:600;letter-spacing:0.4px;">РАССЫЛОК</p>
+                      <p style="margin:4px 0 0;font-size:24px;font-weight:800;color:#18181B;">{{ m.broadcasts_sent_week }}</p>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Risks -->
+          {% if m.reviews_unanswered_negative or m.reviews_overdue_negative %}
+          <tr>
+            <td style="padding:0 32px;">
+              <div style="background:#FEE2E2;border-radius:12px;padding:14px;margin:8px 0;">
+                <p style="margin:0;color:#92400E;font-size:11px;font-weight:800;letter-spacing:0.4px;">ОТЗЫВЫ БЕЗ ОТВЕТА</p>
+                <p style="margin:6px 0 0;color:#3F3F46;font-size:13px;line-height:18px;">
+                  Не отвечено &gt;24ч: <b style="color:#DC2626">{{ m.reviews_unanswered_negative }}</b>
+                  {% if m.reviews_overdue_negative %} · просрочено &gt;72ч: <b style="color:#DC2626">{{ m.reviews_overdue_negative }}</b>{% endif %}
+                </p>
+              </div>
+            </td>
+          </tr>
+          {% endif %}
+
+          <!-- Last login -->
+          <tr>
+            <td style="padding:0 32px;">
+              <p style="margin:14px 0 0;color:#71717A;font-size:12px;">
+                Админ заходил:
+                {% if m.last_login_days_ago == None %}
+                  <b>—</b>
+                {% elif m.last_login_days_ago == 0 %}
+                  <b style="color:#16A34A">сегодня</b>
+                {% elif m.last_login_days_ago < 7 %}
+                  <b>{{ m.last_login_days_ago }} дн. назад</b>
+                {% else %}
+                  <b style="color:#DC2626">{{ m.last_login_days_ago }} дн. назад</b>
+                {% endif %}
+              </p>
+            </td>
+          </tr>
+
+          <!-- Recommendations -->
+          <tr>
+            <td style="padding:24px 32px;">
+              <h2 style="margin:0;font-size:14px;font-weight:800;color:#7E22CE;letter-spacing:0.4px;">РЕКОМЕНДАЦИИ</h2>
+              <div style="margin-top:10px;">
+                {% for rec in m.recommendations %}
+                  <p style="margin:0 0 8px;color:#3F3F46;font-size:13px;line-height:19px;">{{ rec }}</p>
+                {% endfor %}
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#FBFAF6;padding:14px 32px;border-top:1px solid #E5E2D8;">
+              <p style="margin:0;color:#A1A1AA;font-size:11px;">
+                ЛоялUP · автоматическая сводка раз в неделю · понедельник 09:00 МСК
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

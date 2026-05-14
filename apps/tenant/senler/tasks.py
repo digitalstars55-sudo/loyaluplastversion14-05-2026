@@ -447,7 +447,12 @@ def check_read_status_task() -> dict:
     tenants = TenantModel.objects.exclude(schema_name='public')
 
     total_marked = 0
-    cutoff = timezone.now() - timedelta(days=7)
+    # 35 дней (чуть больше стандартного 30-дневного окна дашборда), чтобы
+    # открываемость на длинных периодах не занижалась: VK может проставить
+    # «прочитано» через несколько недель, если гость зашёл в чат позже.
+    # Раньше было 7 дней — этого хватало пока BR-записи были свежими, но
+    # с накоплением истории создавало «слепое пятно».
+    cutoff = timezone.now() - timedelta(days=35)
 
     for tenant in tenants:
         try:

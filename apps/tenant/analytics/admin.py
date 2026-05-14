@@ -68,7 +68,10 @@ class RFSegmentAdmin(admin.ModelAdmin):
     list_display_links = ('code_badge',)
     list_filter = ('branch',)
     search_fields = ('code', 'name', 'branch__name')
-    readonly_fields = ('created_at', 'updated_at', 'guests_count_col')
+    readonly_fields = (
+        'created_at', 'updated_at', 'guests_count_col',
+        'recency_min', 'recency_max', 'frequency_min', 'frequency_max',
+    )
     actions = ['apply_to_all_action']
 
     fieldsets = (
@@ -80,11 +83,17 @@ class RFSegmentAdmin(admin.ModelAdmin):
                 'собственной версии этого сегмента).'
             ),
         }),
-        ('RF-границы', {
+        ('RF-границы (автоматически из RFSettings)', {
             'fields': (('recency_min', 'recency_max'), ('frequency_min', 'frequency_max')),
             'description': (
-                'Гость попадает в этот сегмент, если его давность и частота '
-                'ОДНОВРЕМЕННО попадают в указанные диапазоны.'
+                '<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 14px;'
+                'border-radius:4px;line-height:1.5;">'
+                '⚠️ <b>Эти поля только для просмотра.</b> Они автоматически '
+                'пересчитываются из порогов R/F в '
+                '<a href="../../rfsettings/">RFSettings</a> при их изменении. '
+                'Чтобы поменять диапазоны (например, «F2 = 2 визита») — меняйте '
+                'пороги <b>там</b>, а не здесь.'
+                '</div>'
             ),
         }),
         ('Маркетинг', {
@@ -323,7 +332,7 @@ class RFSegmentAdmin(admin.ModelAdmin):
     @admin.display(description='Область применения', ordering='branch__name')
     def scope_col(self, obj):
         if obj.is_global:
-            return format_html(
+            return mark_safe(
                 '<span style="background:#e0f2fe;color:#0369a1;padding:3px 10px;'
                 'border-radius:10px;font-weight:700;font-size:11px;">'
                 '🌐 Все точки</span>'
@@ -344,14 +353,25 @@ class RFSegmentAdmin(admin.ModelAdmin):
             obj.frequency_min, obj.frequency_max,
         )
 
-    @admin.display(description='Гостей сейчас')
+    @admin.display(description='Гостей в сегменте (всего)')
     def guests_count_col(self, obj):
         if not obj.pk:
             return '—'
         count = obj.guests.count()
+        tooltip = (
+            'Всего гостей с этим сегментом по последнему расчёту RF '
+            '(без фильтра по периоду). На дашборде «RF-анализ» цифры '
+            'обычно меньше — там учитываются только активные за '
+            'выбранный период (по умолчанию 30 дней).'
+        )
         if not count:
-            return mark_safe('<span style="color:var(--body-quiet-color,#aaa);">0</span>')
-        return format_html('<strong>{}</strong>', count)
+            return format_html(
+                '<span title="{}" style="color:var(--body-quiet-color,#aaa);">0</span>',
+                tooltip,
+            )
+        return format_html(
+            '<strong title="{}">{}</strong>', tooltip, count,
+        )
 
     @admin.display(description='Подсказка')
     def hint_preview_col(self, obj):
@@ -581,7 +601,7 @@ class RFSettingsAdmin(admin.ModelAdmin):
     list_filter = ('analysis_period',)
     search_fields = ('branch__name',)
     readonly_fields = ('created_at', 'updated_at', 'effective_thresholds_preview')
-    actions = ['apply_to_all_action', 'apply_to_selected_action']
+    actions = ['apply_to_all_action', 'apply_to_selected_action', 'make_global_from_action']
 
     fieldsets = (
         ('Область применения', {
@@ -658,7 +678,7 @@ class RFSettingsAdmin(admin.ModelAdmin):
     @admin.display(description='Область применения', ordering='branch__name')
     def scope_col(self, obj):
         if obj.is_global:
-            return format_html(
+            return mark_safe(
                 '<span style="background:#e0f2fe;color:#0369a1;padding:3px 10px;'
                 'border-radius:10px;font-weight:700;font-size:11px;">'
                 '🌐 Все точки</span>'
@@ -807,6 +827,70 @@ class RFSettingsAdmin(admin.ModelAdmin):
             f'Пороги из «{source.scope_label}» применены к {affected} торговым точкам.',
             level=messages.SUCCESS,
         )
+
+    @admin.action(description='Создать запись «Все точки» на основе этой')
+    def make_global_from_action(self, request, queryset):
+        if queryset.count() != 1:
+            self.message_user(
+                request,
+                'Выберите ровно одну запись-источник: её пороги станут общими для всех точек.',
+                level=messages.WARNING,
+            )
+            return
+        src = queryset.first()
+        if src.branch_id is None:
+            self.message_user(
+                request,
+                'Эта запись уже глобальная («Все точки»).',
+                level=messages.WARNING,
+            )
+            return
+        _, created = RFSettings.objects.update_or_create(
+            branch=None,
+            defaults={
+                'analysis_period': src.analysis_period,
+                'r_fresh_max':     src.r_fresh_max,
+                'r_warm_max':      src.r_warm_max,
+                'r_cooling_max':   src.r_cooling_max,
+                'f_rare_max':      src.f_rare_max,
+                'f_moderate_max':  src.f_moderate_max,
+            },
+        )
+        verb = 'создана' if created else 'обновлена'
+        self.message_user(
+            request,
+            f'Запись «Все точки» {verb} на основе «{src.scope_label}». '
+            f'Теперь дашборд «Все точки» будет использовать эти пороги.',
+            level=messages.SUCCESS,
+        )
+
+    # ── Changelist warning ───────────────────────────────────────────────────
+
+    def changelist_view(self, request, extra_context=None):
+        # Подсветим пользователю, если у точек разные пороги и нет global.
+        has_global = RFSettings.objects.filter(branch__isnull=True).exists()
+        per_branch = list(RFSettings.objects.exclude(branch__isnull=True))
+        if per_branch and not has_global:
+            thr_set = {tuple(sorted(s.thresholds_dict().items())) for s in per_branch}
+            if len(thr_set) > 1:
+                self.message_user(
+                    request,
+                    'У ваших точек заданы разные пороги, а общей записи «Все точки» нет. '
+                    'Поэтому дашборд «Все точки» использует дефолтные значения. '
+                    'Выберите любую запись с нужными порогами и примените действие '
+                    '«Создать запись “Все точки” на основе этой».',
+                    level=messages.WARNING,
+                )
+            else:
+                self.message_user(
+                    request,
+                    'У вас нет отдельной записи «Все точки» (с пустым полем «Торговая точка»). '
+                    'Дашборд «Все точки» сейчас подхватывает ваши единые per-branch пороги, '
+                    'но при расхождении начнёт показывать дефолты. Можно создать запись '
+                    '«Все точки» через admin-action «Создать запись “Все точки” на основе этой».',
+                    level=messages.INFO,
+                )
+        return super().changelist_view(request, extra_context)
 
     @admin.action(description='Скопировать пороги из «Все точки» в выбранные записи')
     def apply_to_selected_action(self, request, queryset):

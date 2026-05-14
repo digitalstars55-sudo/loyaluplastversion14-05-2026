@@ -22,6 +22,10 @@ urlpatterns = [
     path('api/v1/', include('apps.shared.clients.api.urls')),
     path('api/v1/delivery/webhook/', PublicDeliveryWebhook.as_view(), name='public-delivery-webhook'),
 
+    # Мобильное API на public-схеме: auth (JWT) + lead-онбординг.
+    path('api/v1/', include('apps.shared.users.api.urls')),
+    path('api/v1/', include('apps.shared.leads.api.urls')),
+
     # API Docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),

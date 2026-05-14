@@ -15,7 +15,7 @@ class PublicAdminSite(AdminSite):
     Доступна только пользователям с role=SUPERADMIN.
     Маршрут: /superadmin/  (public schema)
     """
-    site_header = 'LevOne Platform'
+    site_header = 'ЛоялUP Платформа'
     site_title = 'Супер Администратор'
     index_title = 'Управление платформой'
     index_template = 'admin/public_index.html'
@@ -97,7 +97,7 @@ class TenantAdminSite(AdminSite):
     Доступна NETWORK_ADMIN и CLIENT текущего тенанта.
     Маршрут: /admin/  (tenant schema)
     """
-    site_header = 'LevOne'
+    site_header = 'ЛоялUP'
     site_title = 'Панель управления'
     index_title = 'Управление рестораном'
     index_template = 'admin/tenant_index.html'

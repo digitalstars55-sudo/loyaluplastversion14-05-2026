@@ -24,6 +24,26 @@ class Company(TenantMixin):
         help_text='В этот день приложение у клиента перестанет работать',
     )
 
+    class Plan(models.TextChoices):
+        STARTER  = 'starter',  'Стартовый'
+        STANDARD = 'standard', 'Стандарт'
+        PRO      = 'pro',      'Pro'
+
+    plan_code = models.CharField(
+        max_length=16, choices=Plan.choices, default=Plan.STANDARD,
+        verbose_name='Тариф',
+    )
+    plan_price_rub = models.PositiveIntegerField(
+        default=4900,
+        verbose_name='Цена тарифа (₽)',
+        help_text='Стоимость подписки в месяц.',
+    )
+    auto_pay_enabled = models.BooleanField(
+        default=False,
+        verbose_name='Авто-оплата',
+        help_text='Включён авто-платёж по карте.',
+    )
+
     auto_create_schema = True
 
     def __str__(self):

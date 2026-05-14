@@ -75,6 +75,11 @@ app.conf.beat_schedule = {
         'task': 'apps.tenant.senler.tasks.check_read_status_task',
         'schedule': crontab(minute=30),  # every hour at :30
     },
+    # Send reminders every 30 min for unanswered AI drafts (respects per-tenant reminder_minutes)
+    'send-draft-reminders': {
+        'task': 'apps.tenant.analytics.tasks.send_draft_reminders_task',
+        'schedule': 1800.0,  # 30 minutes
+    },
 }
 
 app.conf.timezone = 'Europe/Moscow'

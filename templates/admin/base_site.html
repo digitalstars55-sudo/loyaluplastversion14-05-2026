@@ -112,15 +112,291 @@
 
 {% block branding %}
   <style>
-    .header {
-        background-color: black !important;
+    /* ═══ Брендовая палитра (как в логотипе ЛоялUP) ═══ */
+    :root {
+      --lp-brand:       #6a1b9a;
+      --lp-brand-dark:  #4a0e6b;
+      --lp-brand-soft:  #f5ecfb;
+      --lp-lime:        #a3e635;
+      --lp-bcrumb:      #4a0e6b;
+
+      /* ── Переопределяем корневые переменные Django Admin ──
+         Это автоматически перекрашивает все кнопки, фильтры,
+         ссылки, выделения через каскад CSS variables. */
+      --primary:               #6a1b9a !important;
+      --secondary:             #4a0e6b !important;
+      --primary-fg:            #ffffff !important;
+      --accent:                #a3e635 !important;
+
+      --link-fg:               #6a1b9a !important;
+      --link-hover-color:      #4a0e6b !important;
+      --link-selected-fg:      #6a1b9a !important;
+
+      --header-color:          #ffffff !important;
+      --header-link-color:     #ffffff !important;
+      --header-branding-color: #ffffff !important;
+      --header-bg:             #6a1b9a !important;
+
+      --breadcrumbs-link-fg:   #e1c4f4 !important;
+      --breadcrumbs-bg:        #4a0e6b !important;
+      --breadcrumbs-fg:        #ffffff !important;
+
+      --button-bg:             #6a1b9a !important;
+      --button-fg:             #ffffff !important;
+      --button-hover-bg:       #4a0e6b !important;
+      --default-button-bg:     #6a1b9a !important;
+      --default-button-hover-bg: #4a0e6b !important;
+
+      --object-tools-bg:       #6a1b9a !important;
+      --object-tools-fg:       #ffffff !important;
+      --object-tools-hover-bg: #4a0e6b !important;
+
+      --selected-bg:           #f5ecfb !important;
+      --selected-row:          #f5ecfb !important;
     }
+
+    /* ── Top header bar ── */
+    #header, .header {
+        background-color: var(--lp-brand) !important;
+        color: #fff !important;
+    }
+    #site-name, #site-name a,
+    #site-name a:link, #site-name a:visited,
+    #site-name a:hover, #site-name a:focus {
+        color: #fff !important;
+        text-decoration: none !important;
+    }
+    /* User tools — привет/смена пароля/выход */
+    #user-tools, #user-tools a,
+    #user-tools a:link, #user-tools a:visited,
+    #user-tools a:hover, #user-tools strong {
+        color: #fff !important;
+    }
+    #user-tools a:hover { text-decoration: underline !important; }
+
+    /* ── Breadcrumbs полоса ── */
+    div.breadcrumbs {
+        background: var(--lp-bcrumb) !important;
+        color: #fff !important;
+    }
+    div.breadcrumbs a       { color: #e1c4f4 !important; }
+    div.breadcrumbs a:hover { color: #fff !important; }
+
+    /* ── Левый сайдбар навигации Django Admin ── */
+    #nav-sidebar {
+        background: #ffffff !important;
+        border-right: 1px solid #e5e7eb !important;
+    }
+    /* Заголовок группы приложений (caption) — фиолетовая шапка */
+    #nav-sidebar .module caption,
+    #nav-sidebar table caption,
+    #nav-sidebar caption,
+    #nav-sidebar h3,
+    #nav-sidebar .module h2 {
+        background: var(--lp-brand) !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.5px !important;
+        font-size: 12px !important;
+        padding: 8px 12px !important;
+    }
+    #nav-sidebar .module caption a,
+    #nav-sidebar table caption a,
+    #nav-sidebar caption a {
+        color: #ffffff !important;
+        text-decoration: none !important;
+    }
+    /* Сами строки моделей — серый текст на белом фоне */
+    #nav-sidebar .module td,
+    #nav-sidebar .module th,
+    #nav-sidebar table td,
+    #nav-sidebar table th {
+        background: #ffffff !important;
+        border-color: #f1f3f5 !important;
+    }
+    #nav-sidebar .module a,
+    #nav-sidebar table a,
+    #nav-sidebar a:link,
+    #nav-sidebar a:visited {
+        color: #1f2937 !important;
+        font-weight: 500 !important;
+        text-decoration: none !important;
+    }
+    /* hover — бледно-фиолетовый фон, фиолетовый текст */
+    #nav-sidebar tr:hover td,
+    #nav-sidebar tr:hover th,
+    #nav-sidebar .module a:hover,
+    #nav-sidebar a:hover {
+        background: #f5ecfb !important;
+        color: var(--lp-brand) !important;
+    }
+    /* Иконка "+" (Добавить) — фиолетовая */
+    #nav-sidebar .addlink,
+    #nav-sidebar .addlink:link,
+    #nav-sidebar .addlink:visited {
+        color: var(--lp-brand) !important;
+        font-weight: 700 !important;
+    }
+    /* Текущая модель/страница — фиолетовая подсветка */
+    #nav-sidebar .current-model,
+    #nav-sidebar .current-model td,
+    #nav-sidebar .current-model th,
+    #nav-sidebar .selected,
+    #nav-sidebar tr.selected td,
+    #nav-sidebar tr.selected th {
+        background: var(--lp-brand) !important;
+    }
+    #nav-sidebar .current-model a,
+    #nav-sidebar a.current,
+    #nav-sidebar .selected a,
+    #nav-sidebar tr.selected a {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+    }
+    /* Поиск по навигации — рамка фиолетовая */
+    #nav-sidebar input[type=text],
+    #nav-filter {
+        background: #fff !important;
+        color: #1f2937 !important;
+        border: 1px solid #e5e7eb !important;
+    }
+    #nav-sidebar input[type=text]:focus,
+    #nav-filter:focus {
+        border-color: var(--lp-brand) !important;
+        outline: none !important;
+        box-shadow: 0 0 0 3px rgba(106,27,154,0.12) !important;
+    }
+    /* Toggle-кнопка сайдбара */
+    #nav-sidebar .toggle-nav-sidebar,
+    button#toggle-nav-sidebar {
+        background: var(--lp-brand) !important;
+        color: #ffffff !important;
+    }
+
+    /* ── Кнопки Сохранить / submit-row ── */
+    .submit-row input.default,
+    .button.default,
+    input[type=submit].default {
+        background: var(--lp-brand) !important;
+        color: #fff !important;
+        border: none !important;
+    }
+    .submit-row input.default:hover,
+    .button.default:hover { background: var(--lp-brand-dark) !important; }
+
+    .button, input[type=submit], input[type=button], .submit-row input {
+        background: var(--lp-brand) !important;
+        color: #fff !important;
+        border: 1px solid var(--lp-brand) !important;
+    }
+    .button:hover, input[type=submit]:hover, input[type=button]:hover,
+    .submit-row input:hover {
+        background: var(--lp-brand-dark) !important;
+        border-color: var(--lp-brand-dark) !important;
+    }
+    /* "Удалить" кнопка — оставим красной */
+    .deletelink, .submit-row .deletelink {
+        background: #c62828 !important;
+        border-color: #c62828 !important;
+        color: #fff !important;
+    }
+    .deletelink:hover { background: #8e1717 !important; }
+
+    /* ── Шапки таблиц changelist ── */
+    #changelist table thead th,
+    #changelist table thead th a {
+        background: var(--lp-brand-soft) !important;
+        color: var(--lp-brand-dark) !important;
+    }
+    /* Выделенная строка в таблице — бледно-фиолетовая */
+    #changelist tbody tr.selected td,
+    #changelist tbody tr.selected th { background: var(--lp-brand-soft) !important; }
+
+    /* ── Фильтры справа (changelist-filter) ── */
+    #changelist-filter { background: #ffffff !important; border-left: 3px solid var(--lp-brand) !important; }
+    #changelist-filter h2 {
+        background: var(--lp-brand) !important;
+        color: #fff !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.5px !important;
+    }
+    #changelist-filter h3 { color: var(--lp-brand-dark) !important; font-weight: 700 !important; }
+    #changelist-filter li a:link,
+    #changelist-filter li a:visited { color: #1f2937 !important; font-weight: 500 !important; }
+    #changelist-filter li a:hover    { background: var(--lp-brand-soft) !important; color: var(--lp-brand) !important; }
+    #changelist-filter li.selected   { border-left: 5px solid var(--lp-brand) !important; }
+    #changelist-filter li.selected a { color: var(--lp-brand) !important; font-weight: 700 !important; }
+
+    /* ── Object-tools (кнопки "+ Добавить", "История") в шапке списка ── */
+    .object-tools a:link,
+    .object-tools a:visited {
+        background: var(--lp-brand) !important;
+        color: #fff !important;
+    }
+    .object-tools a:hover, .object-tools a:focus {
+        background: var(--lp-brand-dark) !important;
+        color: #fff !important;
+    }
+    .object-tools a.addlink::before { filter: brightness(0) invert(1) !important; }
+
+    /* ── Поиск в changelist ── */
+    #toolbar { background: var(--lp-brand-soft) !important; border-bottom: 1px solid #e5e7eb !important; }
+    #toolbar form input[type=submit] { background: var(--lp-brand) !important; color: #fff !important; }
+
+    /* ── Дашборд-карточки (.app, .module) ── */
+    .module h2, .module caption,
+    .inline-group h2 {
+        background: var(--lp-brand) !important;
+        color: #fff !important;
+    }
+    .module a:link, .module a:visited { color: var(--lp-brand-dark) !important; }
+    .module a:hover { color: var(--lp-brand) !important; }
+
+    /* ── Tabs (вкладки внутри форм) ── */
+    .selector-chosen h2, .related-widget-wrapper-link { color: var(--lp-brand) !important; }
+
+    /* ── Календарь / time picker — заголовок ── */
+    .calendar caption, .calendarbox h2, .timelist h2 {
+        background: var(--lp-brand) !important;
+        color: #fff !important;
+    }
+
+    /* ── Action checkbox-фильтр сверху списка ── */
+    .actions { background: var(--lp-brand-soft) !important; border: 1px solid #e8d4f4 !important; }
+    .actions select { border: 1px solid var(--lp-brand) !important; }
+    .actions button { background: var(--lp-brand) !important; color: #fff !important; border: none !important; }
+    .actions button:hover { background: var(--lp-brand-dark) !important; }
+
+    /* ── Form fieldsets ── */
+    fieldset.module h2 { background: var(--lp-brand) !important; color: #fff !important; }
+
+    /* ── Пагинация ── */
+    .paginator a:link, .paginator a:visited {
+        background: #fff !important;
+        color: var(--lp-brand) !important;
+        border: 1px solid var(--lp-brand) !important;
+    }
+    .paginator a:hover { background: var(--lp-brand-soft) !important; }
+    .paginator .this-page {
+        background: var(--lp-brand) !important;
+        color: #fff !important;
+        border-color: var(--lp-brand) !important;
+    }
+
+    /* ── Сообщения-плашки (сохранено/удалено) ── */
+    ul.messagelist li.success { background: #e8f5e9 !important; color: #1b5e20 !important; border-left: 4px solid #2e7d32 !important; }
+    ul.messagelist li.warning { background: #fff3e0 !important; color: #e65100 !important; border-left: 4px solid #e65100 !important; }
+    ul.messagelist li.error   { background: #ffebee !important; color: #b71c1c !important; border-left: 4px solid #c62828 !important; }
+    ul.messagelist li.info,
+    ul.messagelist li         { background: var(--lp-brand-soft) !important; color: var(--lp-brand-dark) !important; border-left: 4px solid var(--lp-brand) !important; }
   </style>
   <div style="text-align: center;" class='d-flex flex-row gap-2 align-items-center'>
-    <img src="{% static 'images/LevLogo.png' %}" alt="Levone Logo" style="max-height: 40px;"><br>
-    <h1 id="site-name">
-      <a href="{% url 'admin:index' %}" style="text-decoration: none; color: inherit;">
-        Администрирование Levone
+    <img src="{% static 'images/LoyalUpLogo.png' %}" alt="ЛоялUP" style="max-height: 40px;">
+    <h1 id="site-name" style="margin:0;">
+      <a href="{% url 'admin:index' %}">
+        Администрирование ЛоялUP
       </a>
     </h1>
   </div>

@@ -1,5 +1,6 @@
 {% extends "admin/index.html" %}
 {% load i18n %}
+{% load ru_filters %}
 
 {% block nav-sidebar %}
   {% include "admin/nav_sidebar.html" %}
@@ -114,10 +115,10 @@
     <div class="inf-top-alert">
       <div class="inf-top-alert-icon">⏰</div>
       <div class="inf-top-alert-text">
-        <b>{{ infra_expiring_soon }}</b> клиент{{ infra_expiring_soon|pluralize:"у,ам,ам" }}
-        требу{{ infra_expiring_soon|pluralize:"ется,ется,ется" }} внимание —
-        подписка истекает в ближайшие 10 дней или уже просрочена.
-        Карточки ниже подсвечены, проверьте оплату.
+        <b>{{ infra_expiring_soon }}</b>
+        {{ infra_expiring_soon|ru_plural:"клиент,клиента,клиентов" }}
+        {{ infra_expiring_soon|ru_plural:"требует,требуют,требуют" }} внимания —
+        карточки ниже подсвечены, проверьте оплату.
       </div>
     </div>
     {% endif %}

@@ -233,6 +233,90 @@ class RFSegment(TimeStampedModel):
             affected += 1
         return affected
 
+    # ── Auto-sync границ из RFSettings ─────────────────────────────────────────
+    # Поля recency_min/max и frequency_min/max — производные от порогов в
+    # RFSettings. Чтобы не плодить рассинхрон, считаем их по формуле из кода
+    # сегмента и порогов, и обновляем при изменении RFSettings (сигнал ниже).
+
+    @staticmethod
+    def _bounds_for_code(code: str, thresholds: dict) -> tuple[int, int, int, int]:
+        """Вернёт (r_min, r_max, f_min, f_max) для кода R{0..3}F{1..3} и порогов."""
+        r_label = int(code[1])
+        f_label = int(code[3])
+        if   r_label == 3: r_min, r_max = 0,                          thresholds['r_fresh_max']
+        elif r_label == 2: r_min, r_max = thresholds['r_fresh_max'] + 1,  thresholds['r_warm_max']
+        elif r_label == 1: r_min, r_max = thresholds['r_warm_max'] + 1,   thresholds['r_cooling_max']
+        else:              r_min, r_max = thresholds['r_cooling_max'] + 1, 9999
+        if   f_label == 1: f_min, f_max = 1,                          thresholds['f_rare_max']
+        elif f_label == 2: f_min, f_max = thresholds['f_rare_max'] + 1,   thresholds['f_moderate_max']
+        else:              f_min, f_max = thresholds['f_moderate_max'] + 1, 9999
+        return r_min, r_max, f_min, f_max
+
+    @classmethod
+    def _sync_qs_with_thresholds(cls, qs, thresholds: dict) -> int:
+        """Внутренний помощник: пересчитать поля для всех сегментов из qs."""
+        updated = 0
+        for seg in qs:
+            rmin, rmax, fmin, fmax = cls._bounds_for_code(seg.code, thresholds)
+            if (seg.recency_min, seg.recency_max, seg.frequency_min, seg.frequency_max) \
+               != (rmin, rmax, fmin, fmax):
+                seg.recency_min   = rmin
+                seg.recency_max   = rmax
+                seg.frequency_min = fmin
+                seg.frequency_max = fmax
+                seg.save(update_fields=[
+                    'recency_min', 'recency_max', 'frequency_min', 'frequency_max',
+                ])
+                updated += 1
+        return updated
+
+    @classmethod
+    def sync_bounds_from_settings(cls, settings_obj) -> int:
+        """
+        Совместимость: пересинхронизировать сегменты соответствующей области
+        (global / per-branch) на основе порогов одного объекта RFSettings.
+        Для полной синхронизации тенанта используйте sync_all_bounds().
+        """
+        thresholds = settings_obj.thresholds_dict()
+        if settings_obj.branch_id is None:
+            qs = cls.objects.filter(branch__isnull=True)
+        else:
+            qs = cls.objects.filter(branch_id=settings_obj.branch_id)
+        return cls._sync_qs_with_thresholds(qs, thresholds)
+
+    @classmethod
+    def sync_all_bounds(cls) -> int:
+        """
+        Полная пересинхронизация всех RFSegment текущего тенанта.
+
+        Global RFSegment (branch=NULL) пересчитываются по правилу
+        RFSettings.resolve_for_scope(None) — учитывают global / branch-unanimous /
+        defaults в зависимости от состояния RFSettings.
+        Per-branch RFSegment пересчитываются по per-branch RFSettings;
+        если у точки нет своих настроек — fallback на тот же глобальный набор.
+
+        Возвращает суммарное число обновлённых сегментов.
+        """
+        # Локальный импорт чтобы избежать цикла на этапе загрузки модуля.
+        cls_settings = RFSettings  # noqa: F821
+        _, global_thresholds, _ = cls_settings.resolve_for_scope(None)
+        updated = cls._sync_qs_with_thresholds(
+            cls.objects.filter(branch__isnull=True),
+            global_thresholds,
+        )
+        # Per-branch
+        per_branch_segs = cls.objects.filter(branch__isnull=False)
+        # Группируем по branch_id, чтобы один раз достать пороги.
+        from collections import defaultdict
+        by_branch: dict[int, list] = defaultdict(list)
+        for seg in per_branch_segs:
+            by_branch[seg.branch_id].append(seg)
+        for branch_id, segs in by_branch.items():
+            br_settings = cls_settings.objects.filter(branch_id=branch_id).first()
+            thresholds = br_settings.thresholds_dict() if br_settings else global_thresholds
+            updated += cls._sync_qs_with_thresholds(segs, thresholds)
+        return updated
+
     class Meta:
         verbose_name = 'RF-сегмент'
         verbose_name_plural = 'RF-сегменты'
@@ -514,11 +598,13 @@ class RFSettings(TimeStampedModel):
         """
         Возвращает (settings_obj, thresholds_dict, source).
 
-        source ∈ {'branch', 'global', 'default'} — откуда взяты пороги.
+        source ∈ {'branch', 'global', 'branch-unanimous', 'default'} — откуда взяты пороги.
 
         Логика:
           • ровно одна точка в выборке и для неё есть запись → её пороги;
           • иначе берём «Все точки» (branch=NULL);
+          • иначе, если глобальной нет, но все per-branch записи имеют
+            одинаковые пороги — берём их (источник 'branch-unanimous');
           • иначе — RF_DEFAULT_THRESHOLDS.
         """
         # 1) Точечные настройки имеют смысл только при выборе одной точки.
@@ -532,7 +618,19 @@ class RFSettings(TimeStampedModel):
         if glob is not None:
             return glob, glob.thresholds_dict(), 'global'
 
-        # 3) Захардкоженные дефолты.
+        # 2.5) Fallback: глобальной нет, но per-branch единогласны — используем их.
+        # Покрывает кейс, когда оператор настроил пороги по точкам одинаково,
+        # но забыл создать отдельную запись «Все точки».
+        per_branch = list(cls.objects.exclude(branch__isnull=True))
+        if per_branch:
+            first_t = per_branch[0].thresholds_dict()
+            if all(s.thresholds_dict() == first_t for s in per_branch[1:]):
+                return per_branch[0], first_t, 'branch-unanimous'
+            # Расходятся — fallback на дефолты, но помечаем явно, чтобы UI
+            # мог объяснить пользователю «почему не твои пороги».
+            return None, dict(RF_DEFAULT_THRESHOLDS), 'default-mismatch'
+
+        # 3) Захардкоженные дефолты (настроек вообще нет).
         return None, dict(RF_DEFAULT_THRESHOLDS), 'default'
 
     @classmethod
@@ -824,3 +922,27 @@ class BranchSegmentSnapshotDelivery(TimeStampedModel):
             models.Index(fields=['branch', 'date'],   name='snap_del_branch_date_idx'),
             models.Index(fields=['segment', 'date'],  name='snap_del_segment_date_idx'),
         ]
+
+
+# ── Signal: автосинхронизация границ RFSegment при изменении RFSettings ────────
+# RFSegment.recency/frequency_min/max — производные от порогов в RFSettings,
+# хранятся в БД только для удобства отображения в админке. Любая правка
+# RFSettings должна сразу обновить эти поля у соответствующих сегментов,
+# чтобы оператор не настраивал «мёртвые» диапазоны вручную.
+
+from django.db.models.signals import post_save  # noqa: E402
+from django.dispatch import receiver            # noqa: E402
+
+
+@receiver(post_save, sender=RFSettings)
+def _sync_segment_bounds_on_settings_save(sender, instance, **kwargs):
+    try:
+        # Полный пересинхрон: затронет и global сегменты (если их пороги
+        # должны обновиться через resolve_for_scope), и per-branch.
+        RFSegment.sync_all_bounds()
+    except Exception:
+        # Не валим сохранение RFSettings из-за вспомогательной операции.
+        import logging
+        logging.getLogger(__name__).exception(
+            'RFSegment auto-sync failed for RFSettings pk=%s', instance.pk,
+        )

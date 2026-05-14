@@ -25,6 +25,14 @@ def _branch_filter(qs, branch_ids: list[int] | None, field: str = 'branch__in'):
     return qs
 
 
+# ── Per-Client dedup ──────────────────────────────────────────────────────────
+#
+# Все метрики «сколько гостей сделали X» считаются по уникальным guest.Client,
+# а не по ClientBranch (per-branch профилю). Одна и та же VK-учётка,
+# зарегистрированная в N точках = 1 гость, не N. Это согласовано с логикой
+# рассылок (рассылка по vk_id, один человек — одно сообщение).
+
+
 # ── Metric 1: QR scans ────────────────────────────────────────────────────────
 
 def get_qr_scan_count(branch_ids: list[int] | None, start_date: date, end_date: date) -> int:
@@ -69,7 +77,7 @@ def get_qr_scan_count(branch_ids: list[int] | None, start_date: date, end_date: 
             created_at__date__gte=start_date,
             created_at__date__lte=end_date,
         ))
-    ).count()
+    ).values('client_id').distinct().count()
 
 
 # ── Metric 2: Total VK subscribers (all-time, no period) ─────────────────────
@@ -81,7 +89,8 @@ def get_total_vk_subscribers(branch_ids: list[int] | None) -> int:
     qs = ClientVKStatus.objects.filter(
         Q(community_via_app=True) | Q(newsletter_via_app=True)
     )
-    return _branch_filter(qs, branch_ids, 'client__branch__in').count()
+    qs = _branch_filter(qs, branch_ids, 'client__branch__in')
+    return qs.values('client__client_id').distinct().count()
 
 
 # ── Metric 3: New group+newsletter members who got their first gift ───────────
@@ -110,14 +119,16 @@ def get_new_group_with_first_gift(
     if not subscribed_cb_ids:
         return 0
 
-    # Step 2: from those, who got their FIRST game prize in the period
+    # Step 2: from those, who got their FIRST game prize in the period.
+    # Дедуп по guest.Client: один человек = один счёт, даже если он получил
+    # «первый подарок» в нескольких point-профилях.
     first_prizes = (
         SuperPrizeEntry.objects
         .filter(
             acquired_from=SuperPrizeTrigger.GAME,
             client_branch__in=subscribed_cb_ids,
         )
-        .values('client_branch')
+        .values('client_branch__client_id')
         .annotate(first_at=Min('created_at'))
         .filter(
             first_at__date__gte=start_date,
@@ -141,10 +152,11 @@ def get_repeat_game_players(
     )
     qs = _branch_filter(qs, branch_ids, 'client__branch__in')
 
-    # Collect distinct (client_id, date) pairs
+    # Группируем по guest.Client (не по ClientBranch): дни игры одного человека
+    # в разных точках складываются вместе.
     pairs = (
         qs.annotate(play_date=TruncDate('created_at'))
-        .values_list('client_id', 'play_date')
+        .values_list('client__client_id', 'play_date')
         .distinct()
     )
 
@@ -170,7 +182,7 @@ def get_coin_purchasers(
         created_at__date__lte=end_date,
     )
     qs = _branch_filter(qs, branch_ids, 'client__branch__in')
-    return qs.values('client').distinct().count()
+    return qs.values('client__client_id').distinct().count()
 
 
 # ── Metric 6: New VK community subscribers via app ───────────────────────────
@@ -186,7 +198,8 @@ def get_new_community_subscribers(
         community_joined_at__date__gte=start_date,
         community_joined_at__date__lte=end_date,
     )
-    return _branch_filter(qs, branch_ids, 'client__branch__in').count()
+    qs = _branch_filter(qs, branch_ids, 'client__branch__in')
+    return qs.values('client__client_id').distinct().count()
 
 
 # ── Metric 7: New VK newsletter subscribers via app ──────────────────────────
@@ -202,7 +215,8 @@ def get_new_newsletter_subscribers(
         newsletter_joined_at__date__gte=start_date,
         newsletter_joined_at__date__lte=end_date,
     )
-    return _branch_filter(qs, branch_ids, 'client__branch__in').count()
+    qs = _branch_filter(qs, branch_ids, 'client__branch__in')
+    return qs.values('client__client_id').distinct().count()
 
 
 # ── Metric 7b: First gift receivers ──────────────────────────────────────────
@@ -213,6 +227,9 @@ def get_first_gift_receivers(
     """
     Unique guests whose very first InventoryItem (any acquisition source) was
     created within the period — i.e. they got their first-ever gift in this range.
+
+    Дедуп по guest.Client: гость получает «первый подарок» один раз,
+    независимо от того, в скольких point-профилях у него есть InventoryItem.
     """
     from apps.tenant.inventory.models import InventoryItem
 
@@ -220,7 +237,7 @@ def get_first_gift_receivers(
     qs = _branch_filter(qs, branch_ids, 'client_branch__branch__in')
 
     first_items = (
-        qs.values('client_branch')
+        qs.values('client_branch__client_id')
         .annotate(first_at=Min('created_at'))
         .filter(
             first_at__date__gte=start_date,
@@ -243,7 +260,7 @@ def get_gift_activators(
         activated_at__date__lte=end_date,
     )
     qs = _branch_filter(qs, branch_ids, 'client_branch__branch__in')
-    return qs.values('client_branch').distinct().count()
+    return qs.values('client_branch__client_id').distinct().count()
 
 
 # ── Metric 8: Birthday greetings sent ────────────────────────────────────────
@@ -280,57 +297,32 @@ def get_birthday_greetings_sent(
 
 # ── Metric 9: Birthday celebrants (came to redeem birthday prize) ─────────────
 
-# Минимум дней между установкой ДР и визитом, чтобы визит считался
-# «пришёл отметить». Без этого фильтра гость, поставивший ДР=сегодня
-# при первом входе и сразу пришедший, попадает в счётчик — хотя
-# поздравления ему никогда не отправлялись (см. send_birthday_broadcasts_task,
-# который применяет тот же 30-дневный антиабузный фильтр).
-BIRTHDAY_SET_MIN_DAYS_BEFORE_VISIT = 30
-
-
 def get_birthday_celebrants(
     branch_ids: list[int] | None, start_date: date, end_date: date
 ) -> int:
     """
     Unique guests who visited the cafe on their birthday (month+day of visit matches birth_date).
     Counts distinct guests from ClientBranchVisit where visit date matches their birthday.
-
-    Гости, установившие ДР менее BIRTHDAY_SET_MIN_DAYS_BEFORE_VISIT дней
-    до визита, не считаются — они не получали поздравительных рассылок
-    и фактически использовали ДР как форму регистрации.
     """
-    from datetime import timedelta
-    from django.db.models import F, ExpressionWrapper, DateField
-    from django.db.models.functions import ExtractMonth, ExtractDay, TruncDate
+    from django.db.models import F
+    from django.db.models.functions import ExtractMonth, ExtractDay
     from apps.tenant.branch.models import ClientBranchVisit
-
-    # Cutoff в DateField (без TZ): TruncDate(visited_at) − 30 дней.
-    # Сравниваем DateField с DateField, чтобы исключить TZ-сдвиги на границе
-    # суток (USE_TZ=True): иначе UTC-полночь visited_at могла бы попасть
-    # в предыдущий локальный день и фильтр работал нестабильно.
-    visit_minus_grace = ExpressionWrapper(
-        TruncDate('visited_at') - timedelta(days=BIRTHDAY_SET_MIN_DAYS_BEFORE_VISIT),
-        output_field=DateField(),
-    )
 
     qs = ClientBranchVisit.objects.filter(
         visited_at__date__gte=start_date,
         visited_at__date__lte=end_date,
         client__birth_date__isnull=False,
-        client__birth_date_set_at__isnull=False,
     ).annotate(
         visit_month=ExtractMonth('visited_at'),
         visit_day=ExtractDay('visited_at'),
         birth_month=ExtractMonth('client__birth_date'),
         birth_day=ExtractDay('client__birth_date'),
-        visit_minus_grace=visit_minus_grace,
     ).filter(
         visit_month=F('birth_month'),
         visit_day=F('birth_day'),
-        client__birth_date_set_at__lte=F('visit_minus_grace'),
     )
     qs = _branch_filter(qs, branch_ids, 'client__branch__in')
-    return qs.values('client').distinct().count()
+    return qs.values('client__client_id').distinct().count()
 
 
 # ── Metric 10: Message open rate ─────────────────────────────────────────────
@@ -339,51 +331,81 @@ def get_message_open_rate(
     branch_ids: list[int] | None, start_date: date, end_date: date
 ) -> float:
     """
-    % of sent VK messages that were read in the period.
+    % of sent VK broadcast messages that were read in the period.
 
-    Counts messages from all three outgoing channels:
-    - BroadcastRecipient (рассылки и авторассылки)
-    - TestimonialMessage(source=ADMIN_REPLY) (ответы на отзывы)
+    «Отправлено» берётся из BroadcastSend.sent_count — канонический источник,
+    тот же, что показывает /admin/senler/broadcastsend/ (column «Отправлено»).
+    `BroadcastRecipient` исторически создавался не для всех авторассылок
+    (для нескольких тенантов появился только с 2026-05-10), поэтому раньше
+    метрика занижала «Отправлено» в разы. BroadcastSend.sent_count писался
+    с самого начала и совпадает с числом строк в AutoBroadcastLog.
 
-    read_at is populated by the hourly Celery task `check_read_status_task`
-    which polls VK API `messages.getConversationsById`.
+    «Прочитано» считается из BroadcastRecipient.read_at — это единственный
+    способ отследить чтение (vk_message_id есть только в BR). Старые
+    сообщения без BR прочтения не трекаются вовсе.
 
-    Returns 0.0 if no messages were sent in the period.
+    **% открываемости** = read / trackable, где trackable — число BR.SENT
+    в периоде. Знаменатель — только отслеживаемые сообщения, иначе % резко
+    проседает на исторических периодах, где есть отправки без BR. Все
+    новые рассылки пишутся в BR с vk_message_id, так что со временем
+    «trackable» догонит «total_sent».
+
+    Personal admin replies to reviews are excluded.
+
+    Returns (rate%, total_sent, total_read, trackable). All zeros if nothing sent.
+      - total_sent — каноническое число отправок (BroadcastSend.sent_count, как в админке)
+      - trackable  — сколько из них есть в BR (можем отследить чтение)
+      - total_read — прочитано
+      - rate = total_read / trackable (НЕ от total_sent — иначе % проседает
+               из-за исторических нетрекаемых)
     """
-    from apps.tenant.senler.models import BroadcastRecipient, RecipientStatus
-    from apps.tenant.branch.models import TestimonialMessage
+    from django.db.models import Sum
+    from apps.tenant.senler.models import (
+        BroadcastRecipient, RecipientStatus, BroadcastSend,
+    )
 
-    # ── Broadcasts & auto-broadcasts ─────────────────────────────────────────
-    bc_qs = BroadcastRecipient.objects.filter(
+    # ── Прочитано и trackable: всегда из BroadcastRecipient ─────────────────
+    br_qs = BroadcastRecipient.objects.filter(
         status=RecipientStatus.SENT,
         sent_at__date__gte=start_date,
         sent_at__date__lte=end_date,
     )
     if branch_ids:
-        bc_qs = bc_qs.filter(client_branch__branch__in=branch_ids)
+        br_qs = br_qs.filter(client_branch__branch__in=branch_ids)
 
-    bc_sent = bc_qs.count()
-    bc_read = bc_qs.filter(read_at__isnull=False).count()
+    trackable = br_qs.count()
+    total_read = br_qs.filter(read_at__isnull=False).count()
 
-    # ── Admin replies (ответы на отзывы) ──────────────────────────────────────
-    reply_qs = TestimonialMessage.objects.filter(
-        source=TestimonialMessage.Source.ADMIN_REPLY,
-        vk_message_id__gt='',
-        created_at__date__gte=start_date,
-        created_at__date__lte=end_date,
-    )
+    # ── Отправлено: BroadcastSend.sent_count (совпадает с админкой) ─────────
     if branch_ids:
-        reply_qs = reply_qs.filter(conversation__branch__in=branch_ids)
+        # У BroadcastSend нет прямой FK на branch — фильтруем через
+        # related BroadcastRecipient. Для исторических BS без BR
+        # это даст занижение «Отправлено» (тот же недостаток, что у
+        # старой метрики), но per-branch иначе никак.
+        bs_qs = BroadcastSend.objects.filter(
+            started_at__date__gte=start_date,
+            started_at__date__lte=end_date,
+            recipients__client_branch__branch__in=branch_ids,
+        ).distinct()
+    else:
+        bs_qs = BroadcastSend.objects.filter(
+            started_at__date__gte=start_date,
+            started_at__date__lte=end_date,
+        )
+    total_sent = bs_qs.aggregate(s=Sum('sent_count'))['s'] or 0
 
-    reply_sent = reply_qs.count()
-    reply_read = reply_qs.filter(read_at__isnull=False).count()
-
-    total_sent = bc_sent + reply_sent
-    total_read = bc_read + reply_read
     if total_sent == 0:
-        return 0.0, 0, 0
+        return 0.0, 0, 0, 0
 
-    return round(total_read / total_sent * 100, 1), total_sent, total_read
+    # Знаменатель % — trackable (читать можем только их). Если trackable
+    # пустой (например, все отправки — историческое легаси) — rate=0,
+    # чтобы не делить на 0 и не показывать ложно-высокий процент.
+    if trackable > 0:
+        rate = round(total_read / trackable * 100, 1)
+    else:
+        rate = 0.0
+
+    return rate, total_sent, total_read, trackable
 
 
 # ── Metric 11 & 12: VK stories (not yet implemented) ─────────────────────────
@@ -402,7 +424,8 @@ def get_vk_stories_publishers(
         story_uploaded_at__date__gte=start_date,
         story_uploaded_at__date__lte=end_date,
     )
-    return _branch_filter(qs, branch_ids, 'client__branch__in').count()
+    qs = _branch_filter(qs, branch_ids, 'client__branch__in')
+    return qs.values('client__client_id').distinct().count()
 
 
 def get_stories_referrals(
@@ -419,7 +442,8 @@ def get_stories_referrals(
         created_at__date__gte=start_date,
         created_at__date__lte=end_date,
     )
-    return _branch_filter(qs, branch_ids, 'branch__in').count()
+    qs = _branch_filter(qs, branch_ids, 'branch__in')
+    return qs.values('client_id').distinct().count()
 
 
 # ── Metric: Delivery activators ──────────────────────────────────────────────
@@ -448,7 +472,7 @@ def get_delivery_activators_count(
         activated_by__isnull=False,
     )
     qs = _branch_filter(qs, branch_ids, 'activated_by__branch__in')
-    return qs.values('activated_by').distinct().count()
+    return qs.values('activated_by__client_id').distinct().count()
 
 
 # ── Metric 13: POS guests ────────────────────────────────────────────────────
@@ -566,7 +590,7 @@ def get_general_stats(
         'birthday_greetings_sent':   get_birthday_greetings_sent(branch_ids, start_date, end_date),
         'birthday_celebrants':       get_birthday_celebrants(branch_ids, start_date, end_date),
         **dict(zip(
-            ('message_open_rate', 'message_total_sent', 'message_total_read'),
+            ('message_open_rate', 'message_total_sent', 'message_total_read', 'message_trackable'),
             get_message_open_rate(branch_ids, start_date, end_date),
         )),
         'vk_stories_publishers':     get_vk_stories_publishers(branch_ids, start_date, end_date),
@@ -643,10 +667,12 @@ def get_chart_data(
     )
     quest_qs = _branch_filter(quest_qs, branch_ids, 'client__branch__in')
 
-    quest_entered_ids = set(quest_qs.values_list('client_id', flat=True).distinct())
+    # Дедуп по guest.Client (= client__client_id): тот же подход, что в qr_scans,
+    # чтобы 'вошли в задания' / 'не заходили' складывались с qr_scans.
+    quest_entered_ids = set(quest_qs.values_list('client__client_id', flat=True).distinct())
     quest_completed_ids = set(
         quest_qs.filter(completed_at__isnull=False)
-        .values_list('client_id', flat=True).distinct()
+        .values_list('client__client_id', flat=True).distinct()
     )
     quests_done    = len(quest_completed_ids)
     quests_failed  = max(0, len(quest_entered_ids) - quests_done)
@@ -1149,6 +1175,28 @@ def _get_active_client_ids(
         return list(qs.values_list('activated_by__client_id', flat=True).distinct())
 
 
+def _get_active_client_ids_v2(
+    branch_ids: list[int] | None, start_date: date, end_date: date, mode: str,
+) -> list[int]:
+    """
+    Return guest.Client PKs (per-человек) активные в периоде —
+    та же логика, что у get_qr_scan_count(), чтобы итоги RF матрицы совпадали
+    с «отсканировали QR» в общей аналитике (после дедупа по Client).
+
+    Один человек = один client_id, даже если он есть в нескольких точках.
+    """
+    cb_ids = _get_active_client_branch_ids(branch_ids, start_date, end_date, mode)
+    if not cb_ids:
+        return []
+    from apps.tenant.branch.models import ClientBranch
+    return list(
+        ClientBranch.objects
+        .filter(pk__in=cb_ids)
+        .values_list('client_id', flat=True)
+        .distinct()
+    )
+
+
 def _get_active_client_branch_ids(
     branch_ids: list[int] | None, start_date: date, end_date: date, mode: str,
 ) -> list[int]:
@@ -1391,6 +1439,7 @@ def get_rf_segment_guests(
     branch_ids: list[int] | None, r_score: int, f_score: int,
     mode: str = 'restaurant', limit: int = 50,
     client_branch_ids: list[int] | None = None,
+    client_ids: list[int] | None = None,
 ) -> list[dict]:
     """
     Guest list for a specific RF segment cell.
@@ -1400,8 +1449,10 @@ def get_rf_segment_guests(
     выбранной области, чтобы клик по ячейке всегда совпадал с тем,
     что нарисовано в матрице.
 
-    Если передан client_branch_ids — список строится per-ClientBranch (та же
-    логика, что в QR-сканах общей аналитики). Иначе — legacy per-Client.
+    Если передан client_ids — per-Client (1 гость = 1 строка). Это
+    основной режим, согласован с дедупом в общей аналитике.
+    Если передан client_branch_ids — legacy per-ClientBranch (оставлен
+    для обратной совместимости).
     """
     from apps.tenant.analytics.models import RFSettings
     _, thresholds, _ = RFSettings.resolve_for_scope(branch_ids)
@@ -1474,12 +1525,15 @@ def get_rf_segment_guests(
             })
         return result
 
-    # Legacy per-Client path (без периода): сохранён для обратной совместимости.
+    # Per-Client path: либо с явным client_ids (фильтр периода через QR-логику),
+    # либо legacy без периода.
     ScoreModel = _get_score_model(mode)
     qs = ScoreModel.objects.select_related('client', 'segment').all()
     qs = _branch_filter(qs, branch_ids, 'client__branch_profiles__branch__in')
     if branch_ids:
         qs = qs.distinct()
+    if client_ids is not None:
+        qs = qs.filter(client_id__in=client_ids)
 
     matching_scores = []
     for s in qs.iterator():
@@ -1706,11 +1760,11 @@ def get_rf_stats(
     if end_date is None:
         end_date = today
 
-    # Считаем матрицу по тем же ClientBranch профилям, что попадают в QR-сканы
-    # общей аналитики (per-branch профиль = строка матрицы). Это гарантирует,
-    # что total RF матрицы и QR-сканы в общей аналитике совпадают.
-    active_cb_ids = _get_active_client_branch_ids(branch_ids, start_date, end_date, mode)
-    matrix = get_rf_matrix(branch_ids, mode=mode, client_branch_ids=active_cb_ids)
+    # Считаем матрицу по тем же guest.Client, что попадают в QR-сканы
+    # общей аналитики (per-Client = строка матрицы). Это гарантирует,
+    # что total RF матрицы и QR-сканы совпадают (1 гость = 1 счёт).
+    active_client_ids = _get_active_client_ids_v2(branch_ids, start_date, end_date, mode)
+    matrix = get_rf_matrix(branch_ids, mode=mode, client_ids=active_client_ids)
 
     # Derive summary cards directly from the period matrix
     total   = matrix['total']
@@ -1915,9 +1969,12 @@ def recalculate_rf_scores(
         }
     else:
         from apps.tenant.delivery.models import Delivery
+        # Delivery.activated_by is SET_NULL on ClientBranch delete — отсеиваем
+        # «осиротевшие» активации, чтобы NULL client_id не попал в insert.
         delivery_qs = Delivery.objects.filter(
             activated_at__isnull=False,
             activated_at__date__gte=since,
+            activated_by__isnull=False,
         )
         if branch_ids:
             delivery_qs = delivery_qs.filter(activated_by__branch__pk__in=branch_ids)
@@ -1929,6 +1986,7 @@ def recalculate_rf_scores(
         visit_map = {
             r['activated_by__client_id']: {'frequency': r['freq'], 'last_at': r['last_at']}
             for r in rows
+            if r['activated_by__client_id'] is not None
         }
 
     if not visit_map:
@@ -2033,6 +2091,23 @@ def get_branches_list() -> list[dict]:
 
 # ── Stat detail: returns ClientBranch queryset for a given metric ─────────────
 
+def _dedup_cb_by_client(qs):
+    """
+    Reduce a ClientBranch queryset to one row per guest.Client (latest profile
+    by ClientBranch.pk = самый недавно созданный профиль).
+
+    Используется в drilldown: метрики дашборда считаются по уникальным
+    guest.Client, и список «контрибьюторов метрики» должен это отражать,
+    иначе total и длина списка разойдутся.
+    """
+    from django.db.models import Max
+    latest_pks = list(
+        qs.values('client_id').annotate(latest_pk=Max('id'))
+        .values_list('latest_pk', flat=True)
+    )
+    return qs.filter(pk__in=latest_pks)
+
+
 def get_stat_clients(
     metric: str,
     branch_ids: list[int] | None,
@@ -2042,6 +2117,10 @@ def get_stat_clients(
     """
     Returns a ClientBranch queryset whose members contributed to `metric`
     in the given period. Used by StatsDetailView to render the drilldown list.
+
+    Каждая запись — один guest.Client. Если у гостя несколько ClientBranch
+    профилей (зарегистрирован в нескольких точках), показываем самый
+    свежий из них.
 
     Unsupported or non-client metrics return an empty queryset.
     """
@@ -2069,7 +2148,7 @@ def get_stat_clients(
         )
         if branch_ids:
             qs = qs.filter(client__branch__in=branch_ids)
-        return base.filter(
+        return _dedup_cb_by_client(base.filter(
             pk__in=qs.values('client_id'),
         ).filter(
             _Q(vk_status__community_via_app=True)
@@ -2098,7 +2177,7 @@ def get_stat_clients(
                 created_at__date__gte=start_date,
                 created_at__date__lte=end_date,
             ))
-        )
+        ))
 
     if metric == 'total_vk_subscribers':
         qs = ClientVKStatus.objects.filter(
@@ -2106,7 +2185,7 @@ def get_stat_clients(
         )
         if branch_ids:
             qs = qs.filter(client__branch__in=branch_ids)
-        return base.filter(pk__in=qs.values('client_id'))
+        return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_id')))
 
     if metric == 'new_community_subscribers':
         qs = ClientVKStatus.objects.filter(
@@ -2116,7 +2195,7 @@ def get_stat_clients(
         )
         if branch_ids:
             qs = qs.filter(client__branch__in=branch_ids)
-        return base.filter(pk__in=qs.values('client_id'))
+        return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_id')))
 
     if metric == 'new_newsletter_subscribers':
         qs = ClientVKStatus.objects.filter(
@@ -2126,7 +2205,7 @@ def get_stat_clients(
         )
         if branch_ids:
             qs = qs.filter(client__branch__in=branch_ids)
-        return base.filter(pk__in=qs.values('client_id'))
+        return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_id')))
 
     if metric == 'first_gift_receivers':
         from apps.tenant.inventory.models import InventoryItem
@@ -2143,7 +2222,7 @@ def get_stat_clients(
             )
         )
         cb_ids = [r['client_branch'] for r in first_items]
-        return base.filter(pk__in=cb_ids)
+        return _dedup_cb_by_client(base.filter(pk__in=cb_ids))
 
     if metric == 'gift_activators':
         from apps.tenant.inventory.models import InventoryItem
@@ -2154,7 +2233,7 @@ def get_stat_clients(
         )
         if branch_ids:
             qs = qs.filter(client_branch__branch__in=branch_ids)
-        return base.filter(pk__in=qs.values('client_branch_id'))
+        return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_branch_id')))
 
     if metric == 'coin_purchasers':
         qs = CoinTransaction.objects.filter(
@@ -2165,7 +2244,7 @@ def get_stat_clients(
         )
         if branch_ids:
             qs = qs.filter(client__branch__in=branch_ids)
-        return base.filter(pk__in=qs.values('client_id'))
+        return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_id')))
 
     if metric == 'repeat_game_players':
         from apps.tenant.game.models import ClientAttempt
@@ -2178,16 +2257,18 @@ def get_stat_clients(
         if branch_ids:
             qs = qs.filter(client__branch__in=branch_ids)
 
+        # Группируем по guest.Client (как в карточке метрики), потом подтягиваем
+        # все CB-профили этих гостей и оставляем по одному через _dedup_cb_by_client.
         pairs = (
             qs.annotate(play_date=_TruncDate('created_at'))
-            .values_list('client_id', 'play_date')
+            .values_list('client__client_id', 'play_date')
             .distinct()
         )
         client_days: dict = {}
-        for cb_id, play_date in pairs:
-            client_days.setdefault(cb_id, set()).add(play_date)
-        cb_ids = [k for k, v in client_days.items() if len(v) >= 2]
-        return base.filter(pk__in=cb_ids)
+        for client_id, play_date in pairs:
+            client_days.setdefault(client_id, set()).add(play_date)
+        active_client_ids = [k for k, v in client_days.items() if len(v) >= 2]
+        return _dedup_cb_by_client(base.filter(client_id__in=active_client_ids))
 
     if metric == 'new_group_with_gift':
         from apps.tenant.inventory.models import SuperPrizeEntry, SuperPrizeTrigger
@@ -2218,39 +2299,30 @@ def get_stat_clients(
             )
         )
         cb_ids = [r['client_branch'] for r in first_prizes]
-        return base.filter(pk__in=cb_ids)
+        return _dedup_cb_by_client(base.filter(pk__in=cb_ids))
 
     if metric == 'birthday_celebrants':
-        from datetime import timedelta
-        from django.db.models import F, ExpressionWrapper, DateField
-        from django.db.models.functions import ExtractMonth, ExtractDay, TruncDate
+        from django.db.models import F
+        from django.db.models.functions import ExtractMonth, ExtractDay
         from apps.tenant.branch.models import ClientBranchVisit
-
-        visit_minus_grace = ExpressionWrapper(
-            TruncDate('visited_at') - timedelta(days=BIRTHDAY_SET_MIN_DAYS_BEFORE_VISIT),
-            output_field=DateField(),
-        )
 
         visits_qs = ClientBranchVisit.objects.filter(
             visited_at__date__gte=start_date,
             visited_at__date__lte=end_date,
             client__birth_date__isnull=False,
-            client__birth_date_set_at__isnull=False,
         ).annotate(
             visit_month=ExtractMonth('visited_at'),
             visit_day=ExtractDay('visited_at'),
             birth_month=ExtractMonth('client__birth_date'),
             birth_day=ExtractDay('client__birth_date'),
-            visit_minus_grace=visit_minus_grace,
         ).filter(
             visit_month=F('birth_month'),
             visit_day=F('birth_day'),
-            client__birth_date_set_at__lte=F('visit_minus_grace'),
         )
         if branch_ids:
             visits_qs = visits_qs.filter(client__branch__in=branch_ids)
         cb_ids = visits_qs.values_list('client_id', flat=True).distinct()
-        return base.filter(pk__in=cb_ids)
+        return _dedup_cb_by_client(base.filter(pk__in=cb_ids))
 
     if metric == 'vk_stories_publishers':
         qs = ClientVKStatus.objects.filter(
@@ -2260,6 +2332,6 @@ def get_stat_clients(
         )
         if branch_ids:
             qs = qs.filter(client__branch__in=branch_ids)
-        return base.filter(pk__in=qs.values('client_id'))
+        return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_id')))
 
     return base.none()

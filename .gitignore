@@ -7,8 +7,8 @@ __pycache__/
 .vscode/
 venv/
 
-**/migrations/*
-!**/migrations/__init__.py
+**/migrations/__pycache__/
+**/migrations/*.pyc
 
 media/
 staticfiles/
@@ -22,3 +22,9 @@ celerybeat-schedule.db
 
 migrate_v5.sql
 prod.sql
+# safety: backups + sql dumps (do not commit)
+*.bak
+*.bak.*
+backups/
+backup_*.sql
+host-pre-rsync-*.tar.gz

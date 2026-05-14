@@ -11,1102 +11,381 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
-/* ── Page & print setup ──────────────────────────────────────────────────── */
-@page {
-  size: A4 portrait;
-  margin: 12mm 15mm 30mm 15mm;
+:root {
+  --brand:#6a1b9a; --brand-soft:#f5ecfb; --lime:#a3e635;
+  --navy:#1a2744; --ink:#1F2937; --ink-mid:#374151; --tm:#6B7280;
+  --line:#E5E7EB; --line-soft:#F3F4F6; --paper:#f0f2f5; --paper-card:#FFFFFF;
+  --warn-bg:#FFFBEB; --warn-bd:#F5C24A; --warn-fg:#6B4C0F;
+  --ok:#2e7d32; --info:#1565c0; --teal:#00897b; --orange:#e65100; --err:#c62828;
 }
-
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-html, body {
-  font-family: 'DM Sans', -apple-system, sans-serif;
-  font-size: 14pt;
-  line-height: 1.5;
-  color: #0F1A2E;
-  background: #fff;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
+/* Top bar — hidden in PDF iframe */
+.topbar { position: fixed; top:0; left:0; right:0; height: 52px; background: var(--brand); display: flex; align-items: center; gap: 12px; padding: 0 20px; z-index: 999; box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+.topbar-brand { font-family: 'DM Sans', sans-serif; font-weight: 800; font-size: 17px; color: #fff; }
+.topbar-spacer { flex: 1; }
+.btn-save { background: var(--lime); color: var(--navy); border: none; padding: 10px 22px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; font-family: inherit; }
+.btn-save:hover { background: #84cc16; }
+.btn-save:disabled { opacity: .6; cursor: not-allowed; }
 
-/* ── Top bar (hidden when printing) ─────────────────────────────────────── */
-.topbar {
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  height: 52px;
-  background: #0F1A2E;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 0 24px;
-  z-index: 999;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-}
+/* Book + page */
+.book { padding: 80px 0 60px; }
+.page { width: 210mm; min-height: 297mm; margin: 14px auto; background: #fff; padding: 14mm 15mm; box-shadow: 0 2px 12px rgba(0,0,0,0.12); position: relative; }
 
-.topbar-brand {
-  font-family: 'DM Serif Display', serif;
-  font-size: 16px;
-  color: #4A7CFF;
-  letter-spacing: 0.02em;
-}
+/* Cover page */
+.cover { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; background: #fff; color: var(--navy); padding: 50mm 20mm; border-top: 8px solid var(--brand); }
+.cover-logo { width: 110px; height: 110px; object-fit: contain; margin-bottom: 28px; }
+.cover h1 { font-family: 'DM Sans', sans-serif; font-size: 36px; font-weight: 800; line-height: 1.15; max-width: 160mm; color: var(--navy); letter-spacing: -0.5px; }
+.cover-bar { width: 64px; height: 4px; background: var(--lime); margin: 20px auto; border-radius: 2px; }
+.cover-sub { font-size: 18px; color: var(--brand); font-weight: 700; letter-spacing: 0.3px; }
+.cover-period { margin-top: 40px; font-size: 14px; color: var(--tm); font-weight: 500; letter-spacing: 0.4px; }
+.cover-footer-logo { position: absolute; bottom: 20mm; left: 50%; transform: translateX(-50%); width: 60px; height: 60px; object-fit: contain; opacity: 0.85; }
 
-.topbar-info {
-  flex: 1;
-  color: rgba(255,255,255,0.75);
-  font-size: 13px;
-  font-weight: 500;
-}
+/* Section header */
+.sec-hd { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1.5px solid var(--line); margin-bottom: 16px; }
+.sec-badge { background: var(--brand-soft); color: var(--brand); padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 800; letter-spacing: 0.3px; min-width: 30px; text-align: center; }
+.sec-title { font-family: 'DM Sans', sans-serif; font-size: 18px; font-weight: 800; color: var(--navy); flex: 1; letter-spacing: -0.2px; }
 
-.topbar-info strong { color: #fff; font-weight: 700; }
+/* Table */
+.tbl { width: 100%; border-collapse: collapse; font-size: 12pt; margin-top: 6px; }
+.tbl thead th { font-size: 9pt; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--tm); text-align: left; padding: 8px 10px; background: #fafafa; border-bottom: 2px solid var(--brand); }
+.tbl thead th:nth-child(2) { text-align: right; width: 90px; }
+.tbl tbody td { padding: 10px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.tbl tbody tr:last-child td { border-bottom: none; }
+.tbl tbody tr:nth-child(even) td { background: #fafafa; }
+.tbl td.metric { font-weight: 700; color: #0f172a; font-size: 11pt; }
+.tbl td.value { font-weight: 800; color: #0f172a; text-align: right; font-size: 18pt; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.tbl td.value small { font-size: 7.5pt; color: var(--tm); font-weight: 500; display: block; margin-top: 2px; }
+.tbl td.src { font-size: 9pt; color: var(--ink-mid); max-width: 100mm; line-height: 1.45; }
+.tbl td.src b { font-weight: 700; color: var(--brand); }
+.tbl td.src .src-ex { display: block; margin-top: 3px; padding: 4px 7px; background: #f5ecfb; border-left: 2.5px solid var(--brand); border-radius: 0 3px 3px 0; font-size: 8.5pt; }
 
-.btn-save {
-  background: #4A7CFF;
-  color: #fff;
-  border: none;
-  padding: 9px 22px;
-  border-radius: 8px;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: background 0.15s;
-}
+.formula { background: var(--brand-soft); border-left: 4px solid var(--brand); border-radius: 6px; padding: 10px 14px; margin: 12px 0 4px; font-size: 11pt; }
+.formula b { color: var(--brand); font-weight: 800; }
 
-.btn-save:hover { background: #3B6FF0; }
-.btn-save:active { background: #2C5CE0; }
+.scale { margin-top: 12px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.scale-row { display: flex; }
+.scale-row + .scale-row { border-top: 1px solid var(--line-soft); }
+.scale-key { flex: 0 0 120px; padding: 7px 12px; font-size: 10pt; font-weight: 700; background: var(--paper); border-right: 1px solid var(--line-soft); }
+.scale-val { padding: 7px 12px; font-size: 10pt; }
+.scale-val.low  { color: var(--err); }
+.scale-val.norm { color: var(--tm); }
+.scale-val.good { color: var(--info); }
+.scale-val.best { color: var(--ok); font-weight: 700; }
 
-.btn-save svg { flex-shrink: 0; }
+.sub { font-size: 10pt; color: var(--tm); margin-top: 10px; line-height: 1.5; font-style: italic; }
 
-.topbar-hint {
-  font-size: 11px;
-  color: rgba(255,255,255,0.45);
-}
+.chart-wrap { margin-top: 14px; background: var(--paper); border: 1px solid var(--line-soft); border-radius: 6px; padding: 10px 12px; }
+.chart-wrap canvas, .chart-wrap img.snap { width: 100% !important; max-height: 80mm; height: 80mm !important; display: block; }
+.chart-wrap img.snap { display: none; }
 
-@media print {
-  .topbar { display: none !important; }
-  body { padding-top: 0 !important; }
-}
+/* Manager comment */
+.cmt { margin-top: 14px; background: var(--warn-bg); border: 1px solid var(--warn-bd); border-radius: 6px; padding: 12px 14px; }
+.cmt-hd { font-size: 11pt; font-weight: 700; color: var(--warn-fg); margin-bottom: 6px; }
+.cmt-out { font-size: 11pt; color: var(--ink); padding: 8px 10px; background: #fff; border-radius: 4px; min-height: 32px; white-space: pre-wrap; line-height: 1.5; }
+.cmt-empty { color: #B49968; font-style: italic; }
+.cmt-example { margin-top: 8px; padding: 8px 10px; background: #fff; border-radius: 4px; border: 1px dashed #E8D596; font-size: 9pt; color: var(--ink-mid); line-height: 1.45; }
+.cmt-example b { display: block; font-size: 8.5pt; font-weight: 700; color: var(--warn-fg); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
 
-/* ── Wrapper ─────────────────────────────────────────────────────────────── */
-.pdf-wrap {
-  padding-top: 64px; /* space for fixed topbar */
-}
-
-@media print {
-  .pdf-wrap { padding-top: 0; }
-}
-
-/* ── Cover ───────────────────────────────────────────────────────────────── */
-.cover {
-  background: linear-gradient(145deg, #0B1525 0%, #0F1A2E 40%, #1B2B45 70%, #263B5C 100%);
-  color: #fff;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 50mm 22mm;
-}
-
-.cover-brand {
-  font-family: 'DM Serif Display', serif;
-  font-size: 26pt;
-  color: #4A7CFF;
-  margin-bottom: 18mm;
-  letter-spacing: 0.01em;
-}
-
-.cover-eyebrow {
-  font-size: 11pt;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgba(255,255,255,0.45);
-  margin-bottom: 5mm;
-}
-
-.cover-title {
-  font-size: 38pt;
-  font-weight: 800;
-  line-height: 1.08;
-  margin-bottom: 7mm;
-}
-
-.cover-company {
-  font-size: 20pt;
-  font-weight: 600;
-  color: #93B4FF;
-  margin-bottom: 3mm;
-}
-
-.cover-period {
-  font-size: 14pt;
-  font-weight: 500;
-  color: rgba(255,255,255,0.55);
-  margin-bottom: 18mm;
-}
-
-.cover-rule {
-  width: 55mm;
-  height: 3px;
-  background: linear-gradient(90deg, #4A7CFF 0%, rgba(74,124,255,0) 100%);
-  margin-bottom: 12mm;
-}
-
-.cover-tagline {
-  font-size: 12pt;
-  color: rgba(255,255,255,0.55);
-  line-height: 1.7;
-  max-width: 110mm;
-}
-
-/* ── Sections ────────────────────────────────────────────────────────────── */
-.section {
-  break-before: page;
-  page-break-before: always;
-  padding: 0;
-  min-height: 1px; /* avoids collapse */
-}
-
-.sec-header {
-  background: linear-gradient(135deg, #0F1A2E 0%, #1B2B45 100%);
-  color: #fff;
-  padding: 7mm 9mm;
-  border-radius: 5mm;
-  display: flex;
-  align-items: center;
-  gap: 5mm;
-  margin-bottom: 7mm;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.sec-num {
-  width: 11mm;
-  height: 11mm;
-  background: #4A7CFF;
-  border-radius: 3mm;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13pt;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.sec-title {
-  font-size: 21pt;
-  font-weight: 700;
-  line-height: 1.15;
-}
-
-/* ── Metric cards ────────────────────────────────────────────────────────── */
-.cards {
-  display: grid;
-  gap: 4mm;
-  margin-bottom: 6mm;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.cards--4 { grid-template-columns: repeat(4, 1fr); }
-.cards--3 { grid-template-columns: repeat(3, 1fr); }
-.cards--2 { grid-template-columns: repeat(2, 1fr); }
-
-.card {
-  border: 1.5px solid #E2E8F0;
-  border-radius: 4mm;
-  padding: 5mm 6mm;
-  background: #F8FAFC;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.card-lbl {
-  font-size: 10.5pt;
-  color: #64748B;
-  font-weight: 500;
-  margin-bottom: 2mm;
-  line-height: 1.3;
-}
-
-.card-val {
-  font-size: 30pt;
-  font-weight: 800;
-  color: #0F1A2E;
-  line-height: 1;
-}
-
-.card-val--ok   { color: #10B981; }
-.card-val--info { color: #3B82F6; }
-.card-val--warn { color: #F59E0B; }
-.card-val--err  { color: #EF4444; }
-.card-val--teal { color: #0D9488; }
-
-.card-sub {
-  font-size: 9.5pt;
-  color: #94A3B8;
-  margin-top: 1.5mm;
-}
-
-.card-val-unit {
-  font-size: 16pt;
-  font-weight: 600;
-  color: #94A3B8;
-  margin-left: 1mm;
-}
-
-/* ── Chart area ──────────────────────────────────────────────────────────── */
-.chart-wrap {
-  break-inside: avoid;
-  page-break-inside: avoid;
-  margin-bottom: 6mm;
-  border: 1.5px solid #E2E8F0;
-  border-radius: 4mm;
-  padding: 5mm 6mm;
-  background: #fff;
-}
-
-.chart-wrap-title {
-  font-size: 12.5pt;
-  font-weight: 600;
-  color: #1B2B45;
-  margin-bottom: 4mm;
-}
-
-.chart-wrap canvas {
-  display: block;
-  width: 100% !important;
-  max-height: 68mm;
-}
-
-.chart-wrap img.snap {
-  display: none;
-  width: 100% !important;
-  max-height: 68mm;
-  object-fit: contain;
-}
-
-/* two charts side by side */
-.chart-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4mm;
-  margin-bottom: 6mm;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-/* big number highlight */
-.bignum {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  min-height: 50mm;
-}
-
-.bignum-val {
-  font-size: 64pt;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.bignum-lbl {
-  font-size: 12.5pt;
-  color: #64748B;
-  margin-top: 3mm;
-}
-
-/* ── Scale bar ───────────────────────────────────────────────────────────── */
-.scale-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3mm;
-  margin-bottom: 6mm;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.scale-item {
-  padding: 2.5mm 5mm;
-  border-radius: 2.5mm;
-  font-size: 11pt;
-  font-weight: 500;
-}
-
-/* ── Comment box ─────────────────────────────────────────────────────────── */
-.cmt-box {
-  border: 1.5px solid #E2E8F0;
-  border-radius: 4mm;
-  padding: 5mm 6mm;
-  margin-top: 5mm;
-  break-inside: avoid;
-  page-break-inside: avoid;
-  background: #F8FAFC;
-}
-
-.cmt-lbl {
-  font-size: 10pt;
-  color: #94A3B8;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-bottom: 3mm;
-}
-
-.cmt-text {
-  font-size: 13pt;
-  color: #1B2B45;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  min-height: 18mm;
-}
-
-.cmt-empty {
-  color: #CBD5E1;
-  font-style: italic;
-}
-
-/* ── Footer ──────────────────────────────────────────────────────────────── */
-.pdf-footer {
-  margin-top: 12mm;
-  padding-top: 5mm;
-  border-top: 1.5px solid #E2E8F0;
-  text-align: center;
-  color: #94A3B8;
-  font-size: 10.5pt;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.pdf-footer strong { color: #4A7CFF; }
+@media print { .topbar { display: none !important; } body { background: #fff; } .book { padding: 0; } .page { box-shadow: none; margin: 0; page-break-after: always; } }
 </style>
 </head>
 <body>
 
-<!-- ── Top bar ────────────────────────────────────────────────────────────── -->
 <div class="topbar">
-  <div class="topbar-brand">LevelUp</div>
-  <div class="topbar-info">
-    <strong>{{ company_name }}</strong> &nbsp;·&nbsp; {{ start_display }} — {{ end_display }}
-  </div>
-  <div class="topbar-hint">Браузер откроет диалог печати — выберите «Сохранить как PDF»</div>
-  <button class="btn-save" onclick="preparePrint()">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-    </svg>
-    Скачать PDF
-  </button>
+  <div class="topbar-brand">ЛоялUP · Отчёт</div>
+  <div class="topbar-spacer"></div>
+  <button class="btn-save" onclick="preparePrint()">💾 Скачать PDF</button>
 </div>
 
-<div class="pdf-wrap">
+<div class="book">
 
-<!-- ══ ОБЛОЖКА ══════════════════════════════════════════════════════════════ -->
-<div class="cover">
-  <div class="cover-brand">LevelUp</div>
-  <div class="cover-eyebrow">Аналитика системы лояльности</div>
-  <div class="cover-title">Отчёт<br>по системе<br>лояльности</div>
-  <div class="cover-company">{{ company_name }}</div>
-  <div class="cover-period">{{ start_display }} — {{ end_display }}</div>
-  <div class="cover-rule"></div>
-  <div class="cover-tagline">Вовлечённость гостей · Рост клиентской базы<br>RF-сегменты · Эффективность коммуникаций</div>
+  <!-- ─── COVER ────────────────────────────────────────────── -->
+  <div class="page cover">
+    <img class="cover-logo" src="/static/images/LoyalUpLogo.png" alt="ЛоялUP">
+    <h1>Отчёт по системе лояльности</h1>
+    <div class="cover-bar"></div>
+    <div class="cover-sub">{{ company_name }}</div>
+    <div class="cover-period">{{ start_display }} — {{ end_display }}</div>
+    <img class="cover-footer-logo" src="/static/images/LoyalUpLogo.png" alt="ЛоялUP">
+  </div>
+
+  <!-- ═══ 1. Key metrics ═══ -->
+  <div class="page section">
+    <div class="sec-hd"><div class="sec-badge">01</div><div class="sec-title">Ключевые метрики системы за период</div></div>
+    <table class="tbl">
+      <thead><tr><th>Метрика</th><th>Значение</th><th>Источник / Откуда цифра</th></tr></thead>
+      <tbody>
+        <tr><td class="metric">📱 Отсканировали QR-код</td><td class="value">{{ report.qr_scans }}</td><td class="src"><b>Гости, открывшие мини-приложение</b> — QR в кафе или код доставки. 1 гость = не чаще раза в 6 часов. <span class="src-ex">300 сканов → 300.</span></td></tr>
+        <tr><td class="metric">📬 Гостей в рассылке</td><td class="value">{{ report.total_vk }}</td><td class="src"><b>Вся ваша база</b> — все подписавшиеся через приложение за всё время. Не зависит от периода.</td></tr>
+        <tr><td class="metric">🎁 Новые в группе/рассылке + первый подарок</td><td class="value">{{ report.new_with_gift }}</td><td class="src"><b>Конверсия первого контакта</b>: впервые выиграли суперприз И подписались через приложение в периоде.</td></tr>
+        <tr><td class="metric">🔄 Вернулись и сыграли повторно</td><td class="value">{{ report.repeat_players }}</td><td class="src"><b>Повторные визиты</b>: играли в 2+ разных дня. Один день — не считается. <span class="src-ex">Пн и Чт → да. Только Пн → нет.</span></td></tr>
+        <tr><td class="metric">💰 Купили подарки за баллы</td><td class="value">{{ report.coin_purchasers }}</td><td class="src"><b>Гости, обменявшие баллы</b> на товар. Каждый — один раз, даже если купил 5 раз.</td></tr>
+        <tr><td class="metric">📬 Подписались на сообщество ВК</td><td class="value">{{ report.new_community }}</td><td class="src"><b>Новые подписчики VK-группы</b> через приложение в период. Подписавшиеся раньше сами — не считаются.</td></tr>
+        <tr><td class="metric">📨 Подписались на рассылку ВК</td><td class="value">{{ report.new_newsletter }}</td><td class="src"><b>Гости, разрешившие ЛС в VK</b> через Senler. Только через приложение, в период.</td></tr>
+        <tr><td class="metric">🎁 Получили первый подарок</td><td class="value">{{ report.first_gift_receivers }}</td><td class="src"><b>Самый первый подарок в жизни</b> — раньше у гостя инвентарь был пуст. Любой источник.</td></tr>
+        <tr><td class="metric">✅ Активировали подарок</td><td class="value">{{ report.gift_activators }}</td><td class="src"><b>Гости, применившие подарок в кафе</b> — нажали «Активировать», показали персоналу. Один — один раз за период.</td></tr>
+        <tr><td class="metric">🎂 Поздравлений с ДР отправлено</td><td class="value">{{ report.birthday_sent }}</td><td class="src"><b>Уникальные именинники с ДР-поздравлением</b>. До 3 сообщений (за 7д / 1д / в день) = один гость.</td></tr>
+        <tr><td class="metric">🎁 Пришли отметить ДР</td><td class="value">{{ report.birthday_came }}</td><td class="src"><b>Конверсия ДР</b>: получил → пришёл → ввёл код дня → активировал подарок. Сюда могут попадать и гости, поставившие при регистрации сегодняшнюю дату как ДР по лени. <span class="src-ex">22 → 14 = 64%.</span></td></tr>
+        <tr><td class="metric">📊 % открываемости сообщений ВК</td><td class="value">{{ report.message_open_rate }}%<small>{{ report.message_total_read }}/{{ report.message_trackable }} отслеж. (всего {{ report.message_total_sent }})</small></td><td class="src"><b>Процент прочитанных отслеживаемых VK-рассылок</b>. По флагу «прочитано». Отслеживаются рассылки с 10.05.2026 (vk_message_id). <span class="src-ex">отслеж. 100, прочит. 45 = 45%.</span></td></tr>
+        <tr><td class="metric">📖 Опубликовали истории в ВК</td><td class="value">{{ report.stories_publishers }}</td><td class="src"><b>Гости, опубликовавшие историю в ВК через приложение</b>. По дате публикации истории.</td></tr>
+        <tr><td class="metric">➡️ Перешли из историй ВК</td><td class="value">{{ report.stories_referrals }}</td><td class="src"><b>Новые гости из чужих историй</b> — реферальный трафик. Гость А опубликовал → Б перешёл и зарегистрировался.</td></tr>
+      </tbody>
+    </table>
+    <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-1"></div><div class="cmt-example"><b>Пример</b>За отчётный период система лояльности активно привлекает новых гостей. Большинство получают первый подарок, часть возвращается повторно.</div></div>
+  </div>
+
+  <!-- ═══ 2. Growth ═══ -->
+  <div class="page section">
+    <div class="sec-hd"><div class="sec-badge">02</div><div class="sec-title">Рост клиентской базы</div></div>
+    <table class="tbl">
+      <thead><tr><th>Метрика</th><th>Значение</th><th>Источник / Откуда цифра</th></tr></thead>
+      <tbody>
+        <tr><td class="metric">Новые гости в базе</td><td class="value">{{ report.new_with_gift }}</td><td class="src"><b>Гости, впервые попавшие в базу</b> за период — раньше их не было в системе. <span class="src-ex">Пример: 35 человек подключились в марте.</span></td></tr>
+        <tr><td class="metric">Подписались в группу</td><td class="value">{{ report.new_community }}</td><td class="src"><b>Новые подписчики на VK-страницу</b> кафе за период. Может быть через QR, рекламу, поиск.</td></tr>
+        <tr><td class="metric">Подписались на рассылку</td><td class="value">{{ report.new_newsletter }}</td><td class="src"><b>Гости, разрешившие кафе писать им в ЛС</b> в VK через Senler. Без разрешения VK блокирует отправку.</td></tr>
+        <tr><td class="metric">Получили первый подарок</td><td class="value">{{ report.new_with_gift }}</td><td class="src"><b>Финальный шаг новичка</b>: пришёл в кафе и забрал стартовый подарок. Только после этого считается в базе.</td></tr>
+      </tbody>
+    </table>
+    <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-2"></div><div class="cmt-example"><b>Пример</b>Конверсия первого контакта высокая: большинство гостей получают первый подарок и остаются в базе.</div></div>
+  </div>
+
+  <!-- ═══ 3. Scan index ═══ -->
+  <div class="page section">
+    <div class="sec-hd"><div class="sec-badge">03</div><div class="sec-title">Индекс оцифровки гостей</div></div>
+    <div class="formula"><span><b>Формула:</b> Сканирования QR / общее количество гостей POS × 100%</span></div>
+    <table class="tbl">
+      <thead><tr><th>Метрика</th><th>Значение</th><th>Источник / Откуда цифра</th></tr></thead>
+      <tbody>
+        <tr><td class="metric">Гости POS</td><td class="value">{{ report.pos_guests }}</td><td class="src"><b>Общее количество гостей в кассе</b> — берём из вашей POS (Dooglys или iiko). Каждый чек = один гость.</td></tr>
+        <tr><td class="metric">Сканирования QR</td><td class="value">{{ report.qr_scans }}</td><td class="src"><b>Гости, реально открывшие мини-приложение</b>: отсканировали QR или ввели код из доставки.</td></tr>
+        <tr><td class="metric">Индекс сканирования</td><td class="value">{{ report.scan_index }}%</td><td class="src"><b>Доля гостей с QR от всех в POS</b>. Чем выше — тем лучше работают официанты. <span class="src-ex">300 сканов / 1200 = 25%.</span></td></tr>
+      </tbody>
+    </table>
+    <div class="sub">⚠️ Метрика учитывает два источника: предложение персонала + маркетинговые носители доставки (буклеты, упаковка).</div>
+    <div class="scale">
+      <div class="scale-row"><div class="scale-key">до 10%</div>   <div class="scale-val low">низкий уровень</div></div>
+      <div class="scale-row"><div class="scale-key">10 – 20%</div> <div class="scale-val norm">нормальный уровень</div></div>
+      <div class="scale-row"><div class="scale-key">20 – 30%</div> <div class="scale-val good">хороший уровень</div></div>
+      <div class="scale-row"><div class="scale-key">30 – 40%</div> <div class="scale-val best">отличный показатель</div></div>
+    </div>
+    <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-3"></div><div class="cmt-example"><b>Пример</b>Индекс сканирования на уровне 25% — хороший показатель работы персонала и эффективности рекламных материалов.</div></div>
+  </div>
+
+  <!-- ═══ 4. Sources ═══ -->
+  <div class="page section">
+    <div class="sec-hd"><div class="sec-badge">04</div><div class="sec-title">Источники подключения гостей</div></div>
+    <table class="tbl">
+      <thead><tr><th>Источник</th><th>Доля</th><th>Источник / Откуда цифра</th></tr></thead>
+      <tbody>
+        <tr><td class="metric">Подключения в кафе</td><td class="value">{{ report.from_cafe }}<small>{{ report.from_cafe_pct }}%</small></td><td class="src"><b>Гости, отсканировавшие QR в зале</b> — с наклеек на столах, листовок, чека.</td></tr>
+        <tr><td class="metric">Подключения через доставку</td><td class="value">{{ report.from_delivery }}<small>{{ report.from_delivery_pct }}%</small></td><td class="src"><b>Активации по коду из доставки</b> — 5 цифр на чеке курьера, коробке, в SMS.</td></tr>
+      </tbody>
+    </table>
+    <div class="chart-wrap"><canvas id="chart-sources"></canvas><img class="snap" id="snap-sources" alt=""></div>
+    <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-4"></div><div class="cmt-example"><b>Пример</b>Основная часть подключений происходит непосредственно в кафе, заметную долю формируют гости доставки благодаря рекламе.</div></div>
+  </div>
+
+  <!-- ═══ 5. Engagement ═══ -->
+  <div class="page section">
+    <div class="sec-hd"><div class="sec-badge">05</div><div class="sec-title">Вовлечение гостей</div></div>
+    <table class="tbl">
+      <thead><tr><th>Метрика</th><th>Значение</th><th>Источник / Откуда цифра</th></tr></thead>
+      <tbody>
+        <tr><td class="metric">Повторная игра</td><td class="value">{{ report.repeat_players }}</td><td class="src"><b>Гости, сыгравшие минимум в 2 разных дня</b> периода. Главная метрика удержания.</td></tr>
+        <tr><td class="metric">Покупки за баллы</td><td class="value">{{ report.coin_purchasers }}</td><td class="src"><b>Гости, обменявшие баллы</b> на товар. Чем больше — тем активнее работает программа.</td></tr>
+        <tr><td class="metric">Выполненные задания</td><td class="value">{{ report.quests_completed }}</td><td class="src"><b>Гости, дошедшие до конца задания</b> (например «Приведи друга»). С подтверждением персонала.</td></tr>
+        <tr><td class="metric">Оставленные отзывы</td><td class="value">{{ report.reviews_total }}</td><td class="src"><b>Все обращения в чат отзывов</b>. Гость, написавший отзыв — это очень вовлечённый гость.</td></tr>
+      </tbody>
+    </table>
+    <div class="chart-wrap"><canvas id="chart-engagement"></canvas><img class="snap" id="snap-engagement" alt=""></div>
+    <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-5"></div><div class="cmt-example"><b>Пример</b>Гости активно используют игровые механики и бонусную систему, что говорит о хорошем уровне вовлечённости.</div></div>
+  </div>
+
+  <!-- ═══ 6. Communications ═══ -->
+  <div class="page section">
+    <div class="sec-hd"><div class="sec-badge">06</div><div class="sec-title">Коммуникации с гостями</div></div>
+    <table class="tbl">
+      <thead><tr><th>Метрика</th><th>Значение</th><th>Источник / Откуда цифра</th></tr></thead>
+      <tbody>
+        <tr><td class="metric">Открываемость сообщений</td><td class="value">{{ report.message_open_rate }}%<small>{{ report.message_total_read }}/{{ report.message_trackable }} отслеж. (всего {{ report.message_total_sent }})</small></td><td class="src"><b>Процент отслеживаемых VK-рассылок с галочкой «прочитано»</b>. Низкая — текст не цепляет или попадает в спам.</td></tr>
+        <tr><td class="metric">Переходы из историй</td><td class="value">{{ report.stories_referrals }}</td><td class="src"><b>Переходы по ссылке из чужой VK-истории</b> в наше мини-приложение — «сарафанное радио».</td></tr>
+      </tbody>
+    </table>
+    <div class="scale">
+      <div class="scale-row"><div class="scale-key">30 – 40%</div><div class="scale-val good">хороший уровень открываемости</div></div>
+      <div class="scale-row"><div class="scale-key">40 – 60%</div><div class="scale-val best">высокий уровень</div></div>
+    </div>
+    <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-6"></div><div class="cmt-example"><b>Пример</b>Высокая открываемость показывает, что гости активно реагируют на коммуникацию.</div></div>
+  </div>
+
+  <!-- ═══ 7. Reviews ═══ -->
+  <div class="page section">
+    <div class="sec-hd"><div class="sec-badge">07</div><div class="sec-title">Отзывы гостей</div></div>
+    <table class="tbl">
+      <thead><tr><th>Тип отзывов</th><th>Количество</th><th>Источник / Откуда цифра</th></tr></thead>
+      <tbody>
+        <tr><td class="metric">Позитивные</td><td class="value">{{ report.reviews.positive }}</td><td class="src"><b>Гость хвалит кафе</b> — еду, сервис, атмосферу. Тональность распознаёт ИИ автоматически. <span class="src-ex">«Всё было супер!»</span></td></tr>
+        <tr><td class="metric">Нейтральные</td><td class="value">{{ report.reviews.neutral }}</td><td class="src"><b>Отзывы без эмоций</b> — вопросы, уточнения. Ни жалоб, ни похвалы. <span class="src-ex">«Во сколько работаете?»</span></td></tr>
+        <tr><td class="metric">Частично негативные</td><td class="value">{{ report.reviews.partial }}</td><td class="src"><b>Хвалит, но указывает на проблему</b> — самые ценные отзывы для роста. <span class="src-ex">«Вкусно, но ждали 40 минут».</span></td></tr>
+        <tr><td class="metric">Негативные</td><td class="value">{{ report.reviews.negative }}</td><td class="src"><b>Гость в основном жалуется</b>. Обрабатывать в первую очередь. <span class="src-ex">«Холодная пицца, грубый официант».</span></td></tr>
+      </tbody>
+    </table>
+    <div class="chart-wrap"><canvas id="chart-reviews"></canvas><img class="snap" id="snap-reviews" alt=""></div>
+    <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-7"></div><div class="cmt-example"><b>Пример</b>Большинство отзывов носит позитивный характер — это говорит о хорошем уровне сервиса.</div></div>
+  </div>
+
+  <!-- ═══ 8. RF structure ═══ -->
+  <div class="page section">
+    <div class="sec-hd"><div class="sec-badge">08</div><div class="sec-title">Структура базы (RF-матрица)</div></div>
+    <table class="tbl">
+      <thead><tr><th>Сегмент</th><th>Количество</th><th>Источник / Откуда цифра</th></tr></thead>
+      <tbody>
+        {% for name, count in report.segment_counts.items %}
+        <tr><td class="metric">{{ name }}</td><td class="value">{{ count }}</td><td class="src">Сегмент «{{ name }}» — группа гостей с похожим поведением (как давно был, как часто приходит). Пересчитывается ежедневно.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="chart-wrap"><canvas id="chart-rf"></canvas><img class="snap" id="snap-rf" alt=""></div>
+    <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-8"></div><div class="cmt-example"><b>Пример (сильная база)</b>Значительная часть гостей в сегментах «лояльные» и «чемпионы» — хороший уровень удержания.</div></div>
+  </div>
+
+  <!-- ═══ 9. Migration ═══ -->
+  <div class="page section">
+    <div class="sec-hd"><div class="sec-badge">09</div><div class="sec-title">Динамика базы (миграция сегментов)</div></div>
+    <table class="tbl">
+      <thead><tr><th>Метрика</th><th>Значение</th><th>Источник / Откуда цифра</th></tr></thead>
+      <tbody>
+        <tr><td class="metric">📈 Рост лояльности</td><td class="value" style="color:var(--ok);">+{{ report.migration.growth|default:0 }}</td><td class="src"><b>Гости стали ходить чаще или вернулись после паузы</b> — самое ценное. Перешли в более «тёплый» сегмент.</td></tr>
+        <tr><td class="metric">❄️ Остывание</td><td class="value" style="color:var(--info);">{{ report.migration.cooling|default:0 }}</td><td class="src"><b>Гости стали ходить реже</b>, но ещё не ушли. Ловить рассылками.</td></tr>
+        <tr><td class="metric">📉 Отток</td><td class="value" style="color:var(--err);">−{{ report.migration.lost_to_r0|default:0 }}</td><td class="src"><b>Гости перестали ходить совсем</b> — попали в «давно не были». Чем больше — тем тревожнее.</td></tr>
+        <tr><td class="metric">🔄 Реактивация</td><td class="value" style="color:var(--ok);">+{{ report.migration.reactivated|default:0 }}</td><td class="src"><b>Вернулись после долгого отсутствия</b> — победа рассылок и акций.</td></tr>
+      </tbody>
+    </table>
+    <div class="chart-wrap"><canvas id="chart-migration"></canvas><img class="snap" id="snap-migration" alt=""></div>
+    <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-9"></div><div class="cmt-example"><b>Пример</b>Наблюдается рост лояльности гостей: часть клиентов становится более активной.</div></div>
+  </div>
+
+  <!-- ═══ 10. Conclusions ═══ -->
+  <div class="page section">
+    <div class="sec-hd"><div class="sec-badge">10</div><div class="sec-title">Итоговые выводы</div></div>
+    <div class="sub">3 ключевых вывода по периоду, опираясь на цифры из секций 1–9.</div>
+    <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-10" style="min-height:60px;"></div><div class="cmt-example"><b>Пример</b>• база программы лояльности активно растёт<br>• высокий индекс сканирования<br>• увеличивается вовлечённость гостей</div></div>
+  </div>
+
+  <!-- ═══ 11. Recommendations ═══ -->
+  <div class="page section">
+    <div class="sec-hd"><div class="sec-badge">11</div><div class="sec-title">Рекомендации</div></div>
+    <div class="sub">3 действия для усиления результата в следующем периоде.</div>
+    <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-11" style="min-height:60px;"></div><div class="cmt-example"><b>Пример</b>1. Усилить предложение QR-кода персоналом<br>2. Активнее использовать рассылку для возврата<br>3. Проводить игровые акции для повторных визитов</div></div>
+  </div>
+
 </div>
-
-<!-- ══ РАЗДЕЛ 1 — Ключевые метрики ══════════════════════════════════════════ -->
-<div class="section" id="sec-1">
-  <div class="sec-header">
-    <span class="sec-num">1</span>
-    <span class="sec-title">Ключевые метрики системы за период</span>
-  </div>
-
-  <div class="cards cards--4">
-    <div class="card">
-      <div class="card-lbl">Подписки на сообщество</div>
-      <div class="card-val">{{ report.new_community }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Подписки на рассылку</div>
-      <div class="card-val">{{ report.new_newsletter }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Оцифровано гостей (всего)</div>
-      <div class="card-val">{{ report.total_vk }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Новые + первый подарок</div>
-      <div class="card-val">{{ report.new_with_gift }}</div>
-    </div>
-  </div>
-
-  <div class="cards cards--4">
-    <div class="card">
-      <div class="card-lbl">Поздравлений отправлено</div>
-      <div class="card-val">{{ report.birthday_sent }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Пришли отметить ДР</div>
-      <div class="card-val">{{ report.birthday_came }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Вернулись повторно</div>
-      <div class="card-val">{{ report.repeat_players }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Купили за баллы</div>
-      <div class="card-val">{{ report.coin_purchasers }}</div>
-    </div>
-  </div>
-
-  <div class="cards cards--4">
-    <div class="card">
-      <div class="card-lbl">QR-сканирований</div>
-      <div class="card-val">{{ report.qr_scans }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Публикации историй ВК</div>
-      <div class="card-val">{{ report.stories_publishers }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Переходы из историй</div>
-      <div class="card-val">{{ report.stories_referrals }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Читаемость сообщений</div>
-      <div class="card-val {% if report.message_open_rate >= 40 %}card-val--ok{% elif report.message_open_rate >= 30 %}card-val--info{% else %}card-val--warn{% endif %}">
-        {{ report.message_open_rate }}<span class="card-val-unit">%</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="chart-row">
-    <div class="chart-wrap">
-      <div class="chart-wrap-title">Вовлечение гостей</div>
-      <canvas id="chart-engagement"></canvas>
-      <img class="snap" id="snap-engagement" alt="">
-    </div>
-    <div class="chart-wrap">
-      <div class="chart-wrap-title">Рост базы</div>
-      <canvas id="chart-growth"></canvas>
-      <img class="snap" id="snap-growth" alt="">
-    </div>
-  </div>
-
-  <div class="cmt-box">
-    <div class="cmt-lbl">Комментарий менеджера</div>
-    <div class="cmt-text" id="cmt-1"></div>
-  </div>
-</div>
-
-<!-- ══ РАЗДЕЛ 2 — Рост клиентской базы ═════════════════════════════════════ -->
-<div class="section" id="sec-2">
-  <div class="sec-header">
-    <span class="sec-num">2</span>
-    <span class="sec-title">Рост клиентской базы</span>
-  </div>
-
-  <div class="cards cards--4">
-    <div class="card">
-      <div class="card-lbl">Новые гости в базе</div>
-      <div class="card-val">{{ report.qr_scans }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Подписались в группу</div>
-      <div class="card-val">{{ report.new_community }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Подписались на рассылку</div>
-      <div class="card-val">{{ report.new_newsletter }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Получили первый подарок</div>
-      <div class="card-val">{{ report.new_with_gift }}</div>
-    </div>
-  </div>
-
-  <div class="cmt-box">
-    <div class="cmt-lbl">Комментарий менеджера</div>
-    <div class="cmt-text" id="cmt-2"></div>
-  </div>
-</div>
-
-<!-- ══ РАЗДЕЛ 3 — Индекс оцифровки ═════════════════════════════════════════ -->
-<div class="section" id="sec-3">
-  <div class="sec-header">
-    <span class="sec-num">3</span>
-    <span class="sec-title">Индекс оцифровки гостей</span>
-  </div>
-
-  <div class="cards cards--3">
-    <div class="card">
-      <div class="card-lbl">Гости по POS-системе</div>
-      <div class="card-val">{{ report.pos_guests|default:"—" }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">QR-сканирований</div>
-      <div class="card-val">{{ report.qr_scans }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Индекс сканирования</div>
-      <div class="card-val {% if report.scan_index >= 30 %}card-val--info{% elif report.scan_index >= 20 %}card-val--ok{% elif report.scan_index >= 10 %}card-val--warn{% else %}card-val--err{% endif %}">
-        {{ report.scan_index }}<span class="card-val-unit">%</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="scale-bar">
-    <span class="scale-item" style="background:#FEF2F2;color:#991B1B;">до 10% — низкий</span>
-    <span class="scale-item" style="background:#F3F4F6;color:#374151;">10–20% — норма</span>
-    <span class="scale-item" style="background:#F0FDF4;color:#166534;">20–30% — хороший</span>
-    <span class="scale-item" style="background:#EFF6FF;color:#1E40AF;">30–40% — отличный</span>
-  </div>
-
-  <div class="cmt-box">
-    <div class="cmt-lbl">Комментарий менеджера</div>
-    <div class="cmt-text" id="cmt-3"></div>
-  </div>
-</div>
-
-<!-- ══ РАЗДЕЛ 4 — Источники подключений ════════════════════════════════════ -->
-<div class="section" id="sec-4">
-  <div class="sec-header">
-    <span class="sec-num">4</span>
-    <span class="sec-title">Источники подключения гостей</span>
-  </div>
-
-  <div class="cards cards--2">
-    <div class="card">
-      <div class="card-lbl">Подключения в кафе</div>
-      <div class="card-val">{{ report.from_cafe }} <span class="card-val-unit">({{ report.from_cafe_pct }}%)</span></div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Через доставку</div>
-      <div class="card-val">{{ report.from_delivery }} <span class="card-val-unit">({{ report.from_delivery_pct }}%)</span></div>
-    </div>
-  </div>
-
-  <div class="chart-row">
-    <div class="chart-wrap">
-      <div class="chart-wrap-title">Источники подключений</div>
-      <canvas id="chart-sources"></canvas>
-      <img class="snap" id="snap-sources" alt="">
-    </div>
-    <div class="chart-wrap">
-      <div class="bignum">
-        <div class="bignum-val" style="color:#0F1A2E;">{{ report.from_cafe_pct }}%</div>
-        <div class="bignum-lbl">подключений пришло из кафе</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="cmt-box">
-    <div class="cmt-lbl">Комментарий менеджера</div>
-    <div class="cmt-text" id="cmt-4"></div>
-  </div>
-</div>
-
-<!-- ══ РАЗДЕЛ 5 — Вовлечение гостей ════════════════════════════════════════ -->
-<div class="section" id="sec-5">
-  <div class="sec-header">
-    <span class="sec-num">5</span>
-    <span class="sec-title">Вовлечение гостей</span>
-  </div>
-
-  <div class="cards cards--4">
-    <div class="card">
-      <div class="card-lbl">Повторная игра</div>
-      <div class="card-val">{{ report.repeat_players }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Покупки за баллы</div>
-      <div class="card-val">{{ report.coin_purchasers }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Публикации историй ВК</div>
-      <div class="card-val">{{ report.stories_publishers }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">QR-сканирований</div>
-      <div class="card-val">{{ report.qr_scans }}</div>
-    </div>
-  </div>
-
-  <div class="cmt-box">
-    <div class="cmt-lbl">Комментарий менеджера</div>
-    <div class="cmt-text" id="cmt-5"></div>
-  </div>
-</div>
-
-<!-- ══ РАЗДЕЛ 6 — Коммуникации ══════════════════════════════════════════════ -->
-<div class="section" id="sec-6">
-  <div class="sec-header">
-    <span class="sec-num">6</span>
-    <span class="sec-title">Коммуникации с гостями</span>
-  </div>
-
-  <div class="cards cards--3">
-    <div class="card">
-      <div class="card-lbl">Читаемость сообщений</div>
-      <div class="card-val {% if report.message_open_rate >= 40 %}card-val--ok{% elif report.message_open_rate >= 30 %}card-val--info{% else %}card-val--warn{% endif %}">
-        {{ report.message_open_rate }}<span class="card-val-unit">%</span>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Переходы из историй</div>
-      <div class="card-val">{{ report.stories_referrals }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl">Публикации историй</div>
-      <div class="card-val">{{ report.stories_publishers }}</div>
-    </div>
-  </div>
-
-  <div class="scale-bar">
-    <span class="scale-item" style="background:#F3F4F6;color:#374151;">до 30% — ниже нормы</span>
-    <span class="scale-item" style="background:#EFF6FF;color:#1E40AF;">30–40% — хороший</span>
-    <span class="scale-item" style="background:#F0FDF4;color:#166534;">40–60% — высокий</span>
-  </div>
-
-  <div class="cmt-box">
-    <div class="cmt-lbl">Комментарий менеджера</div>
-    <div class="cmt-text" id="cmt-6"></div>
-  </div>
-</div>
-
-<!-- ══ РАЗДЕЛ 7 — Отзывы гостей ════════════════════════════════════════════ -->
-<div class="section" id="sec-7">
-  <div class="sec-header">
-    <span class="sec-num">7</span>
-    <span class="sec-title">Отзывы гостей</span>
-  </div>
-
-  <div class="cards cards--4">
-    <div class="card">
-      <div class="card-lbl" style="color:#10B981;">Позитивные</div>
-      <div class="card-val card-val--ok">{{ report.reviews.positive }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl" style="color:#3B82F6;">Нейтральные</div>
-      <div class="card-val card-val--info">{{ report.reviews.neutral }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl" style="color:#F59E0B;">Частично негативные</div>
-      <div class="card-val card-val--warn">{{ report.reviews.partial }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl" style="color:#EF4444;">Негативные</div>
-      <div class="card-val card-val--err">{{ report.reviews.negative }}</div>
-    </div>
-  </div>
-
-  <div class="chart-row">
-    <div class="chart-wrap">
-      <div class="chart-wrap-title">Распределение отзывов</div>
-      <canvas id="chart-reviews"></canvas>
-      <img class="snap" id="snap-reviews" alt="">
-    </div>
-    <div class="chart-wrap">
-      <div class="bignum">
-        <div class="bignum-val card-val--ok">{{ report.reviews.positive }}</div>
-        <div class="bignum-lbl">позитивных из {{ report.reviews.total }}</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="cmt-box">
-    <div class="cmt-lbl">Комментарий менеджера</div>
-    <div class="cmt-text" id="cmt-7"></div>
-  </div>
-</div>
-
-<!-- ══ РАЗДЕЛ 8 — RF-матрица ════════════════════════════════════════════════ -->
-<div class="section" id="sec-8">
-  <div class="sec-header">
-    <span class="sec-num">8</span>
-    <span class="sec-title">Структура базы (RF-матрица)</span>
-  </div>
-
-  <div class="cards cards--4">
-    {% for name, count in report.segment_counts.items %}
-    <div class="card">
-      <div class="card-lbl">{{ name }}</div>
-      <div class="card-val">{{ count }}</div>
-    </div>
-    {% endfor %}
-  </div>
-
-  <div class="chart-row">
-    <div class="chart-wrap">
-      <div class="chart-wrap-title">Сегменты гостей (RF)</div>
-      <canvas id="chart-rf"></canvas>
-      <img class="snap" id="snap-rf" alt="">
-    </div>
-    <div class="chart-wrap">
-      <div class="chart-wrap-title">VIP / Под угрозой / Потерянные</div>
-      <canvas id="chart-rf-summary"></canvas>
-      <img class="snap" id="snap-rf-summary" alt="">
-    </div>
-  </div>
-
-  <div class="cmt-box">
-    <div class="cmt-lbl">Комментарий менеджера</div>
-    <div class="cmt-text" id="cmt-8"></div>
-  </div>
-</div>
-
-<!-- ══ РАЗДЕЛ 9 — Миграция сегментов ═══════════════════════════════════════ -->
-<div class="section" id="sec-9">
-  <div class="sec-header">
-    <span class="sec-num">9</span>
-    <span class="sec-title">Динамика базы (миграция сегментов)</span>
-  </div>
-
-  <div class="cards cards--4">
-    <div class="card">
-      <div class="card-lbl" style="color:#10B981;">📈 Рост лояльности</div>
-      <div class="card-val card-val--ok">+{{ report.migration.growth }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl" style="color:#F59E0B;">🌡 Остывание</div>
-      <div class="card-val card-val--warn">{{ report.migration.cooling }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl" style="color:#EF4444;">📉 Отток</div>
-      <div class="card-val card-val--err">{{ report.migration.lost_to_r0 }}</div>
-    </div>
-    <div class="card">
-      <div class="card-lbl" style="color:#0D9488;">🔄 Реактивация</div>
-      <div class="card-val card-val--teal">{{ report.migration.reactivated }}</div>
-    </div>
-  </div>
-
-  <div class="chart-row">
-    <div class="chart-wrap">
-      <div class="chart-wrap-title">Миграция сегментов</div>
-      <canvas id="chart-migration"></canvas>
-      <img class="snap" id="snap-migration" alt="">
-    </div>
-    <div class="chart-wrap">
-      <div class="bignum">
-        <div class="bignum-val card-val--ok">+{{ report.migration.growth }}</div>
-        <div class="bignum-lbl">гостей улучшили лояльность</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="cmt-box">
-    <div class="cmt-lbl">Комментарий менеджера</div>
-    <div class="cmt-text" id="cmt-9"></div>
-  </div>
-</div>
-
-<!-- ══ РАЗДЕЛ 10 — Итоговые выводы ═════════════════════════════════════════ -->
-<div class="section" id="sec-10">
-  <div class="sec-header">
-    <span class="sec-num">10</span>
-    <span class="sec-title">Итоговые выводы</span>
-  </div>
-
-  <div class="cmt-box" style="margin-top:0;">
-    <div class="cmt-lbl">Комментарий менеджера</div>
-    <div class="cmt-text" id="cmt-10"></div>
-  </div>
-</div>
-
-<!-- ══ РАЗДЕЛ 11 — Рекомендации ════════════════════════════════════════════ -->
-<div class="section" id="sec-11">
-  <div class="sec-header">
-    <span class="sec-num">11</span>
-    <span class="sec-title">Рекомендации</span>
-  </div>
-
-  <div class="cmt-box" style="margin-top:0;">
-    <div class="cmt-lbl">Комментарий менеджера</div>
-    <div class="cmt-text" id="cmt-11"></div>
-  </div>
-
-  <div class="pdf-footer">
-    <strong>LevelUp</strong> &nbsp;·&nbsp; Система лояльности для ресторанов &nbsp;·&nbsp; {{ company_name }}<br>
-    Сформирован {{ start_display }} — {{ end_display }}
-  </div>
-</div>
-
-</div><!-- /.pdf-wrap -->
 
 <script>
-'use strict';
-// ── Chart data ────────────────────────────────────────────────────────────────
 const D = {{ charts_json|safe }};
-
-const chartFont = "'DM Sans', -apple-system, sans-serif";
-const P = {
-  navy:   '#0F1A2E',
-  blue:   '#4A7CFF',
-  ok:     '#10B981',
-  info:   '#3B82F6',
-  warn:   '#F59E0B',
-  err:    '#EF4444',
-  teal:   '#0D9488',
-  purple: '#7C3AED',
-  slate:  '#64748B',
-};
-const PAL = [P.blue, P.ok, P.purple, P.teal, P.info, '#6366F1', P.warn, P.err, '#EC4899', '#0369A1'];
-
-Chart.defaults.font.family = chartFont;
-Chart.defaults.font.size = 13;
-Chart.defaults.animation = false;
-
-const base = {
-  responsive: true,
-  maintainAspectRatio: true,
-  plugins: {
-    legend: {
-      display: true,
-      position: 'bottom',
-      labels: { font: { family: chartFont, size: 12, weight: '600' }, padding: 14, usePointStyle: true, pointStyleWidth: 10 },
-    },
-    tooltip: { enabled: false },
-  },
-};
-
-const barOpts = (noLegend = false) => ({
-  ...base,
-  aspectRatio: 1.8,
-  plugins: {
-    ...base.plugins,
-    legend: { ...base.plugins.legend, display: !noLegend },
-  },
+const C = { brand:'#6a1b9a', lime:'#a3e635', navy:'#1a2744', ok:'#2e7d32', info:'#1565c0', teal:'#00897b', orange:'#e65100', err:'#c62828', tm:'#9ca3af' };
+const font = "'DM Sans', sans-serif";
+const baseBar = {
+  responsive: true, maintainAspectRatio: false, animation: false,
+  plugins: { legend: { display: false }, tooltip: { enabled: false } },
   scales: {
-    y: { beginAtZero: true, grid: { color: '#F1F5F9' }, ticks: { font: { family: chartFont, size: 12 }, color: '#4A5568' } },
-    x: { grid: { display: false }, ticks: { font: { family: chartFont, size: 12 }, color: '#4A5568' } },
-  },
-});
-
-const doughOpts = {
-  ...base,
-  aspectRatio: 1.6,
-  cutout: '55%',
-  plugins: {
-    ...base.plugins,
-    legend: { ...base.plugins.legend, labels: { ...base.plugins.legend.labels, font: { family: chartFont, size: 12, weight: '600' } } },
+    y: { beginAtZero: true, grid: { color: '#F3F4F6' }, ticks: { font: { family: font, size: 11 }, color: '#6B7280' } },
+    x: { grid: { display: false }, ticks: { font: { family: font, size: 11, weight: '600' }, color: '#1F2937' } },
   },
 };
 
-// ── Init charts ───────────────────────────────────────────────────────────────
-function initCharts() {
-  // 1. Engagement
-  new Chart(document.getElementById('chart-engagement'), {
-    type: 'bar',
-    data: {
-      labels: ['QR-сканы', 'Повторные', 'Покупки', 'Истории ВК'],
-      datasets: [{ data: [D.engagement.qr_scans, D.engagement.repeat_players, D.engagement.coin_purchasers, D.engagement.stories], backgroundColor: [P.info, P.teal, P.purple, P.slate], borderRadius: 5, barThickness: 36 }],
-    },
-    options: barOpts(true),
-  });
-
-  // 2. Growth
-  new Chart(document.getElementById('chart-growth'), {
-    type: 'bar',
-    data: {
-      labels: ['Сообщество', 'Рассылка', 'С подарком'],
-      datasets: [{ data: [D.growth.new_community, D.growth.new_newsletter, D.growth.new_with_gift], backgroundColor: [P.ok, P.info, P.teal], borderRadius: 5, barThickness: 36 }],
-    },
-    options: barOpts(true),
-  });
-
-  // 3. Sources
-  new Chart(document.getElementById('chart-sources'), {
-    type: 'doughnut',
-    data: {
-      labels: ['В кафе', 'Доставка'],
-      datasets: [{ data: [D.sources.cafe, D.sources.delivery], backgroundColor: [P.blue, P.ok], borderWidth: 0 }],
-    },
-    options: doughOpts,
-  });
-
-  // 4. Reviews
-  new Chart(document.getElementById('chart-reviews'), {
-    type: 'doughnut',
-    data: {
-      labels: ['Позитив', 'Нейтрал', 'Частич. негат.', 'Негатив'],
-      datasets: [{ data: [D.reviews_sentiment.positive, D.reviews_sentiment.neutral, D.reviews_sentiment.partial, D.reviews_sentiment.negative], backgroundColor: [P.ok, P.info, P.warn, P.err], borderWidth: 0 }],
-    },
-    options: doughOpts,
-  });
-
-  // 5. RF segments (horizontal bar)
-  const rfL = Object.keys(D.rf_segments), rfV = Object.values(D.rf_segments);
-  new Chart(document.getElementById('chart-rf'), {
-    type: 'bar',
-    data: {
-      labels: rfL,
-      datasets: [{ data: rfV, backgroundColor: rfL.map((_, i) => PAL[i % PAL.length]), borderRadius: 4, barThickness: 20 }],
-    },
-    options: {
-      ...barOpts(true),
-      aspectRatio: rfL.length > 6 ? 1.0 : 1.6,
-      indexAxis: 'y',
-      scales: {
-        x: { beginAtZero: true, grid: { color: '#F1F5F9' }, ticks: { font: { family: chartFont, size: 11 }, color: '#4A5568' } },
-        y: { grid: { display: false }, ticks: { font: { family: chartFont, size: 11 }, color: '#4A5568' } },
-      },
-    },
-  });
-
-  // 6. RF summary doughnut
-  const vip      = {{ report.rf_summary.vip_f3|default:"0" }};
-  const at_risk  = {{ report.rf_summary.at_risk|default:"0" }};
-  const lost_r0  = {{ report.rf_summary.lost_r0|default:"0" }};
-  const rf_total = {{ report.rf_summary.total|default:"0" }};
-  const others   = Math.max(0, rf_total - vip - at_risk - lost_r0);
-  new Chart(document.getElementById('chart-rf-summary'), {
-    type: 'doughnut',
-    data: {
-      labels: ['VIP', 'Под угрозой', 'Потерянные', 'Остальные'],
-      datasets: [{ data: [vip, at_risk, lost_r0, others], backgroundColor: [P.purple, P.warn, P.err, '#E2E8F0'], borderWidth: 0 }],
-    },
-    options: doughOpts,
-  });
-
-  // 7. Migration
-  new Chart(document.getElementById('chart-migration'), {
-    type: 'bar',
-    data: {
-      labels: ['Рост', 'Остывание', 'Отток', 'Реактивация'],
-      datasets: [{ data: [D.migration.growth, D.migration.cooling, D.migration.lost_to_r0, D.migration.reactivated], backgroundColor: [P.ok, P.warn, P.err, P.teal], borderRadius: 5, barThickness: 36 }],
-    },
-    options: barOpts(true),
-  });
+function mkBar(id, labels, data, colors){
+  const el=document.getElementById(id); if(!el) return;
+  new Chart(el, { type:'bar', data:{labels, datasets:[{data, backgroundColor:colors, borderRadius:4, barThickness:28}]}, options: baseBar });
 }
 
-// ── Load comments from localStorage ──────────────────────────────────────────
-function loadComments() {
-  for (let i = 1; i <= 11; i++) {
-    const text = (localStorage.getItem('loyalty_report_comment_' + i) || '').trim();
-    const el = document.getElementById('cmt-' + i);
-    if (!el) continue;
-    if (text) {
-      el.textContent = text;
-    } else {
-      el.innerHTML = '<span class="cmt-empty">Комментарий не заполнен</span>';
-    }
+function initCharts(){
+  mkBar('chart-engagement', ['Повторы','Покупки за баллы','Задания','Отзывы'],
+    [D.engagement.repeat_players, D.engagement.coin_purchasers, {{ report.quests_completed }}, {{ report.reviews_total }}],
+    [C.ok, C.brand, C.teal, C.info]);
+  mkBar('chart-sources', ['В кафе','Доставка'],
+    [D.sources.cafe, D.sources.delivery],
+    [C.brand, C.teal]);
+  mkBar('chart-reviews', ['Позитив','Нейтрал','Частич.негат.','Негатив'],
+    [D.reviews_sentiment.positive, D.reviews_sentiment.neutral, D.reviews_sentiment.partial, D.reviews_sentiment.negative],
+    [C.ok, C.info, C.orange, C.err]);
+  (function(){
+    const l=Object.keys(D.rf_segments), v=Object.values(D.rf_segments);
+    const cols=[C.ok,C.info,C.brand,C.teal,C.orange,C.err,C.navy,C.tm];
+    const el=document.getElementById('chart-rf'); if(!el || l.length===0) return;
+    new Chart(el, { type:'bar', data:{labels:l, datasets:[{data:v, backgroundColor:l.map((_,i)=>cols[i%cols.length]), borderRadius:4, barThickness:22}]},
+      options:{...baseBar, indexAxis:'y', scales:{
+        x:{beginAtZero:true, grid:{color:'#F3F4F6'}, ticks:{font:{family:font,size:11},color:'#6B7280'}},
+        y:{grid:{display:false}, ticks:{font:{family:font,size:11,weight:'600'},color:'#1F2937'}},
+      }}});
+  })();
+  mkBar('chart-migration', ['Рост','Остывание','Отток','Реактивация'],
+    [D.migration.growth, D.migration.cooling, D.migration.lost_to_r0, D.migration.reactivated],
+    [C.ok, C.info, C.err, C.teal]);
+}
+
+function loadComments(){
+  for(let i=1;i<=11;i++){
+    const t=(localStorage.getItem('loyalty_report_comment_'+i)||'').trim();
+    const el=document.getElementById('cmt-'+i); if(!el) continue;
+    if(t) el.textContent=t; else el.innerHTML='<span class="cmt-empty">Комментарий не заполнен</span>';
   }
 }
 
-// ── Convert canvases → images, then print ────────────────────────────────────
-function preparePrint() {
-  const btn = document.querySelector('.btn-save');
-  btn.disabled = true;
-  btn.textContent = 'Подготовка…';
-
-  document.querySelectorAll('canvas').forEach(canvas => {
-    const snapId = 'snap-' + canvas.id.replace('chart-', '');
-    const snap = document.getElementById(snapId);
-    if (!snap) return;
-    snap.src = canvas.toDataURL('image/png', 1.0);
-    canvas.style.display = 'none';
-    snap.style.display = 'block';
+function preparePrint(){
+  const btn=document.querySelector('.btn-save'); btn.disabled=true; btn.textContent='Подготовка…';
+  document.querySelectorAll('canvas').forEach(c=>{
+    const snap=document.getElementById('snap-'+c.id.replace('chart-',''));
+    if(!snap) return;
+    snap.src=c.toDataURL('image/png',1.0);
+    c.style.display='none'; snap.style.display='block';
   });
-
-  setTimeout(() => {
-    window.print();
-    // Restore canvas after print dialog closes
-    setTimeout(() => {
-      document.querySelectorAll('canvas').forEach(c => c.style.removeProperty('display'));
-      document.querySelectorAll('img.snap').forEach(img => {
-        img.style.display = 'none';
-        img.src = '';
-      });
-      btn.disabled = false;
-      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Скачать PDF';
-    }, 2000);
-  }, 500);
+  setTimeout(()=>{ window.print(); setTimeout(()=>{
+    document.querySelectorAll('canvas').forEach(c=>c.style.removeProperty('display'));
+    document.querySelectorAll('img.snap').forEach(i=>{i.style.display='none';i.src='';});
+    btn.disabled=false; btn.textContent='💾 Скачать PDF';
+  },2000); }, 400);
 }
 
-// ── Auto-generate PDF (runs when page is inside a hidden iframe) ──────────────
-async function autoPDF() {
-  // A4 geometry — identical to the iframe width we set in the parent
-  const A4_W = 210, A4_H = 297;
-  const MX = 10, MT = 10, MB = 30;
-  const CW = A4_W - 2 * MX;   // 190 mm content width
-  const CH = A4_H - MT - MB;  // 257 mm content height
-  const WIN_W = 900;           // must match iframe.style.width in parent
-  const PX_PER_MM = WIN_W / CW;
+async function autoPDF(){
+  const A4_W=210, A4_H=297, MX=10, MT=10, MB=10;
+  const CW=A4_W-2*MX, CH=A4_H-MT-MB;
+  const WIN_W=900, PX_PER_MM=WIN_W/CW;
+  await new Promise(r=>setTimeout(r, 800));
 
-  // Give fonts and charts time to finish rendering
-  await new Promise(r => setTimeout(r, 800));
-
-  // Freeze all canvases as static images
-  document.querySelectorAll('canvas').forEach(canvas => {
-    const snap = document.getElementById('snap-' + canvas.id.replace('chart-', ''));
-    if (!snap) return;
-    snap.src = canvas.toDataURL('image/png', 1.0);
-    snap.style.display = 'block';
-    canvas.style.display = 'none';
+  document.querySelectorAll('canvas').forEach(c=>{
+    const snap=document.getElementById('snap-'+c.id.replace('chart-',''));
+    if(!snap) return;
+    snap.src=c.toDataURL('image/png',1.0);
+    snap.style.display='block'; c.style.display='none';
   });
-
-  await new Promise(r => setTimeout(r, 100));
+  await new Promise(r=>setTimeout(r, 100));
 
   const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const company = '{{ company_name|escapejs }}';
-  const period  = '{{ start_display }}_{{ end_display }}';
-
-  // Cover + all sections
-  const pages = [
-    document.querySelector('.cover'),
-    ...Array.from(document.querySelectorAll('.section')),
-  ].filter(Boolean);
+  const pdf = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+  const company='{{ company_name|escapejs }}';
+  const period ='{{ start_display }}_{{ end_display }}';
+  const pages=Array.from(document.querySelectorAll('.page'));
 
   try {
-    for (let i = 0; i < pages.length; i++) {
-      const el = pages[i];
-
-      const canvas = await html2canvas(el, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: WIN_W,
-        scrollX: -window.scrollX,
-        scrollY: -window.scrollY,
-      });
-
-      // Height in mm derived from canvas dimensions
-      const imgH_mm = (canvas.height / 2) / PX_PER_MM;
-      let pdfW = CW, pdfH = imgH_mm;
-      if (imgH_mm > CH) {       // scale down if section is taller than one page
-        pdfH = CH;
-        pdfW = CW * (CH / imgH_mm);
-      }
-
-      if (i > 0) pdf.addPage();
-      pdf.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', MX + (CW - pdfW) / 2, MT, pdfW, pdfH);
+    for(let i=0; i<pages.length; i++){
+      const canvas=await html2canvas(pages[i], { scale:2, useCORS:true, allowTaint:true, logging:false, backgroundColor:'#ffffff', windowWidth:WIN_W });
+      const imgH=(canvas.height/2)/PX_PER_MM;
+      let pdfW=CW, pdfH=imgH;
+      if(imgH>CH){ pdfH=CH; pdfW=CW*(CH/imgH); }
+      if(i>0) pdf.addPage();
+      pdf.addImage(canvas.toDataURL('image/png',1.0), 'PNG', MX+(CW-pdfW)/2, MT, pdfW, pdfH);
     }
-
-    pdf.save('Отчёт_лояльности_' + company + '_' + period.replace(/\./g, '_').replace(/ /g, '') + '.pdf');
-  } catch (err) {
-    console.error('PDF error:', err);
-  } finally {
-    // Tell the parent page we are done so it can remove the iframe
-    if (window.parent !== window) {
-      window.parent.postMessage('pdf-done', '*');
-    }
-  }
+    pdf.save('Отчёт_лояльности_'+company+'_'+period.replace(/\./g,'_').replace(/ /g,'')+'.pdf');
+  } catch(err){ console.error('PDF error', err); }
+  finally { if(window.parent!==window) window.parent.postMessage('pdf-done','*'); }
 }
 
-// ── Run ───────────────────────────────────────────────────────────────────────
 initCharts();
 loadComments();
-
-// If inside a hidden iframe — skip the UI and generate PDF automatically
-if (window !== window.top) {
-  window.addEventListener('load', autoPDF);
-}
+if(window!==window.top){ window.addEventListener('load', autoPDF); }
 </script>
 </body>
 </html>

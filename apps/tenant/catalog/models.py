@@ -59,6 +59,11 @@ class Product(TimeStampedModel):
 
     name = models.CharField(max_length=255, verbose_name='Название')
     description = models.TextField(blank=True, verbose_name='Описание')
+    emoji = models.CharField(
+        max_length=8, blank=True,
+        verbose_name='Эмодзи',
+        help_text='Один символ-эмодзи для отображения в мобильном приложении.',
+    )
     image = models.ImageField(
         upload_to='catalog/products/',
         blank=True,

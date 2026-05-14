@@ -278,6 +278,11 @@ def run_broadcast(send: BroadcastSend) -> None:
             recipient.vk_message_id = vk_msg_id
             recipient.save(update_fields=['status', 'sent_at', 'vk_message_id'])
             sent += 1
+        elif _is_user_unreachable(error_msg):
+            recipient.status = RecipientStatus.SKIPPED
+            recipient.error  = error_msg[:512]
+            recipient.save(update_fields=['status', 'error'])
+            skipped += 1
         else:
             recipient.status = RecipientStatus.FAILED
             recipient.error  = error_msg[:512]
@@ -299,6 +304,21 @@ def run_broadcast(send: BroadcastSend) -> None:
     targeted_segments = send.broadcast.rf_segments.all()
     if targeted_segments.exists():
         targeted_segments.update(last_campaign_date=timezone.now())
+
+
+_UNREACHABLE_VK_ERROR_FRAGMENTS = (
+    "can't send messages for users without permission",
+    'access to user denied',
+    'user was deleted or banned',
+    'user not found',
+)
+
+
+def _is_user_unreachable(error_msg: str) -> bool:
+    if not error_msg:
+        return False
+    low = error_msg.lower()
+    return any(frag in low for frag in _UNREACHABLE_VK_ERROR_FRAGMENTS)
 
 
 def _fail(send: BroadcastSend, message: str) -> None:

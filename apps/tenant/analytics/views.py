@@ -171,9 +171,11 @@ class RFAnalysisView(View):
             ('Все точки' if not branch_ids else 'выбранные точки')
         )
         thresholds_source_label = {
-            'branch':  'настройки выбранной точки',
-            'global':  'общие настройки «Все точки»',
-            'default': 'дефолтные значения (настроек ещё нет)',
+            'branch':           'настройки выбранной точки',
+            'branch-unanimous': 'единые настройки по всем точкам',
+            'global':           'общие настройки «Все точки»',
+            'default':          'дефолтные значения (настроек ещё нет)',
+            'default-mismatch': 'дефолты (пороги точек различаются — создайте запись «Все точки»)',
         }.get(thresholds_source, thresholds_source)
 
         # Для удобства: ссылка на редактирование настроек выбранной области.
@@ -737,6 +739,18 @@ class LoyaltyReportView(View):
             'total':     _reviews_qs.count(),
         }
 
+        # Completed quests (уникальные guest.Client с completed_at внутри периода)
+        from apps.tenant.quest.models import QuestSubmit
+        _quest_qs = QuestSubmit.objects.filter(
+            completed_at__date__gte=start,
+            completed_at__date__lte=end,
+            completed_at__isnull=False,
+        )
+        if branch_ids:
+            _quest_qs = _quest_qs.filter(client__branch__in=branch_ids)
+        # Дедуп по guest.Client (не по ClientBranch), чтобы согласовать с qr_scans.
+        quests_completed = _quest_qs.values('client__client_id').distinct().count()
+
         # RF data
         rf = get_rf_stats(branch_ids, mode='restaurant')
         rf_summary = rf.get('summary', {})
@@ -783,7 +797,12 @@ class LoyaltyReportView(View):
             'message_open_rate':  stats['message_open_rate'],
             'message_total_sent': stats['message_total_sent'],
             'message_total_read': stats['message_total_read'],
-            'qr_scans':          stats['qr_scans'],
+            'message_trackable':  stats.get('message_trackable', 0),
+            'qr_scans':                stats['qr_scans'],
+            'first_gift_receivers':    stats['first_gift_receivers'],
+            'gift_activators':         stats['gift_activators'],
+            'quests_completed':        quests_completed,
+            'reviews_total':           reviews['total'],
             # Section 3: Scan index
             'pos_guests':        pos_guests,
             'scan_index':        scan_index,
@@ -855,5 +874,10 @@ class LoyaltyReportView(View):
         if request.GET.get('format') == 'pdf':
             response = render(request, 'analytics/loyalty_report_pdf.html', context)
             response['X-Frame-Options'] = 'SAMEORIGIN'
+            response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response['Pragma'] = 'no-cache'
             return response
-        return render(request, self.template_name, context)
+        response = render(request, self.template_name, context)
+        response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response['Pragma'] = 'no-cache'
+        return response

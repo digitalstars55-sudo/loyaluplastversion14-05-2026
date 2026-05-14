@@ -130,14 +130,10 @@ class DeliveryAdmin(admin.ModelAdmin):
         status = obj.status
         if status == 'pending':
             # Коды больше не ограничены по времени до активации.
-            return format_html(
-                '<span style="color:#f57f17;font-weight:600;" title="Без ограничения по времени">∞</span>'
-            )
+            return mark_safe('<span style="color:#f57f17;font-weight:600;" title="Без ограничения по времени">∞</span>')
         if status == 'activated':
             if obj.is_active_window:
-                return format_html(
-                    '<span style="color:#1b5e20;font-weight:600;" title="Не использовано в игре">✓</span>'
-                )
+                return mark_safe('<span style="color:#1b5e20;font-weight:600;" title="Не использовано в игре">✓</span>')
         return mark_safe('<span style="color:var(--body-quiet-color,#aaa);">—</span>')
 
     @admin.display(description='Активировал', ordering='activated_by__client__first_name')
