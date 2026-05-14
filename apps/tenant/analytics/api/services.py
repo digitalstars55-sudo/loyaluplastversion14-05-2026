@@ -1766,6 +1766,28 @@ def get_rf_stats(
     active_client_ids = _get_active_client_ids_v2(branch_ids, start_date, end_date, mode)
     matrix = get_rf_matrix(branch_ids, mode=mode, client_ids=active_client_ids)
 
+    # ── Stage 1A: per-cell delta_pct vs previous period of same length ────────
+    # Logic:
+    #   prev > 0           → ((curr - prev) / prev) * 100, rounded to 1 decimal
+    #   prev == 0, curr == 0 → 0.0 (no movement)
+    #   prev == 0, curr > 0  → None (growth from zero is undefined; mobile renders as new)
+    period_len_days = (end_date - start_date).days + 1
+    prev_end = start_date - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=period_len_days - 1)
+    prev_client_ids = _get_active_client_ids_v2(branch_ids, prev_start, prev_end, mode)
+    prev_matrix = get_rf_matrix(branch_ids, mode=mode, client_ids=prev_client_ids)
+
+    for key, cell in matrix['cells'].items():
+        prev_cell = prev_matrix['cells'].get(key, {})
+        prev_count = prev_cell.get('count', 0)
+        curr_count = cell.get('count', 0)
+        if prev_count > 0:
+            cell['delta_pct'] = round(((curr_count - prev_count) / prev_count) * 100, 1)
+        elif curr_count == 0:
+            cell['delta_pct'] = 0.0
+        else:
+            cell['delta_pct'] = None
+
     # Derive summary cards directly from the period matrix
     total   = matrix['total']
     vip_f3  = sum(c['count'] for c in matrix['cells'].values() if c['f_score'] == 3)
