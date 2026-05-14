@@ -11,6 +11,35 @@ from ..models import (
 )
 
 
+
+# ── Push notifications: new-review hook ───────────────────────────────────────
+
+def _safe_push_review_new(*, conv, source: str) -> None:
+    """
+    Best-effort push 'review_new' to tenant admins on the FIRST message of a
+    conversation. Never raises — logs on failure, ingest is sacred.
+    """
+    import logging
+    from django.db import connection
+
+    log = logging.getLogger(__name__)
+    try:
+        from apps.tenant.analytics.auto_reply import push_review_new
+
+        tenant = getattr(connection, "tenant", None)
+        if not tenant:
+            log.warning("_safe_push_review_new: no tenant on connection — skip conv=%s", conv.pk)
+            return
+        push_review_new(
+            schema_name=tenant.schema_name,
+            tenant_name=getattr(tenant, "name", tenant.schema_name),
+            conversation_id=conv.pk,
+            source=source,
+        )
+    except Exception:
+        log.exception("_safe_push_review_new failed conv=%s source=%s", conv.pk, source)
+
+
 # ── VK ID OAuth2 (веб-приложение) ─────────────────────────────────────────────
 
 class VKAuthError(Exception):
@@ -897,6 +926,10 @@ def submit_app_review(
     from apps.tenant.analytics.ai_service import analyze_and_save
     analyze_and_save(conv.id, review, TestimonialMessage.Source.APP)
 
+    # Push only on FIRST message in the thread (= new review).
+    if TestimonialMessage.objects.filter(conversation=conv).count() == 1:
+        _safe_push_review_new(conv=conv, source='APP')
+
     return msg
 
 
@@ -956,6 +989,10 @@ def handle_vk_incoming_message(
 
     from apps.tenant.analytics.ai_service import analyze_and_save
     analyze_and_save(conv.id, text, TestimonialMessage.Source.VK_MESSAGE)
+
+    # Push only on FIRST message in the thread (= new VK-originated review).
+    if TestimonialMessage.objects.filter(conversation=conv).count() == 1:
+        _safe_push_review_new(conv=conv, source='VK_MESSAGE')
 
     return [msg]
 

@@ -233,3 +233,47 @@ def push_chat_message(
             'tenant_name': tenant_name,
         },
     )
+
+def push_review_new(
+    schema_name: str,
+    tenant_name: str,
+    conversation_id: int,
+    source: str = 'APP',
+) -> dict:
+    """
+    Отправить push 'review_new' админам тенанта.
+    Вызывается ТОЛЬКО при создании ПЕРВОГО сообщения в треде (новый отзыв).
+    `source` — APP / VK_MESSAGE — для display и data routing на клиенте.
+    """
+    from django_tenants.utils import schema_context
+    from django.db.models import Q
+
+    with schema_context('public'):
+        from apps.shared.users.models import PushToken
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+
+        admin_users = User.objects.filter(
+            Q(role='network_admin') | Q(role='superadmin') | Q(is_superuser=True),
+            companies__schema_name=schema_name,
+        ).distinct()
+        tokens = list(
+            PushToken.objects.filter(user__in=admin_users)
+            .values_list('token', flat=True)
+        )
+
+    if not tokens:
+        return {'sent': 0, 'reason': 'no_tokens'}
+
+    label = 'из приложения' if source == 'APP' else 'из ВКонтакте'
+    from apps.shared.users.push import send_expo_push
+    return send_expo_push(
+        tokens=tokens,
+        title='Новый отзыв',
+        body=f'{tenant_name}: новый отзыв {label}. Открой и ответь.',
+        data={
+            'type': 'review_new',
+            'review_id': conversation_id,
+            'source': source,
+        },
+    )
