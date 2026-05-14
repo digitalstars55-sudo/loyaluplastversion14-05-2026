@@ -188,3 +188,48 @@ def push_draft_ready(schema_name: str, tenant_name: str, conversation_id: int) -
         body=f'{tenant_name}: новый отзыв ждёт ответа. Черновик готов.',
         data={'type': 'draft_ready', 'review_id': conversation_id},
     )
+
+
+def push_chat_message(
+    schema_name: str,
+    tenant_name: str,
+    message_id: int,
+    manager_name: str,
+    preview: str = '',
+) -> dict:
+    """
+    Отправить push 'chat_message' админам тенанта.
+    Вызывается из inbound-reply (CheckUp → LoyalUP) когда менеджер ответил.
+    """
+    from django_tenants.utils import schema_context
+    from django.db.models import Q
+
+    with schema_context('public'):
+        from apps.shared.users.models import PushToken
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+
+        admin_users = User.objects.filter(
+            Q(role='network_admin') | Q(role='superadmin') | Q(is_superuser=True),
+            companies__schema_name=schema_name,
+        ).distinct()
+        tokens = list(
+            PushToken.objects.filter(user__in=admin_users)
+            .values_list('token', flat=True)
+        )
+
+    if not tokens:
+        return {'sent': 0, 'reason': 'no_tokens'}
+
+    body_text = preview if preview else 'Новое сообщение в саппорт-чате'
+    from apps.shared.users.push import send_expo_push
+    return send_expo_push(
+        tokens=tokens,
+        title=manager_name or 'Менеджер',
+        body=body_text[:200],
+        data={
+            'type': 'chat_message',
+            'message_id': message_id,
+            'tenant_name': tenant_name,
+        },
+    )
