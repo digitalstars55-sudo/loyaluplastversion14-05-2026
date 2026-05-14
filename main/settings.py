@@ -257,17 +257,15 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1       # one task at a time per worker slot
 
 
 # ---------------------------------------------------------------------------
-# CORS — для мобильного web-превью и нативных сборок
+# CORS — для мобильного web-превью и нативных сборок.
+# Только cookie-credential и DEBUG-override. Сам whitelist origins лежит выше,
+# в начале файла (CORS_ALLOWED_ORIGINS + CORS_ALLOWED_ORIGIN_REGEXES), и
+# покрывает levonework.ru / loyalupp.ru / vk.com / *.levelupapp.ru — НЕ
+# перезаписывать здесь, иначе VK мини-апс ложится на CORS preflight.
 # ---------------------------------------------------------------------------
 CORS_ALLOW_CREDENTIALS = True
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
-else:
-    CORS_ALLOWED_ORIGINS = []
-    CORS_ALLOWED_ORIGIN_REGEXES = [
-        r'^https://[a-z0-9-]+\.levone\.ru$',
-        r'^https://[a-z0-9-]+\.levelupapp\.ru$',
-    ]
 
 # ---------------------------------------------------------------------------
 # Email — для рассылки логин/пароль новым клиентам после онбординга.
