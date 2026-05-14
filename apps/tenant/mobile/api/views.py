@@ -1517,6 +1517,69 @@ class SupportChatManagerAPIView(APIView):
         return Response(info)
 
 
+def _safe_relay_to_checkup(*, message, user) -> None:
+    """
+    Best-effort POST to CheckUp side (POST /api/v1/loyalup/inbound/).
+    Never raises — logs on failure. CheckUp handles its own retries on their side
+    (LoyalupRelayOutbox + Celery), so for now we just fire-and-forget.
+
+    Called from SupportChatMessagesAPIView.post() for user-side messages only.
+    Manager-side messages (sender_role=manager) are echo of CheckUp content and
+    must not loop back.
+    """
+    import logging
+    import requests
+    from django.conf import settings
+    from django.db import connection
+
+    log = logging.getLogger(__name__)
+    secret = getattr(settings, "LOYALUP_RELAY_SECRET", "") or ""
+    url = getattr(settings, "CHECKUP_RELAY_URL", "") or "http://localhost:8000/api/v1/loyalup/inbound/"
+    if not secret:
+        log.warning("_safe_relay_to_checkup: LOYALUP_RELAY_SECRET not set — skip msg=%s", message.pk)
+        return
+
+    tenant = getattr(connection, "tenant", None)
+    if not tenant:
+        log.warning("_safe_relay_to_checkup: no tenant on connection — skip msg=%s", message.pk)
+        return
+
+    author_id = None
+    author_name = ""
+    if user and getattr(user, "is_authenticated", False):
+        author_id = user.pk
+        author_name = (user.get_full_name() or getattr(user, "username", "") or "").strip()
+    if not author_name:
+        author_name = "Гость"
+
+    payload = {
+        "tenant_schema": tenant.schema_name,
+        "tenant_name":   getattr(tenant, "name", tenant.schema_name),
+        "message_id":    message.pk,
+        "text":          message.text,
+        "author_id":     author_id,
+        "author_name":   author_name,
+        "created_at":    message.created_at.isoformat() if message.created_at else None,
+    }
+    try:
+        r = requests.post(
+            url,
+            json=payload,
+            headers={"X-LoyalUP-Relay-Secret": secret, "Content-Type": "application/json"},
+            timeout=5,
+        )
+        if r.status_code != 201:
+            log.warning(
+                "_safe_relay_to_checkup: unexpected status=%s body=%s msg=%s tenant=%s",
+                r.status_code, r.text[:300], message.pk, tenant.schema_name,
+            )
+    except requests.RequestException as e:
+        log.warning(
+            "_safe_relay_to_checkup: request failed msg=%s tenant=%s err=%s",
+            message.pk, tenant.schema_name, e,
+        )
+
+
 class SupportChatMessagesAPIView(APIView):
     """
     GET  /api/v1/support/chat/messages/  — последние 200 сообщений
@@ -1564,4 +1627,9 @@ class SupportChatMessagesAPIView(APIView):
             author_id=request.user.pk if request.user.is_authenticated else None,
             text=text,
         )
+
+        # Outbound relay to CheckUp (only user-side; manager echo would loop).
+        if sender == SupportChatMessage.Sender.USER:
+            _safe_relay_to_checkup(message=m, user=request.user)
+
         return Response(_serialize_support_message(m), status=201)
