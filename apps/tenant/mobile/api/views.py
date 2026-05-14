@@ -1507,13 +1507,45 @@ def _serialize_support_message(m) -> dict:
 
 
 class SupportChatManagerAPIView(APIView):
-    """GET /api/v1/support/chat/manager/"""
+    """
+    GET /api/v1/support/chat/manager/
+
+    Returns manager metadata PLUS chat state (recent messages, unread count,
+    last message preview). Mobile polls this every few seconds — having
+    everything in one response means new manager replies appear without
+    a separate /messages/ fetch.
+    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         from django.utils import timezone
+        from apps.tenant.branch.models import SupportChatMessage
+
         info = dict(_SUPPORT_MANAGER)
         info['last_seen'] = timezone.now().isoformat()
+
+        # Chat history — last 200 messages, oldest-first (UI render-friendly).
+        msgs = list(SupportChatMessage.objects.order_by('-created_at')[:200])
+        msgs.reverse()
+
+        # Mark unread manager messages as read (mirrors /messages/ behavior).
+        now = timezone.now()
+        unread = [m for m in msgs if m.sender == SupportChatMessage.Sender.MANAGER and not m.read_at]
+        if unread:
+            SupportChatMessage.objects.filter(
+                pk__in=[m.pk for m in unread]
+            ).update(read_at=now)
+            for m in unread:
+                m.read_at = now
+
+        # Chat state preview (for badge / list rendering).
+        last = msgs[-1] if msgs else None
+        info['messages'] = [_serialize_support_message(m) for m in msgs]
+        info['unread_count'] = 0  # manager messages just marked read above
+        info['last_message_at'] = last.created_at.isoformat() if last else None
+        info['last_message_text'] = (last.text[:200] if last else '')
+        info['last_message_sender'] = (last.sender if last else None)
+
         return Response(info)
 
 
