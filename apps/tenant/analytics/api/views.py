@@ -784,7 +784,7 @@ class SendSegmentBroadcastAPIView(APIView):
                 if gender_filter != GenderFilter.ALL:
                     cb_qs = cb_qs.filter(client__gender=gender_filter)
                 if segment is not None:
-                    cb_qs = cb_qs.filter(rf_score__segment=segment)
+                    cb_qs = cb_qs.filter(client__rf_score__segment=segment)
                 cb_qs = cb_qs.exclude(client__vk_id__in=seen_vk_ids)
 
                 cb_list = list(cb_qs)
@@ -838,7 +838,7 @@ class SendSegmentBroadcastAPIView(APIView):
                 if gender_filter != GenderFilter.ALL:
                     cb_qs = cb_qs.filter(client__gender=gender_filter)
                 if segment is not None:
-                    cb_qs = cb_qs.filter(rf_score__segment=segment)
+                    cb_qs = cb_qs.filter(client__rf_score__segment=segment)
                 cb_qs = cb_qs.exclude(client__vk_id__in=seen_vk_ids_split)
 
                 cb_objs = list(cb_qs)
