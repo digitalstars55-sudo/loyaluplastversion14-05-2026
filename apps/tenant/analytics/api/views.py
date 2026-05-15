@@ -766,6 +766,10 @@ class SendSegmentBroadcastAPIView(APIView):
         triggered_by = getattr(request.user, 'username', 'api')
 
         results = []
+        # run_broadcast откладывается: сначала создаём все BroadcastSend,
+        # потом решаем sync (мало получателей) или один серийный celery-таск
+        # (много — иначе синхронный запрос упрётся в таймаут gunicorn/nginx).
+        pending: list = []
 
         if len(variants) == 1:
             # Один текст. Дедупликация: гость, привязанный к нескольким выбранным
@@ -809,21 +813,10 @@ class SendSegmentBroadcastAPIView(APIView):
                 broadcast.specific_clients.set([cb.pk for cb in cb_list])
 
                 send = create_send(broadcast, triggered_by=triggered_by, trigger_type='manual')
-                try:
-                    run_broadcast(send)
-                    send.refresh_from_db()
-                    results.append({
-                        'branch': branch.name, 'branch_id': branch.pk,
-                        'status': send.status, 'sent': send.sent_count,
-                        'failed': send.failed_count, 'skipped': send.skipped_count,
-                        'total': send.recipients_count,
-                        'error': send.error_message or '',
-                    })
-                except Exception as e:
-                    results.append({
-                        'branch': branch.name, 'branch_id': branch.pk,
-                        'status': 'failed', 'error': str(e),
-                    })
+                pending.append({
+                    'send': send, 'count': len(cb_list),
+                    'meta': {'branch': branch.name, 'branch_id': branch.pk},
+                })
         else:
             # A/B/% сплит — резолвим аудиторию per-branch (с дедупом по vk_id между
             # точками), режем, и каждому куску создаём отдельный Broadcast(SPECIFIC).
@@ -869,28 +862,63 @@ class SendSegmentBroadcastAPIView(APIView):
                         broadcast.specific_clients.set(chunk)
 
                     send = create_send(broadcast, triggered_by=triggered_by, trigger_type='manual')
-                    try:
-                        run_broadcast(send)
-                        send.refresh_from_db()
-                        results.append({
+                    pending.append({
+                        'send': send, 'count': len(chunk),
+                        'meta': {
                             'branch': branch.name, 'branch_id': branch.pk,
                             'variant': f'#{i + 1} ({v["percent"]}%)',
-                            'status': send.status, 'sent': send.sent_count,
-                            'failed': send.failed_count, 'skipped': send.skipped_count,
-                            'total': send.recipients_count,
-                            'error': send.error_message or '',
-                        })
-                    except Exception as e:
-                        results.append({
-                            'branch': branch.name, 'branch_id': branch.pk,
-                            'variant': f'#{i + 1} ({v["percent"]}%)',
-                            'status': 'failed', 'error': str(e),
-                        })
+                        },
+                    })
+
+        segment_label = f'{segment.emoji} {segment.name}' if segment else 'Все оцифрованные гости'
+        total_recipients = sum(p['count'] for p in pending)
+
+        # Порог: мало получателей — шлём синхронно (мгновенные счётчики,
+        # UX без изменений). Много — один серийный celery-таск (внутри
+        # run_broadcast sleep(0.05)=≤20 msg/s; один таск на запрос не даёт
+        # параллелизмом превысить лимит VK). Так синхронный HTTP-запрос
+        # не упирается в таймаут на больших сегментах.
+        SYNC_RECIPIENT_LIMIT = 30
+
+        if pending and total_recipients > SYNC_RECIPIENT_LIMIT:
+            from django.db import connection
+            from apps.tenant.senler.tasks import run_broadcast_task
+
+            send_ids = [p['send'].id for p in pending]
+            run_broadcast_task.delay(connection.schema_name, send_ids)
+
+            queued = [
+                {**p['meta'], 'status': 'queued', 'total': p['count']}
+                for p in pending
+            ]
+            return Response({
+                'ok':               True,
+                'queued':           True,
+                'segment':          segment_label,
+                'results':          queued + results,
+                'total_recipients': total_recipients,
+            })
+
+        # Sync-путь: поведение и форма ответа идентичны прежним.
+        for p in pending:
+            send = p['send']
+            try:
+                run_broadcast(send)
+                send.refresh_from_db()
+                results.append({
+                    **p['meta'],
+                    'status': send.status, 'sent': send.sent_count,
+                    'failed': send.failed_count, 'skipped': send.skipped_count,
+                    'total': send.recipients_count,
+                    'error': send.error_message or '',
+                })
+            except Exception as e:
+                results.append({**p['meta'], 'status': 'failed', 'error': str(e)})
 
         total_sent = sum(r.get('sent', 0) for r in results)
         return Response({
             'ok':         True,
-            'segment':    f'{segment.emoji} {segment.name}' if segment else 'Все оцифрованные гости',
+            'segment':    segment_label,
             'results':    results,
             'total_sent': total_sent,
         })

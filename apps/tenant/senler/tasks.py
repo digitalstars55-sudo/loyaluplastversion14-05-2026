@@ -548,3 +548,46 @@ def check_read_status_task() -> dict:
             )
 
     return {'marked_read': total_marked}
+
+
+# ── Manual broadcast runner (RF / сегментные рассылки) ────────────────────────
+
+@shared_task(name='apps.tenant.senler.tasks.run_broadcast_task', bind=True)
+def run_broadcast_task(self, schema_name: str, send_ids: list[int]) -> dict:
+    """
+    Запускает run_broadcast для списка BroadcastSend ПОСЛЕДОВАТЕЛЬНО,
+    одним таском на весь запрос рассылки.
+
+    Почему последовательно (НЕ дробить по точкам на отдельные таски):
+    внутри run_broadcast есть time.sleep(0.05) — лимит VK ≤20 msg/s,
+    иначе сообщество банят. Celery worker запущен с --concurrency=2:
+    параллельные таски на один vk_community_token суммарно превысят
+    20 msg/s. Один серийный таск на запрос исключает это.
+
+    Вызывать с корректным schema_name — django-tenants: celery-воркер
+    стартует в public-схеме, тенанта надо выставить явно.
+    """
+    from django_tenants.utils import schema_context
+    from apps.tenant.senler.models import BroadcastSend
+    from apps.tenant.senler.services import run_broadcast
+
+    processed = 0
+    with schema_context(schema_name):
+        for sid in send_ids:
+            try:
+                send = BroadcastSend.objects.get(pk=sid)
+            except BroadcastSend.DoesNotExist:
+                logger.warning(
+                    'run_broadcast_task: BroadcastSend %s not found (schema=%s)',
+                    sid, schema_name,
+                )
+                continue
+            try:
+                run_broadcast(send)
+                processed += 1
+            except Exception:
+                logger.exception(
+                    'run_broadcast_task: run_broadcast failed send=%s schema=%s',
+                    sid, schema_name,
+                )
+    return {'processed': processed, 'total': len(send_ids), 'schema': schema_name}

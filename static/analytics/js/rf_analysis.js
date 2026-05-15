@@ -627,6 +627,26 @@ function sendBroadcast() {
         return;
       }
 
+      if (data.queued) {
+        const qd = (data.results || [])
+          .filter(r => r.status === 'queued')
+          .map(r => `${r.branch}${r.variant ? ' ' + r.variant : ''}: ${r.total}`)
+          .join(' · ');
+        _setModalStatus(
+          `🚀 Рассылка запущена в фоне: ${data.total_recipients || 0} получателей` +
+          (qd ? ` (${qd})` : '') +
+          '. Прогресс — в админке: Senler → Рассылки.',
+          'success'
+        );
+        btnSend.textContent = '✅ В очереди';
+        setTimeout(() => {
+          closeBroadcastModal();
+          btnSend.disabled = false;
+          btnSend.textContent = '📨 Отправить';
+        }, 4000);
+        return;
+      }
+
       let summary = `✅ Отправлено ${data.total_sent} сообщений`;
       if (data.results && data.results.length > 0) {
         const details = data.results.map(r =>
