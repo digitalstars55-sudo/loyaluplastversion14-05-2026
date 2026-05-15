@@ -1017,9 +1017,20 @@ def send_vk_reply(
     if not conversation.vk_sender_id:
         raise ValueError('Нет VK ID отправителя — не знаем кому ответить')
 
-    try:
-        config = SenlerConfig.objects.get(branch=conversation.branch)
-    except SenlerConfig.DoesNotExist:
+    # VK-originated треды имеют branch=None (см. handle_vk_incoming_message,
+    # коммит 7c3e89e). Раньше .get(branch=None) → DoesNotExist → ответы на ВК-
+    # отзывы падали с "SenlerConfig не настроен". Все SenlerConfig тенанта
+    # делят один vk_group_id/токен, поэтому для ответа берём конфиг точки,
+    # а при её отсутствии — активный конфиг тенанта.
+    config = None
+    if conversation.branch_id:
+        config = SenlerConfig.objects.filter(branch_id=conversation.branch_id).first()
+    if config is None:
+        config = (
+            SenlerConfig.objects.filter(is_active=True).order_by('branch_id').first()
+            or SenlerConfig.objects.order_by('branch_id').first()
+        )
+    if config is None:
         raise ValueError('SenlerConfig не настроен для этой точки')
 
     if not config.vk_community_token:
