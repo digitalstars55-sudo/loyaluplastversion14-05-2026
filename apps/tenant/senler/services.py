@@ -134,6 +134,36 @@ def upload_vk_photo(config: SenlerConfig, image_field) -> tuple[str | None, str]
         return None, f'saveMessagesPhoto: {exc}'
 
 
+def _is_messages_allowed(config: SenlerConfig, vk_user_id: int) -> tuple[bool, str]:
+    """
+    Проверяет messages.isMessagesFromGroupAllowed ДО messages.send.
+
+    Без этой проверки рассылка дёргает messages.send всем подряд; тем, кто
+    не разрешил сообщения сообществу, VK массово возвращает ошибку 901 и
+    помечает сообщество как спам — ломая и рассылки, и ответы на отзывы
+    (общий vk_community_token). Fix B.
+
+    Fail-closed: при любой неоднозначности НЕ отправляем (recipient → SKIPPED),
+    т.к. цель — чтобы VK не ловил ошибок от сообщества.
+    """
+    try:
+        data = _vk_call('messages.isMessagesFromGroupAllowed', {
+            'group_id':     config.vk_group_id,
+            'user_id':      vk_user_id,
+            'access_token': config.vk_community_token,
+            'v':            '5.131',
+        })
+    except Exception as exc:
+        return False, f'Пропущено: не удалось проверить доступ ({exc})'
+    if 'error' in data:
+        return False, 'Пропущено: не удалось проверить доступ (VK %s)' % (
+            data['error'].get('error_msg') or data['error'].get('error_code')
+        )
+    if (data.get('response') or {}).get('is_allowed') == 1:
+        return True, ''
+    return False, 'Пропущено: пользователь не разрешил сообщения сообществу (opt-in)'
+
+
 def send_vk_message(
     config: SenlerConfig,
     vk_user_id: int,
@@ -149,6 +179,14 @@ def send_vk_message(
 
     VK API rate limit: ≤ 20 messages/second (handle in caller via throttling).
     """
+    # Opt-in guard (Fix B): не дёргаем messages.send тем, кто не разрешил
+    # сообщения сообществу — иначе VK массово ловит ошибку 901 и банит
+    # сообщество за спам (рвётся и рассылка, и ответы на отзывы — общий
+    # токен). Проверка идёт ДО любого messages.send.
+    allowed, skip_reason = _is_messages_allowed(config, vk_user_id)
+    if not allowed:
+        return False, skip_reason, None
+
     try:
         import requests
     except ImportError:
@@ -311,6 +349,9 @@ _UNREACHABLE_VK_ERROR_FRAGMENTS = (
     'access to user denied',
     'user was deleted or banned',
     'user not found',
+    # Fix B: opt-in guard / проверка доступа — recipient → SKIPPED, не FAILED
+    'пользователь не разрешил сообщения',
+    'не удалось проверить доступ',
 )
 
 
