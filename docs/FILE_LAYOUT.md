@@ -1,78 +1,161 @@
-# FILE_LAYOUT — карта репозиториев и копий LoyalUP
+# FILE_LAYOUT — карта проекта LoyalUP (консолидировано под digitalstars55-sudo)
 
-> Главный документ когда непонятно «где актуальная версия». Зеркало
-> в [`loyalupversionMAC/FILE_LAYOUT.md`](https://github.com/digitalstars55-sudo/loyalupversionMAC/blob/main/FILE_LAYOUT.md).
+> Главный документ когда непонятно «где актуальная версия» / «как поднять на новой машине».
+> Зеркало: backend-репо `docs/FILE_LAYOUT.md` и Mac-репо `FILE_LAYOUT.md` — синхронны.
 
-## Три отдельных кодовых базы (не путать)
+## Весь проект — 3 кодовые базы, ВСЕ под `digitalstars55-sudo`
+
+```
+digitalstars55-sudo/
+├── loyaluplastversion14-05-2026   ← 1. BACKEND (Django, прод)
+├── loyalupversionMAC              ← 2. MOBILE клиента (Expo/TestFlight)
+│     └── MOBILE_TESTFLIGHT_app/rf-mobile/
+└── levone-front-v3                ← 3. VK МИНИ-АПС гостей (Vite/React)
+```
 
 ### 1. Backend (Django) — для всех тенантов
 
-- **Repo (канон):** `digitalstars55-sudo/loyaluplastversion14-05-2026`
-- **Прод-сервер:** `root@81.17.154.208`, `/home/levone/levelup-back/`
-- **Bind-mount:** `compose.yaml` имеет `- .:/app` для web → host file = container file
-- **Деплой:** правки → `git push origin main` → SSH `cd /home/levone/levelup-back && git pull`
-- **Рестарт:** после `.py` → `docker kill -s HUP web`. После `.env` или `compose.yaml` → `docker compose up -d --force-recreate web`.
-
-**Что внутри:** Django backend, 27 apps, django-tenants многотенантность, фиолетовая админка ЛоялUP, аналитика, RF-анализ, leads, mobile API, support chat relay, Expo push.
-
-Recovery-коммит после force-recreate катастрофы: `1ebd536`.
-Полная история сессии 2026-05-14: [`docs/SESSION_2026_05_14.md`](SESSION_2026_05_14.md).
+- **Repo:** `digitalstars55-sudo/loyaluplastversion14-05-2026`
+- **Прод-сервер:** `root@81.17.154.208`, `/home/levone/levelup-back/` (bind-mount `.:/app`)
+- **Деплой:** `git push origin main` → SSH `cd /home/levone/levelup-back && git pull && docker kill -s HUP web`
+  (после `.env`/`compose.yaml` — `docker compose up -d --force-recreate web`, не HUP)
+- **Что внутри:** 27 apps, django-tenants, фиолетовая админка ЛоялUP, аналитика/RF, leads,
+  mobile API, support-chat relay (CheckUp), Expo push.
 
 ### 2. Mobile client app (Expo / React Native) — для владельцев ресторанов
 
-- **Repo:** `digitalstars55-sudo/loyalupversionMAC`
-- **Внутри:** `MOBILE_TESTFLIGHT_app/rf-mobile/`
-- **Деплой OTA:** `git push origin main` → `eas update --branch production --message "..."` → тестеры получают новый JS-bundle при следующем запуске
-- **Нативный билд** (только при `app.json` / нативных модулях): `eas build --profile production --platform ios && eas submit --platform ios`
-
-**Что внутри:** iOS-приложение в TestFlight для владельцев точек, личный кабинет, RF-аналитика, ChatScreen (саппорт-чат с CheckUp), Push через `expo-notifications`.
+- **Repo:** `digitalstars55-sudo/loyalupversionMAC`, путь внутри `MOBILE_TESTFLIGHT_app/rf-mobile/`
+- **Деплой OTA:** `eas update --branch production --message "..."` (для JS/TS правок — мгновенно)
+- **Нативный билд** (только app.json / нативные модули / version): `eas build --profile production --platform ios && eas submit --platform ios`
+- **Что внутри:** TestFlight приложение владельца: личный кабинет, RF, отзывы, рассылки,
+  ChatScreen (саппорт с CheckUp), push. Гайд для Claude: `rf-mobile/CLAUDE.md`.
 
 ### 3. VK mini-app (Vite / React) — для гостей ресторанов
 
-- **Repo:** отдельный (не в git'е сегодня — на сервере)
-- **Сервер:** `~levone/levone-front-v3/build/`, отдаётся nginx с `levonework.ru`
-- **Деплой:** rebuild + загрузка `build/` на сервер
-- **Сегодня (2026-05-14) не трогали** — только CORS на бэке фиксили, чтобы мини-апс мог стучаться в API
+- **Repo:** `digitalstars55-sudo/levone-front-v3` (консолидирован 2026-05-15 из
+  `stagepalete2/levone-front-v3`, история 1:1, HEAD `8f07129`)
+- **Прод-сервер:** `/home/levone/levone-front-v3/`, билд `build/` отдаётся nginx с `levonework.ru`
+  (это то что грузит `vk.ru/app53418653`)
+- **Стек:** Vite 7, React 19, `@vkontakte/vk-bridge`, `@vkontakte/vkui`, MUI, zustand, axios
+- **Деплой:** `npm run build` → залить `build/` (или `dist/`) на сервер в `/home/levone/levone-front-v3/build/`
+  (nginx статику отдаёт сразу, рестарт не нужен). Либо `npm run deploy` (vk-miniapps-deploy).
+- **Env:** `.env` с `VITE_BACKEND_DOMAIN` (public-домен бэка, напр. `levelupapp.ru`).
+  `.env` в git НЕ хранится — на новой машине создать вручную.
+- **Что внутри:** игра, каталог призов, отзывы, ДР-подарки, реферальная система.
+- ⚠️ Старый `stagepalete2/levone-front-v3` оставлен как backup, не удалён.
 
-**Что внутри:** React SPA, грузится из VK iframe (`vk.ru/app53418653`), игра, каталог призов, отзывы, ДР, реферальная система.
+### (бонус) Гостевой web loyalupp.ru
+
+- `stagepalete2/levone-front-web` → сервер `~levone/levone-front-web/` → `loyalupp.ru`.
+  Сегодня не консолидировали (отдельная задача при желании).
 
 ---
 
-## Правило-одна-строка для каждого изменения
+## КАК ПОСТАВИТЬ ВСЁ НА MAC С НУЛЯ
 
-| Что меняю | Где работаю | Как доставить |
+> Префикс токена ниже — PAT для `digitalstars55-sudo`. Все 3 репо приватные.
+> Замени `<PAT>` на актуальный токен (он у пользователя).
+
+### 0. Инструменты (один раз)
+
+```bash
+node --version      # нужен v20+
+npm  --version
+git  --version
+npm install -g eas-cli      # для мобайла (OTA/билды)
+```
+
+### 1. Папка под всё + клонирование 3 репо
+
+```bash
+mkdir -p ~/Desktop/LOYALUP && cd ~/Desktop/LOYALUP
+
+# 1. Backend
+git clone https://digitalstars55-sudo:<PAT>@github.com/digitalstars55-sudo/loyaluplastversion14-05-2026.git backend
+
+# 2. Mobile клиента
+git clone https://digitalstars55-sudo:<PAT>@github.com/digitalstars55-sudo/loyalupversionMAC.git mobile
+
+# 3. VK мини-апс гостей
+git clone https://digitalstars55-sudo:<PAT>@github.com/digitalstars55-sudo/levone-front-v3.git vk-miniapp
+```
+
+Получится:
+```
+~/Desktop/LOYALUP/
+├── backend/      ← Django
+├── mobile/       → реальный код в mobile/MOBILE_TESTFLIGHT_app/rf-mobile/
+└── vk-miniapp/   ← Vite/React гостевой
+```
+
+### 2. Backend — настройка (обычно только смотрят/правят и пушат)
+
+```bash
+cd ~/Desktop/LOYALUP/backend
+# деплой = git push → на сервере git pull + HUP. Локально Django можно не запускать.
+# Если нужен локальный запуск — есть docker-compose, но это тяжело и обычно не требуется.
+```
+
+### 3. Mobile клиента — настройка и запуск
+
+```bash
+cd ~/Desktop/LOYALUP/mobile/MOBILE_TESTFLIGHT_app/rf-mobile
+npm install                       # (если ругань на peer-deps: npm install --legacy-peer-deps)
+
+cat > .env << 'EOF'
+EXPO_PUBLIC_API_BASE=https://levelupapp.ru
+EXPO_PUBLIC_USE_MOCK=false
+EOF
+
+eas login                         # Expo-аккаунт (owner "levone")
+npx expo start                    # i = iOS-симулятор, w = браузер, QR = Expo Go
+
+# рабочий цикл:
+git pull origin main
+# ... правки ...
+git add -A && git commit -m "..." && git push origin main
+eas update --branch production --message "что сделал"   # OTA тестерам
+```
+
+### 4. VK мини-апс гостей — настройка и запуск
+
+```bash
+cd ~/Desktop/LOYALUP/vk-miniapp
+npm install
+
+# .env в git нет — создать (frontend-переменные публичны, не секрет):
+cat > .env << 'EOF'
+VITE_BACKEND_DOMAIN=levelupapp.ru
+EOF
+# (точное содержимое .env можно скопировать с сервера: /home/levone/levone-front-v3/.env)
+
+npm run dev                       # локальный dev на http://localhost:5173
+npm run build                     # прод-сборка в dist/ (или build/)
+
+# деплой на прод:
+#   scp -r dist/* root@81.17.154.208:/home/levone/levone-front-v3/build/
+#   (nginx отдаёт статику сразу; перезапуск не нужен)
+```
+
+---
+
+## Правило-одна-строка
+
+| Меняю | Где | Доставка |
 |---|---|---|
-| Django backend | Локальная копия `levelup-back-mainNEW\` ИЛИ SSH | `git push origin main` (в этот репо) → SSH `cd /home/levone/levelup-back && git pull && docker kill -s HUP web` |
-| Mobile client (Expo) | Mac `loyalupversionMAC/MOBILE_TESTFLIGHT_app/rf-mobile/` | `git push origin main` → `eas update --branch production` |
-| VK mini-app гостей | На сервере `~levone/levone-front-v3/src/` | rebuild → загрузить `build/` на сервер |
+| Backend (Django) | `backend/` | `git push` → SSH `git pull && docker kill -s HUP web` |
+| Mobile клиента | `mobile/MOBILE_TESTFLIGHT_app/rf-mobile/` | `git push` → `eas update --branch production` |
+| VK мини-апс гостей | `vk-miniapp/` | `npm run build` → залить `build/` на сервер |
 
----
+## Что НЕ трогать
 
-## Если запутался — checklist
+- Прод-сервер вручную (только через git pull / scp build)
+- Бэкапы на сервере (`/root/*.bak.*`, `/root/host-pre-rsync-*.tar.gz`)
+- `loyalupversionMAC/levelup-back-rf-thresholds/_ARCHIVE_DO_NOT_DEPLOY_old_backend/`
+- Старый `stagepalete2/*` — там backup-копии, не источник правды
 
-1. **Поправить чат поддержки в мобайле клиентов?**
-   → `loyalupversionMAC/MOBILE_TESTFLIGHT_app/rf-mobile/src/screens/ChatScreen.tsx` → `eas update`
+## Ссылки
 
-2. **Поправить Django endpoint для мобайла/мини-апса?**
-   → Этот репо (`loyaluplastversion14-05-2026`), `apps/tenant/...` или `apps/shared/...` → `git push` → SSH pull + HUP
-
-3. **Поправить фиолетовую админку?**
-   → Этот репо, `templates/admin/base_site.html` → `git push` → SSH pull + HUP
-
-4. **Поправить игру/каталог в VK мини-апсе гостей?**
-   → `~levone/levone-front-v3/` на сервере, отдельный workflow (rebuild)
-
----
-
-## Что точно НЕ трогать
-
-- Бэкапы на проде: `/root/host-pre-rsync-*.tar.gz`, `/root/*.bak.*`, `/opt/checkup/backend/.env.prod.bak*` — страховки
-- Папку `levelup-back-rf-thresholds/_ARCHIVE_DO_NOT_DEPLOY_old_backend/` в `loyalupversionMAC` — старая версия бэка
-- VK мини-апс деплоить из Mac-репо — там нет его исходников; правки только в `~levone/levone-front-v3/`
-
----
-
-**Связанные документы:**
-- [`SESSION_2026_05_14.md`](SESSION_2026_05_14.md) — полная история восстановления после force-recreate катастрофы
-- `CLAUDE.md` — конвенции проекта + «Регламент коммитов (отче наш)»
-- README в `loyalupversionMAC` — детальная инструкция для Mac-репо
+- История инцидента 2026-05-14: backend-репо `docs/SESSION_2026_05_14.md`
+- Гайд для Claude в мобайле: `mobile/MOBILE_TESTFLIGHT_app/rf-mobile/CLAUDE.md`
+- Конвенции бэка + «Регламент коммитов»: backend-репо `CLAUDE.md`
