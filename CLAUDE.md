@@ -55,6 +55,24 @@ docker exec web python manage.py migrate_schemas
 - Контейнеры: `web`, `celery-worker`, `celery-beat`, `database` (postgres:16-alpine), `redis`, `checkup_redis`.
 - Хот-патч без билда: правишь файл внутри контейнера через `docker exec -u 0 web python3 ...` и потом `docker kill -s HUP web` — gunicorn graceful-перезапустит воркеров. После хот-патча **обязательно** синхронизируй с локальным репозиторием, иначе `docker compose build` затрёт.
 
+### Деплой: что чем перезагружать (КРИТИЧНО — не «всё через HUP web»)
+
+Стандартный деплой: `git push` → на сервере `cd /home/levone/levelup-back && sudo -u levone git pull --ff-only origin main` → перезагрузка по типу правки:
+
+| Что менялось | Команда перезагрузки |
+|---|---|
+| `.py` во вью/web | `docker kill -s HUP web` (graceful reload gunicorn) |
+| celery-задача (senler/relay/push tasks) | `docker restart celery-worker celery-beat` — **HUP НЕ перезагружает celery** |
+| **новый** `@shared_task` | `docker restart celery-worker` — регистрируется через autodiscover только при старте воркера |
+| `static/**` (JS/CSS) | `docker exec web python manage.py collectstatic --noinput` — nginx раздаёт `/static/` из `staticfiles/`, `git pull` обновляет только исходный `static/`. Файлы не хэшируются → пользователю hard-refresh (Ctrl+F5) |
+| `.env` / `compose.yaml` | `docker compose up -d --force-recreate web` (env_file читается только при create; HUP не перечитывает) |
+
+Все шаги идемпотентны (pull ff-only, HUP, restart, collectstatic) — безопасно повторять после обрыва SSH. Перед `git pull` проверять `git status --porcelain` сервера (чисто ли — иначе риск как 14.05).
+
+### VK rate limit (бан-риск)
+
+≤ **20 messages/sec** на `vk_community_token`, иначе VK банит сообщество. `run_broadcast` держит лимит через `time.sleep(0.05)`. celery-worker запущен `--concurrency=2` → **нельзя** дробить рассылку на несколько параллельных celery-тасков на один токен (суммарно >20/с). Паттерн: один **серийный** таск на запрос — `apps.tenant.senler.tasks.run_broadcast_task(schema_name, send_ids)`. Все SenlerConfig одного тенанта делят один `vk_group_id`/токен.
+
 ## Регламент коммитов (отче наш)
 
 **ОБЯЗАТЕЛЬНО**: после **любого** изменения файлов на проде или в репозитории — сразу `git add → git commit → git push origin main`. Без исключений.
