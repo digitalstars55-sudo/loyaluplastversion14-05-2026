@@ -353,6 +353,11 @@
     }
     .module a:link, .module a:visited { color: var(--lp-brand-dark) !important; }
     .module a:hover { color: var(--lp-brand) !important; }
+    /* .button внутри changelist (например «▶ Отправить» в списке рассылок) —
+       белый текст, иначе .module a:link перекрашивает в тёмно-фиолетовый
+       и буквы сливаются с фиолетовым фоном кнопки. */
+    .module a.button:link, .module a.button:visited { color: #fff !important; }
+    .module a.button:hover { color: #fff !important; }
 
     /* ── Tabs (вкладки внутри форм) ── */
     .selector-chosen h2, .related-widget-wrapper-link { color: var(--lp-brand) !important; }
