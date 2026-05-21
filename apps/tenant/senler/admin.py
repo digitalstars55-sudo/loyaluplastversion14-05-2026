@@ -11,7 +11,7 @@ from .models import (
     Broadcast, BroadcastRecipient, BroadcastSend,
     RecipientStatus, SendStatus, SenlerConfig,
 )
-from .services import create_send, resolve_recipients, run_broadcast
+from .services import create_send, resolve_recipients
 
 
 # ── SenlerConfig ──────────────────────────────────────────────────────────────
@@ -209,6 +209,15 @@ class BroadcastAdmin(admin.ModelAdmin):
         ] + urls
 
     def _send_view(self, request, pk):
+        # Рассылка ВСЕГДА уходит в celery, даже маленькая.
+        # Раньше run_broadcast вызывался синхронно в HTTP-запросе —
+        # gunicorn убивал воркера по 30-сек таймауту на больших сегментах,
+        # рассылка зависала в RUNNING/PENDING, юзер кликал повторно
+        # и плодил дубли. Теперь HTTP отвечает мгновенно, прогресс
+        # видно в инлайне «История рассылок» ниже.
+        from django.db import connection
+        from apps.tenant.senler.tasks import run_broadcast_task
+
         broadcast = Broadcast.objects.select_related('branch').get(pk=pk)
         send = create_send(
             broadcast,
@@ -216,26 +225,22 @@ class BroadcastAdmin(admin.ModelAdmin):
             trigger_type='manual',
         )
         try:
-            run_broadcast(send)
-            if send.status == SendStatus.DONE:
-                self.message_user(
-                    request,
-                    f'Рассылка «{broadcast.name}» завершена: '
-                    f'{send.sent_count} отправлено, '
-                    f'{send.failed_count} ошибок, '
-                    f'{send.skipped_count} пропущено.',
-                )
-            else:
-                self.message_user(
-                    request,
-                    f'Ошибка рассылки: {send.error_message}',
-                    level=messages.ERROR,
-                )
+            run_broadcast_task.delay(connection.schema_name, [send.id])
+            self.message_user(
+                request,
+                f'Рассылка «{broadcast.name}» поставлена в очередь. '
+                f'Прогресс — в разделе «История рассылок» ниже. '
+                f'Обновите страницу через минуту, чтобы увидеть результат.',
+            )
         except Exception as exc:
             send.status = SendStatus.FAILED
-            send.error_message = str(exc)
+            send.error_message = f'Не удалось поставить в очередь: {exc}'
             send.save(update_fields=['status', 'error_message'])
-            self.message_user(request, f'Необработанная ошибка: {exc}', level=messages.ERROR)
+            self.message_user(
+                request,
+                f'Не удалось запустить рассылку: {exc}',
+                level=messages.ERROR,
+            )
 
         return HttpResponseRedirect(
             reverse(f'{self.admin_site.name}:senler_broadcast_change', args=[pk])
