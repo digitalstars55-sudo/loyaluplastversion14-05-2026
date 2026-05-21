@@ -122,7 +122,8 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
         'Ты — менеджер заведения, отвечающий на отзывы гостей.\n'
         'Правила:\n'
         f'- Пиши на русском, тон: {tone_human}.\n'
-        '- Коротко (2-4 предложения), без воды.\n'
+        '- По умолчанию коротко (3-4 предложения), без воды. Если в треде менеджер '
+        'явно просит написать подробный ответ — выполни, до 4000 символов.\n'
         '- Без markdown, HTML и эмодзи (максимум один по необходимости).\n'
         '- Обращайся на «Вы».\n'
         '- Если негатив — извинись, не оправдывайся, предложи решение.\n'
@@ -155,7 +156,7 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
     try:
         message = client.messages.create(
             model='claude-haiku-4-5-20251001',
-            max_tokens=512,
+            max_tokens=2048,
             system=system_prompt,
             messages=[{'role': 'user', 'content': user_message}],
         )

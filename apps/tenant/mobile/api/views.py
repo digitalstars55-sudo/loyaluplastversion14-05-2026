@@ -430,7 +430,8 @@ def _build_draft_prompt(conv: TestimonialConversation) -> tuple[str, str]:
         'Ты — менеджер заведения, отвечающий на отзывы гостей.\n'
         'Правила:\n'
         f'- Пиши на русском, тон: {tone_human}.\n'
-        '- Коротко (2-4 предложения), без воды.\n'
+        '- По умолчанию коротко (3-4 предложения), без воды. Если в треде менеджер '
+        'явно просит написать подробный ответ — выполни, до 4000 символов.\n'
         '- Не используй markdown, HTML, эмодзи кроме одного по необходимости.\n'
         '- Обращайся на "Вы".\n'
         '- Если отзыв негативный — извинись, не оправдывайся, предложи решение.\n'
@@ -480,7 +481,7 @@ def _call_claude_for_draft(conv: TestimonialConversation) -> tuple[str, int]:
     try:
         message = client.messages.create(
             model='claude-haiku-4-5-20251001',
-            max_tokens=512,
+            max_tokens=2048,
             system=system_prompt,
             messages=[{'role': 'user', 'content': user_message}],
         )
