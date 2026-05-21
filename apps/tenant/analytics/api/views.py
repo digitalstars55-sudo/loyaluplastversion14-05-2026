@@ -976,6 +976,15 @@ class GenerateBroadcastTextAPIView(APIView):
             '- Верни ТОЛЬКО текст рассылки, без пояснений.'
         )
 
+        # Подмешиваем инструкции из базы знаний тенанта.
+        from apps.tenant.analytics.ai_service import _get_knowledge_base_text
+        kb_text = _get_knowledge_base_text()
+        if kb_text:
+            system_prompt += (
+                '\n\n--- Инструкции из базы знаний заведения ---\n'
+                + kb_text
+            )
+
         if segment is not None:
             code = segment.code
             std = services._STANDARD_SEGMENT_DATA.get(code, {})
@@ -1065,6 +1074,15 @@ class GenerateReportCommentAPIView(APIView):
             '- Для секций 10 и 11 пиши 3 пункта через символ новой строки, каждый начиная с «•».\n'
             '- Верни ТОЛЬКО текст комментария, без пояснений.'
         )
+
+        # Подмешиваем инструкции из базы знаний тенанта.
+        from apps.tenant.analytics.ai_service import _get_knowledge_base_text
+        kb_text = _get_knowledge_base_text()
+        if kb_text:
+            system_prompt += (
+                '\n\n--- Инструкции из базы знаний заведения ---\n'
+                + kb_text
+            )
 
         user_message = (
             f'Кафе: {company_name}\n'

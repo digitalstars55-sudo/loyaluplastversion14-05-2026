@@ -142,8 +142,8 @@ class TenantAdminSite(AdminSite):
             logger.exception('Tenant admin: failed to compute billing status')
 
         try:
-            from apps.tenant.branch.models import Branch, DailyCode
-            today = date.today()
+            from apps.tenant.branch.models import Branch, DailyCode, current_code_date
+            today = current_code_date()  # кодовые сутки начинаются в 03:00 MSK
             branches = Branch.objects.filter(is_active=True).order_by('name')
             codes_qs = DailyCode.objects.filter(valid_date=today).select_related('branch')
 

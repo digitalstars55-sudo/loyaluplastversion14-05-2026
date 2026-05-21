@@ -503,6 +503,15 @@ class ReviewsAIReplyView(View):
                 )
                 user_content = f'История диалога:\n\n{conv_text}'
 
+            # Подмешиваем инструкции из базы знаний тенанта.
+            from apps.tenant.analytics.ai_service import _get_knowledge_base_text
+            kb_text = _get_knowledge_base_text()
+            if kb_text:
+                system_prompt += (
+                    '\n\n--- Инструкции из базы знаний заведения ---\n'
+                    + kb_text
+                )
+
             msg = ai_client.messages.create(
                 model='claude-haiku-4-5-20251001',
                 max_tokens=512,
