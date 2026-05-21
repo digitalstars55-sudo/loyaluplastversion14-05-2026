@@ -10,6 +10,7 @@ from apps.tenant.branch.models import (
     CoinTransaction, TransactionType, TransactionSource,
     Cooldown, CooldownFeature,
     DailyCode, DailyCodePurpose,
+    current_code_date,
 )
 from apps.tenant.inventory.models import SuperPrizeEntry, SuperPrizeTrigger
 from ..models import ClientAttempt
@@ -104,11 +105,10 @@ def _activate_game_cooldown(client_branch: ClientBranch) -> None:
 
 
 def _validate_game_code(branch, code: str) -> None:
-    today = timezone.localdate()
     daily = DailyCode.objects.filter(
         branch=branch,
         purpose=DailyCodePurpose.GAME,
-        valid_date=today,
+        valid_date=current_code_date(),
     ).first()
     if not daily or daily.code != code.upper().strip():
         raise InvalidCode

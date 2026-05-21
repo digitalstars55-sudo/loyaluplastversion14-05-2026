@@ -8,6 +8,7 @@ from apps.tenant.branch.models import (
     CoinTransaction, TransactionType, TransactionSource,
     Cooldown, CooldownFeature,
     DailyCode, DailyCodePurpose,
+    current_code_date,
 )
 from ..models import Quest, QuestSubmit
 
@@ -84,11 +85,10 @@ def _activate_quest_cooldown(client_branch: ClientBranch) -> None:
 def _validate_quest_code(branch, code: str | None) -> None:
     if not code:
         raise InvalidCode
-    today = timezone.localdate()
     daily = DailyCode.objects.filter(
         branch=branch,
         purpose=DailyCodePurpose.QUEST,
-        valid_date=today,
+        valid_date=current_code_date(),
     ).first()
     if not daily or daily.code != code.upper().strip():
         raise InvalidCode

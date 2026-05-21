@@ -373,7 +373,8 @@ class DailyCodeAdmin(admin.ModelAdmin):
 
     @admin.action(description='⟳ Сгенерировать коды на сегодня (для всех точек)')
     def generate_codes_today(self, request, queryset):
-        today = timezone.localdate()
+        from apps.tenant.branch.models import current_code_date
+        today = current_code_date()
         created_count = 0
         for branch in Branch.objects.all():
             for purpose_value, _ in DailyCodePurpose.choices:

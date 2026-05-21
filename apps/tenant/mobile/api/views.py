@@ -357,8 +357,7 @@ class GenerateDailyCodeAPIView(APIView):
 
     def post(self, request):
         import random
-        from django.utils import timezone
-        from apps.tenant.branch.models import Branch, DailyCode
+        from apps.tenant.branch.models import Branch, DailyCode, current_code_date
 
         try:
             branch_id = int(request.data.get('branch_id'))
@@ -384,7 +383,7 @@ class GenerateDailyCodeAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        today = timezone.localdate()
+        today = current_code_date()
         new_code = f'{random.randint(0, 99999):05d}'
         dc, _ = DailyCode.objects.update_or_create(
             branch=branch,
@@ -439,6 +438,16 @@ def _build_draft_prompt(conv: TestimonialConversation) -> tuple[str, str]:
         '- Не упоминай скидки/компенсации, если не сказано.\n'
         '- Верни ТОЛЬКО текст ответа, без пояснений и подписи.'
     )
+
+    # Подмешиваем инструкции из базы знаний тенанта (тон, факты о заведении,
+    # типовые формулировки). Без этого Claude отвечает в отрыве от контекста.
+    from apps.tenant.analytics.ai_service import _get_knowledge_base_text
+    kb_text = _get_knowledge_base_text()
+    if kb_text:
+        system_prompt += (
+            '\n\n--- Инструкции из базы знаний заведения ---\n'
+            + kb_text
+        )
     user_message = (
         f'Заведение: {company_name}\n'
         f'Тональность отзыва (определена ИИ): {sentiment_human}\n\n'

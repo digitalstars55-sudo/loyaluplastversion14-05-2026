@@ -130,6 +130,16 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
         '- Не упоминай скидки/компенсации без явной просьбы.\n'
         '- Верни ТОЛЬКО текст ответа, без пояснений и подписи.'
     )
+
+    # Подмешиваем инструкции из базы знаний тенанта (тон, факты о заведении,
+    # типовые формулировки). Без этого Claude отвечает в отрыве от контекста.
+    from apps.tenant.analytics.ai_service import _get_knowledge_base_text
+    kb_text = _get_knowledge_base_text()
+    if kb_text:
+        system_prompt += (
+            '\n\n--- Инструкции из базы знаний заведения ---\n'
+            + kb_text
+        )
     user_message = (
         f'Заведение: {company_name}\n'
         f'Тональность отзыва: {sentiment_human}\n\n'

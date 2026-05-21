@@ -8,6 +8,7 @@ from apps.tenant.branch.models import (
     ClientBranch,
     Cooldown, CooldownFeature,
     DailyCode, DailyCodePurpose,
+    current_code_date,
 )
 from apps.tenant.catalog.models import Product
 from ..models import (
@@ -114,11 +115,10 @@ def _check_birthday_eligibility(cb: ClientBranch) -> None:
 def _validate_birthday_code(branch, code: str | None) -> None:
     if not code:
         raise InvalidCode
-    today = timezone.localdate()
     daily = DailyCode.objects.filter(
         branch=branch,
         purpose=DailyCodePurpose.BIRTHDAY,
-        valid_date=today,
+        valid_date=current_code_date(),
     ).first()
     if not daily or daily.code != code.upper().strip():
         raise InvalidCode

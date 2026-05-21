@@ -182,11 +182,11 @@ def generate_daily_codes_task() -> dict:
     Runs daily at 03:00 Moscow time (configured in main/celery.py).
     """
     import random
-    from django.utils import timezone
     from django_tenants.utils import get_tenant_model, schema_context
+    from apps.tenant.branch.models import current_code_date
 
     TenantModel = get_tenant_model()
-    today       = timezone.localdate()  # дата по TIME_ZONE Django (Europe/Moscow)
+    today       = current_code_date()  # кодовые сутки начинаются в 03:00 MSK
     created_total = 0
     skipped_total = 0
 

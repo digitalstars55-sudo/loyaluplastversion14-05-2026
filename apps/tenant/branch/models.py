@@ -283,6 +283,22 @@ class ClientBranchVisit(models.Model):
 
 # ── DailyCode ─────────────────────────────────────────────────────────────────
 
+# Кодовые сутки начинаются в 03:00 MSK — в это же время cron перегенерирует коды.
+# До 03:00 действителен код, сгенерированный накануне; после 03:00 — новый.
+DAILY_CODE_ROLLOVER_HOUR = 3
+
+
+def current_code_date():
+    """
+    Дата, на которую сейчас действует код дня.
+
+    Кодовые сутки сдвинуты на DAILY_CODE_ROLLOVER_HOUR часов вперёд относительно
+    календарных, чтобы окно 00:00–03:00 не оставалось без кода
+    (cron генерации запускается в 03:00).
+    """
+    return (timezone.localtime() - timedelta(hours=DAILY_CODE_ROLLOVER_HOUR)).date()
+
+
 class DailyCodePurpose(models.TextChoices):
     GAME     = 'game',     'Игра'
     QUEST    = 'quest',    'Квест'
