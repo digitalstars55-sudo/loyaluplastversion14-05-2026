@@ -730,7 +730,7 @@ function genComment(n){
   fetch('/api/v1/analytics/report/generate-comment/',{
     method:'POST',
     headers:{'Content-Type':'application/json','X-CSRFToken':ck('csrftoken')},
-    body:JSON.stringify({section_num:n,section_title:title,metrics_json:JSON.stringify(secMetrics(n))}),
+    body:JSON.stringify({section_num:n,section_title:title,metrics_json:JSON.stringify(secMetrics(n)),draft:(ta?ta.value:'')}),
   }).then(r=>r.json()).then(d=>{
     if(d.error){st.textContent='✗ '+d.error;st.style.color='var(--err)';}
     else{ta.value=d.text||'';st.textContent='✓';st.style.color='var(--ok)';}
@@ -749,7 +749,7 @@ function generateAllComments(){
     fetch('/api/v1/analytics/report/generate-comment/',{
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRFToken':ck('csrftoken')},
-      body:JSON.stringify({section_num:i,section_title:title,metrics_json:JSON.stringify(secMetrics(i))}),
+      body:JSON.stringify({section_num:i,section_title:title,metrics_json:JSON.stringify(secMetrics(i)),draft:(ta?ta.value:'')}),
     }).then(r=>r.json()).then(d=>{
       if(d.text){if(ta)ta.value=d.text;if(st){st.textContent='✓';st.style.color='var(--ok)';}}
       else if(st){st.textContent='✗';st.style.color='var(--err)';}
