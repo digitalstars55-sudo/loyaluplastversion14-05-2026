@@ -505,12 +505,15 @@ class ReviewsAIReplyView(View):
                 )
                 user_content = f'История диалога:\n\n{conv_text}'
 
-            # Подмешиваем инструкции из базы знаний тенанта.
+            # Подмешиваем базу знаний тенанта — как справку, не как шаблон.
             from apps.tenant.analytics.ai_service import _get_knowledge_base_text
             kb_text = _get_knowledge_base_text()
             if kb_text:
                 system_prompt += (
-                    '\n\n--- Инструкции из базы знаний заведения ---\n'
+                    '\n\n--- Справка о заведении из базы знаний ---\n'
+                    '(используй для тона общения и фактов о заведении; НЕ '
+                    'копируй отсюда готовые ответы — следуй смыслу отзыва '
+                    'и черновика администратора)\n'
                     + kb_text
                 )
 

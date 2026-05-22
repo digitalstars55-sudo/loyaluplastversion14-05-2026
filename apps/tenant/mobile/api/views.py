@@ -446,7 +446,9 @@ def _build_draft_prompt(conv: TestimonialConversation) -> tuple[str, str]:
     kb_text = _get_knowledge_base_text()
     if kb_text:
         system_prompt += (
-            '\n\n--- Инструкции из базы знаний заведения ---\n'
+            '\n\n--- Справка о заведении из базы знаний ---\n'
+            '(используй для тона общения и фактов; НЕ копируй отсюда '
+            'готовые ответы как шаблон)\n'
             + kb_text
         )
     user_message = (
