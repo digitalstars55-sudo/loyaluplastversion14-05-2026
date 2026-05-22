@@ -549,6 +549,10 @@ function generateAIText() {
     ? { segment_id: _modalCell.segment_id }
     : {};
 
+  // Текст из поля — это пожелания/черновик пользователя, передаём в AI.
+  const draft = ((_variants[0] && _variants[0].text) || '').trim();
+  if (draft) payload.draft = draft;
+
   fetch('/api/v1/analytics/rf/generate-broadcast-text/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
