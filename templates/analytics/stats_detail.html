@@ -54,6 +54,15 @@
     <strong class="text-dark">{{ total }}</strong> гостей &nbsp;·&nbsp; {{ start_display }} — {{ end_display }}
   </p>
 
+  {% if metric == 'new_community_subscribers' or metric == 'new_newsletter_subscribers' or metric == 'total_vk_subscribers' %}
+  <div class="alert alert-info py-2 px-3 small mb-3" style="border-left:4px solid #0d6efd;">
+    <strong>В этой метрике учтены только гости, подписавшиеся ЧЕРЕЗ приложение</strong>
+    (отметка <span class="badge bg-success">✓ app</span> в подсвеченной колонке).
+    Колонки с пометкой <span class="text-secondary">✓ без app</span> — справочная
+    информация о других каналах подписки этого же гостя; в подсчёт не входят.
+  </div>
+  {% endif %}
+
   <!-- Table -->
   <div class="card shadow-sm">
     {% if clients %}
@@ -64,8 +73,8 @@
             <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">Гость</th>
             <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">Точка</th>
             <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">VK ID</th>
-            <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">Сообщество</th>
-            <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">Рассылка</th>
+            <th class="text-uppercase fw-semibold {% if metric == 'new_community_subscribers' or metric == 'total_vk_subscribers' %}text-dark bg-info-subtle{% else %}text-muted{% endif %}" style="font-size:10px;letter-spacing:.4px;">Сообщество{% if metric == 'new_community_subscribers' %} ★{% endif %}</th>
+            <th class="text-uppercase fw-semibold {% if metric == 'new_newsletter_subscribers' or metric == 'total_vk_subscribers' %}text-dark bg-info-subtle{% else %}text-muted{% endif %}" style="font-size:10px;letter-spacing:.4px;">Рассылка{% if metric == 'new_newsletter_subscribers' %} ★{% endif %}</th>
             <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">Сторис</th>
             <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">Дата рождения</th>
             <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">Зарегистрирован</th>
@@ -89,16 +98,16 @@
             </td>
             <td><span class="badge bg-light text-dark border">{{ cb.branch.name }}</span></td>
             <td><span class="font-monospace small text-primary">{{ cb.client.vk_id }}</span></td>
-            <td>
+            <td{% if metric == 'new_community_subscribers' or metric == 'total_vk_subscribers' %} class="bg-info-subtle"{% endif %}>
               {% if cb.vk_status.is_community_member %}
-                {% if cb.vk_status.community_via_app %}<span class="text-success small">✓ app</span>
-                {% else %}<span class="text-secondary small">✓</span>{% endif %}
+                {% if cb.vk_status.community_via_app %}<span class="badge bg-success">✓ app</span>
+                {% else %}<span class="text-secondary small">✓ без app</span>{% endif %}
               {% else %}<span class="text-muted">—</span>{% endif %}
             </td>
-            <td>
+            <td{% if metric == 'new_newsletter_subscribers' or metric == 'total_vk_subscribers' %} class="bg-info-subtle"{% endif %}>
               {% if cb.vk_status.is_newsletter_subscriber %}
-                {% if cb.vk_status.newsletter_via_app %}<span class="text-success small">✓ app</span>
-                {% else %}<span class="text-secondary small">✓</span>{% endif %}
+                {% if cb.vk_status.newsletter_via_app %}<span class="badge bg-success">✓ app</span>
+                {% else %}<span class="text-secondary small">✓ без app</span>{% endif %}
               {% else %}<span class="text-muted">—</span>{% endif %}
             </td>
             <td>
