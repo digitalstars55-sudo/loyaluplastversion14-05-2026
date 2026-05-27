@@ -878,6 +878,12 @@ class LoyaltyReportView(View):
                 if part.isdigit():
                     hidden_sections.append(int(part))
 
+        # LU-11 + granular: список скрытых ВИДЖЕТОВ внутри секций (?hide_widgets=4_delivery,...).
+        hide_widgets_raw = request.GET.get('hide_widgets', '').strip()
+        hidden_widgets: list[str] = [
+            p.strip() for p in hide_widgets_raw.split(',') if p.strip()
+        ]
+
         context = {
             'title':             'Отчёт по системе лояльности',
             'company_name':      company_name,
@@ -895,6 +901,12 @@ class LoyaltyReportView(View):
             'end_display':       end.strftime('%d.%m.%Y'),
             'hidden_sections':   hidden_sections,
             'hide_qs':           hide_raw,
+            'hidden_widgets':    hidden_widgets,
+            'widget_choices':    [
+                # (section_num, widget_key, label)
+                (4, '4_cafe',     'строка «Подключения в кафе»'),
+                (4, '4_delivery', 'строка «Подключения через доставку»'),
+            ],
             'section_choices':   [
                 (1,  'Ключевые метрики'),
                 (2,  'Рост клиентской базы'),

@@ -186,8 +186,8 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
     <table class="tbl">
       <thead><tr><th>Источник</th><th>Доля</th><th>Источник / Откуда цифра</th></tr></thead>
       <tbody>
-        <tr><td class="metric">Подключения в кафе</td><td class="value">{{ report.from_cafe }}<small>{{ report.from_cafe_pct }}%</small></td><td class="src"><b>Гости, отсканировавшие QR в зале</b> — с наклеек на столах, листовок, чека.</td></tr>
-        <tr><td class="metric">Подключения через доставку</td><td class="value">{{ report.from_delivery }}<small>{{ report.from_delivery_pct }}%</small></td><td class="src"><b>Активации по коду из доставки</b> — 5 цифр на чеке курьера, коробке, в SMS.</td></tr>
+        {% if '4_cafe' not in hidden_widgets %}<tr><td class="metric">Подключения в кафе</td><td class="value">{{ report.from_cafe }}<small>{{ report.from_cafe_pct }}%</small></td><td class="src"><b>Гости, отсканировавшие QR в зале</b> — с наклеек на столах, листовок, чека.</td></tr>{% endif %}
+        {% if '4_delivery' not in hidden_widgets %}<tr><td class="metric">Подключения через доставку</td><td class="value">{{ report.from_delivery }}<small>{{ report.from_delivery_pct }}%</small></td><td class="src"><b>Активации по коду из доставки</b> — 5 цифр на чеке курьера, коробке, в SMS.</td></tr>{% endif %}
       </tbody>
     </table>
     <div class="chart-wrap"><canvas id="chart-sources"></canvas><img class="snap" id="snap-sources" alt=""></div>

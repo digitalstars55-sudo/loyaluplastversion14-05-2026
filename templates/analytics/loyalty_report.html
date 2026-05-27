@@ -223,21 +223,40 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
         <span>{{ n }}. {{ label }}</span>
       </label>
       {% endfor %}
-      <button type="button" class="R-btn" onclick="applySectionsFilter()" style="background:#0d6efd;color:#fff;border-color:#0d6efd;">Применить</button>
-      <button type="button" class="R-btn" onclick="window.location.href=window.location.pathname + window.location.search.replace(/[?&]hide=[^&]*/g,'').replace(/^&/,'?')">Показать все</button>
     </form>
+    <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #cbd5e1;">
+      <div style="font-weight:600;margin-bottom:6px;font-size:12px;color:#475569;">Точечно по строкам/виджетам (внутри секций):</div>
+      <div id="widgets-form" style="display:flex;flex-wrap:wrap;gap:6px 14px;">
+        {% for sec_n, w_key, w_label in widget_choices %}
+        <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:12px;">
+          <input type="checkbox" name="show_w" value="{{ w_key }}" {% if w_key not in hidden_widgets %}checked{% endif %}>
+          <span>секция {{ sec_n }} — {{ w_label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;">
+      <button type="button" class="R-btn" onclick="applySectionsFilter()" style="background:#0d6efd;color:#fff;border-color:#0d6efd;">Применить</button>
+      <button type="button" class="R-btn" onclick="resetReportFilter()">Показать все</button>
+    </div>
   </div>
   <script>
     function applySectionsFilter() {
       const form = document.getElementById('sections-form');
       const allNums = Array.from(form.querySelectorAll('input[name="show"]'));
-      const hidden = allNums.filter(cb => !cb.checked).map(cb => cb.value);
+      const hiddenSec = allNums.filter(cb => !cb.checked).map(cb => cb.value);
+      const wForm = document.getElementById('widgets-form');
+      const allWs = Array.from(wForm.querySelectorAll('input[name="show_w"]'));
+      const hiddenW = allWs.filter(cb => !cb.checked).map(cb => cb.value);
       const params = new URLSearchParams(window.location.search);
-      if (hidden.length) {
-        params.set('hide', hidden.join(','));
-      } else {
-        params.delete('hide');
-      }
+      if (hiddenSec.length) params.set('hide', hiddenSec.join(',')); else params.delete('hide');
+      if (hiddenW.length)  params.set('hide_widgets', hiddenW.join(',')); else params.delete('hide_widgets');
+      window.location.search = params.toString();
+    }
+    function resetReportFilter() {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('hide');
+      params.delete('hide_widgets');
       window.location.search = params.toString();
     }
   </script>
@@ -437,16 +456,20 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     <table class="R-tbl">
       <thead><tr><th>Источник</th><th>Доля</th><th>Источник / Откуда цифра</th></tr></thead>
       <tbody>
+        {% if '4_cafe' not in hidden_widgets %}
         <tr data-key="Подключения в кафе" data-val="{{ report.from_cafe }} ({{ report.from_cafe_pct }}%)">
           <td class="R-metric">Подключения в кафе</td>
           <td class="R-value">{{ report.from_cafe }}<small>{{ report.from_cafe_pct }}%</small></td>
           <td class="R-src">Это <b>гости, отсканировавшие QR в зале</b>: с наклеек на столах, листовок официанта, чека. Без доставки. <span class="R-src-ex"><b>Пример:</b> 240 сканирований в зале из общих 300 → 80%.</span></td>
         </tr>
+        {% endif %}
+        {% if '4_delivery' not in hidden_widgets %}
         <tr data-key="Подключения через доставку" data-val="{{ report.from_delivery }} ({{ report.from_delivery_pct }}%)">
           <td class="R-metric">Подключения через доставку</td>
           <td class="R-value">{{ report.from_delivery }}<small>{{ report.from_delivery_pct }}%</small></td>
           <td class="R-src">Это <b>гости, активировавшие систему через код из доставки</b>: 5 цифр на чеке/коробке курьера, в SMS. <span class="R-src-ex"><b>Пример:</b> 60 активаций через доставку → 20% от общего.</span></td>
         </tr>
+        {% endif %}
       </tbody>
     </table>
     <div class="R-chart-wrap"><div class="R-chart-title">📊 Распределение источников</div><canvas id="chart-sources"></canvas></div>
