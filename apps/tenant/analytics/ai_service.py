@@ -30,6 +30,49 @@ _VALID_SENTIMENTS = {
     SENTIMENT_PARTIALLY_NEGATIVE, SENTIMENT_NEUTRAL, SENTIMENT_SPAM,
 }
 
+
+# ── Pre-classifier: numeric-only ratings ──────────────────────────────────────
+
+def _try_numeric_rating(text: str, source: str) -> dict | None:
+    """
+    Если text это только цифра-оценка (1–10) без смыслового сопровождения —
+    раскладываем по шкале:
+      VK сообщения / умолчание — шкала 1–10:
+        1–6  → NEGATIVE,  7–8 → PARTIALLY_NEGATIVE,  9–10 → POSITIVE
+      APP — шкала 1–5:
+        1–2  → NEGATIVE,  3   → PARTIALLY_NEGATIVE,  4–5  → POSITIVE
+    Допускаются пунктуация, пробелы и эмодзи вокруг цифры — главное, чтобы
+    кроме цифры не было букв.
+    """
+    if not text:
+        return None
+    import re
+    only_alnum = re.sub(r'[\W_]+', '', text, flags=re.UNICODE)
+    if not (only_alnum.isdigit() and 1 <= int(only_alnum) <= 10):
+        return None
+    n = int(only_alnum)
+    src = (source or '').upper()
+    if src == 'APP':
+        if n > 5:
+            return None
+        if n <= 2:
+            sentiment = SENTIMENT_NEGATIVE
+        elif n == 3:
+            sentiment = SENTIMENT_PARTIALLY_NEGATIVE
+        else:
+            sentiment = SENTIMENT_POSITIVE
+    else:
+        if n <= 6:
+            sentiment = SENTIMENT_NEGATIVE
+        elif n <= 8:
+            sentiment = SENTIMENT_PARTIALLY_NEGATIVE
+        else:
+            sentiment = SENTIMENT_POSITIVE
+    return {
+        'sentiment': sentiment,
+        'comment':   f'Оценка-цифра: {text.strip()} (без текста).',
+    }
+
 # ── System prompt ─────────────────────────────────────────────────────────────
 
 _BASE_SYSTEM_PROMPT = """Ты — аналитик отзывов ресторана/кафе. Твоя задача: определить тональность
@@ -42,6 +85,14 @@ _BASE_SYSTEM_PROMPT = """Ты — аналитик отзывов рестора
 4. PARTIALLY_NEGATIVE — есть и позитив, и негатив одновременно
 5. NEUTRAL — информационный вопрос, нейтральное сообщение
 6. SPAM — не по теме, реклама, случайный текст, нечитаемое сообщение
+
+ВАЖНО про оценки-цифры:
+- Сообщения вида «10», «5», «9/10», «5 из 5», «5 баллов» — это оценка, а НЕ спам.
+- Если сообщение это только оценка без текста — раскладывай по шкале:
+    [Источник: VK_MESSAGE] (шкала 1–10): 1–6 → NEGATIVE, 7–8 → PARTIALLY_NEGATIVE, 9–10 → POSITIVE.
+    [Источник: APP] (шкала 1–5): 1–2 → NEGATIVE, 3 → PARTIALLY_NEGATIVE, 4–5 → POSITIVE.
+- Если есть и цифра, и осмысленный текст — анализируй В ПЕРВУЮ ОЧЕРЕДЬ текст,
+  цифра вторична. Например, «10, но доставка долгая» — это PARTIALLY_NEGATIVE.
 
 Формат ответа — строго JSON без markdown, например:
 {"sentiment": "NEGATIVE", "comment": "Гость жалуется на долгое ожидание заказа и невежливый персонал."}
@@ -81,6 +132,13 @@ def analyze_message(text: str, source: str = '') -> dict:
     Raises:
         RuntimeError если API ключ не задан или произошла ошибка API.
     """
+    # Pre-classifier: text consists only of a numeric rating → bucket it without AI
+    numeric = _try_numeric_rating(text, source)
+    if numeric:
+        logger.info('Numeric-only rating detected (source=%s): %r → %s',
+                    source, (text or '').strip()[:40], numeric['sentiment'])
+        return numeric
+
     import json
 
     api_key = getattr(settings, 'ANTHROPIC_API_KEY', None)
