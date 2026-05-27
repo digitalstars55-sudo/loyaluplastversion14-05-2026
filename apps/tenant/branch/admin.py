@@ -52,6 +52,15 @@ class BranchConfigInline(admin.StackedInline):
             'fields': ('yandex_map', 'gis_map'),
             'description': 'Ссылки открываются как кнопки в мобильном приложении.',
         }),
+        ('Сообщения для гостей (override уровня точки)', {
+            'fields': ('code_prompt_message', 'quest_show_message'),
+            'classes': ('collapse',),
+            'description': (
+                'Эти поля перезаписывают сообщения из общих настроек сети '
+                'ТОЛЬКО для этой точки. Оставьте пустыми, чтобы использовать '
+                'общий текст сети.'
+            ),
+        }),
     )
 
 

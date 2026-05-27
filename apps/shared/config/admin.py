@@ -60,6 +60,13 @@ class ClientConfigAdmin(admin.ModelAdmin):
             'fields': ('vk_group_id', 'vk_group_name'),
             'description': 'Используется для отображения кнопки «Подписаться» в приложении.',
         }),
+        ('Сообщения для гостей', {
+            'fields': ('code_prompt_message', 'quest_show_message'),
+            'description': (
+                'Тексты-подсказки, которые гость видит в приложении. '
+                'Точка может переопределить их в своих настройках.'
+            ),
+        }),
         ('Кассовая система', {
             'fields': ('pos_type',),
             'description': 'Выберите систему — нужные поля появятся автоматически.',

@@ -118,6 +118,23 @@ class BranchConfig(TimeStampedModel):
         help_text='Ссылка на точку в 2ГИС.',
     )
 
+    # ── Кастомные сообщения для гостей (override уровня точки) ────────────
+    code_prompt_message = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='Подсказка про код монет (для этой точки)',
+        help_text=(
+            'Перезаписывает аналогичное поле в настройках сети ТОЛЬКО для этой точки. '
+            'Оставьте пустым, чтобы использовать общий текст из настроек тенанта.'
+        ),
+    )
+    quest_show_message = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='Подсказка про показ задания (для этой точки)',
+        help_text='Перезаписывает текст подсказки в активации задания только для этой точки.',
+    )
+
     def __str__(self):
         return f'Настройки: {self.branch.name}'
 

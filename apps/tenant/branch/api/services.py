@@ -510,19 +510,35 @@ def get_branch_info(branch_id: int, *, tenant=None) -> dict:
         except ClientConfig.DoesNotExist:
             pass
 
+    # Резолв кастомных сообщений: branch override → tenant default → hardcoded fallback
+    _CODE_PROMPT_FALLBACK = 'ЧТОБЫ ЗАБРАТЬ МОНЕТЫ, ПОПРОСИТЕ КОД ДНЯ У СОТРУДНИКА'
+    _QUEST_SHOW_FALLBACK  = 'У ВАС ЕСТЬ 30 МИНУТ, ЧТОБЫ ВЫПОЛНИТЬ ЗАДАНИЕ И ПОКАЗАТЬ РЕЗУЛЬТАТ СОТРУДНИКУ.'
+    code_prompt_message = (
+        (branch_config.code_prompt_message.strip() if branch_config and branch_config.code_prompt_message else '')
+        or (config.code_prompt_message.strip() if config and config.code_prompt_message else '')
+        or _CODE_PROMPT_FALLBACK
+    )
+    quest_show_message = (
+        (branch_config.quest_show_message.strip() if branch_config and branch_config.quest_show_message else '')
+        or (config.quest_show_message.strip() if config and config.quest_show_message else '')
+        or _QUEST_SHOW_FALLBACK
+    )
+
     return {
-        'id':              branch.pk,
-        'branch_id':       branch.branch_id,
-        'name':            branch.name,
-        'address':         branch_config.address    if branch_config else '',
-        'phone':           branch_config.phone      if branch_config else '',
-        'yandex_map':      branch_config.yandex_map if branch_config else '',
-        'gis_map':         branch_config.gis_map    if branch_config else '',
-        'logotype_url':    _image_url(config.logotype_image) if config else None,
-        'coin_icon_url':   _image_url(config.coin_image)     if config else None,
-        'vk_group_id':     config.vk_group_id   if config else None,
-        'vk_group_name':   config.vk_group_name if config else None,
-        'story_image_url': _image_url(branch.story_image),
+        'id':                  branch.pk,
+        'branch_id':           branch.branch_id,
+        'name':                branch.name,
+        'address':             branch_config.address    if branch_config else '',
+        'phone':               branch_config.phone      if branch_config else '',
+        'yandex_map':          branch_config.yandex_map if branch_config else '',
+        'gis_map':             branch_config.gis_map    if branch_config else '',
+        'logotype_url':        _image_url(config.logotype_image) if config else None,
+        'coin_icon_url':       _image_url(config.coin_image)     if config else None,
+        'vk_group_id':         config.vk_group_id   if config else None,
+        'vk_group_name':       config.vk_group_name if config else None,
+        'story_image_url':     _image_url(branch.story_image),
+        'code_prompt_message': code_prompt_message,
+        'quest_show_message':  quest_show_message,
     }
 
 

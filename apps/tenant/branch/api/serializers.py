@@ -19,6 +19,9 @@ class BranchInfoSerializer(serializers.Serializer):
     vk_group_name   = serializers.CharField(allow_null=True)
     # Story image template (from Branch.story_image)
     story_image_url = serializers.CharField(allow_null=True)
+    # Кастомные сообщения для гостей (branch override → tenant default → fallback)
+    code_prompt_message = serializers.CharField()
+    quest_show_message  = serializers.CharField()
 
 
 # ── Client profile ────────────────────────────────────────────────────────────
