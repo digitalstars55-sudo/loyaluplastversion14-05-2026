@@ -1133,9 +1133,15 @@ def handle_vk_admin_reply_from_poll(
     # Conv создаётся в handle_vk_incoming_message при первом вхождении гостя.
     # Если conv нет — значит гость нам ничего не писал, и ответ менеджера
     # вне контекста треда — пропускаем (не создаём conv «из ниоткуда»).
-    try:
-        conv = TestimonialConversation.objects.get(vk_sender_id=vk_sender_id)
-    except TestimonialConversation.DoesNotExist:
+    # У старых гостей может быть несколько conv (legacy с branch=X +
+    # новый с branch=None из Fix A 7c3e89e) — берём самый свежий.
+    conv = (
+        TestimonialConversation.objects
+        .filter(vk_sender_id=vk_sender_id)
+        .order_by('-last_message_at', '-created_at')
+        .first()
+    )
+    if conv is None:
         return None
 
     msg = TestimonialMessage.objects.create(
