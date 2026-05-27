@@ -218,6 +218,136 @@ def send_vk_message(
         return False, str(exc), None
 
 
+# ── Edit/Delete sent broadcasts in VK (LU-12) ─────────────────────────────────
+
+# VK API messages.edit допускает редактирование исходящих сообщений сообщества
+# в течение 24 часов с момента отправки. После этого окна вернёт ошибку 909.
+_VK_EDIT_WINDOW_HOURS = 24
+
+
+def edit_broadcast_send_in_vk(send, new_text: str) -> dict:
+    """
+    Меняет текст всех успешно доставленных сообщений в этом запуске рассылки
+    через VK API messages.edit. Игнорирует получателей без vk_message_id
+    или старше 24 часов. Возвращает {'updated': N, 'skipped': [...], 'errors': [...]}.
+    """
+    from datetime import timedelta
+    from django.utils import timezone
+    from apps.tenant.senler.models import (
+        BroadcastRecipient, RecipientStatus, SenlerConfig,
+    )
+    import requests
+
+    # SenlerConfig — берём по branch отправки или активный фолбэк (Fix A).
+    branch = send.broadcast.branch if send.broadcast_id else None
+    config = (
+        (SenlerConfig.objects.filter(branch=branch).first() if branch else None)
+        or SenlerConfig.objects.filter(is_active=True).order_by('branch_id').first()
+    )
+    if not config or not config.vk_community_token:
+        return {'updated': 0, 'skipped': [], 'errors': ['SenlerConfig/токен не настроен']}
+
+    cutoff = timezone.now() - timedelta(hours=_VK_EDIT_WINDOW_HOURS)
+    recipients = list(
+        BroadcastRecipient.objects
+        .filter(send=send, status=RecipientStatus.SENT, vk_message_id__isnull=False)
+    )
+
+    updated = 0
+    skipped: list[str] = []
+    errors: list[str] = []
+    for r in recipients:
+        if not r.sent_at or r.sent_at < cutoff:
+            skipped.append(f'vk{r.vk_id}: > 24ч с момента отправки')
+            continue
+        try:
+            resp = requests.post(
+                'https://api.vk.com/method/messages.edit',
+                data={
+                    'peer_id':      r.vk_id,
+                    'message_id':   r.vk_message_id,
+                    'message':      new_text,
+                    'group_id':     config.vk_group_id,
+                    'access_token': config.vk_community_token,
+                    'v':            '5.131',
+                    'keep_forward_messages': 1,
+                },
+                timeout=10,
+            )
+            data = resp.json()
+            if 'error' in data:
+                errors.append(f'vk{r.vk_id}: {data["error"].get("error_msg", "VK error")}')
+            else:
+                updated += 1
+        except Exception as exc:
+            errors.append(f'vk{r.vk_id}: {exc}')
+    return {'updated': updated, 'skipped': skipped, 'errors': errors}
+
+
+def delete_broadcast_send_in_vk(send) -> dict:
+    """
+    Удаляет все успешно доставленные сообщения этого запуска у получателей
+    через VK API messages.delete с delete_for_all=1. Игнорирует получателей
+    без vk_message_id или старше 24 часов. Помечает локальные записи как
+    SKIPPED, чтобы статистика обновилась.
+    """
+    from datetime import timedelta
+    from django.utils import timezone
+    from apps.tenant.senler.models import (
+        BroadcastRecipient, RecipientStatus, SenlerConfig,
+    )
+    import requests
+
+    branch = send.broadcast.branch if send.broadcast_id else None
+    config = (
+        (SenlerConfig.objects.filter(branch=branch).first() if branch else None)
+        or SenlerConfig.objects.filter(is_active=True).order_by('branch_id').first()
+    )
+    if not config or not config.vk_community_token:
+        return {'deleted': 0, 'skipped': [], 'errors': ['SenlerConfig/токен не настроен']}
+
+    cutoff = timezone.now() - timedelta(hours=_VK_EDIT_WINDOW_HOURS)
+    recipients = list(
+        BroadcastRecipient.objects
+        .filter(send=send, status=RecipientStatus.SENT, vk_message_id__isnull=False)
+    )
+    fresh = [r for r in recipients if r.sent_at and r.sent_at >= cutoff]
+    stale = [r for r in recipients if not (r.sent_at and r.sent_at >= cutoff)]
+
+    deleted = 0
+    skipped = [f'vk{r.vk_id}: > 24ч' for r in stale]
+    errors: list[str] = []
+
+    # messages.delete принимает до 100 ids за раз. Делаем чанками.
+    for i in range(0, len(fresh), 100):
+        chunk = fresh[i:i+100]
+        try:
+            resp = requests.post(
+                'https://api.vk.com/method/messages.delete',
+                data={
+                    'message_ids':    ','.join(str(r.vk_message_id) for r in chunk),
+                    'delete_for_all': 1,
+                    'group_id':       config.vk_group_id,
+                    'access_token':   config.vk_community_token,
+                    'v':              '5.131',
+                },
+                timeout=15,
+            )
+            data = resp.json()
+            if 'error' in data:
+                errors.append(data['error'].get('error_msg', 'VK error'))
+            else:
+                deleted += len(chunk)
+                # Помечаем локальные записи
+                BroadcastRecipient.objects.filter(pk__in=[r.pk for r in chunk]).update(
+                    status=RecipientStatus.SKIPPED,
+                    error='Удалено из ВК через админку',
+                )
+        except Exception as exc:
+            errors.append(str(exc))
+    return {'deleted': deleted, 'skipped': skipped, 'errors': errors}
+
+
 # ── Broadcast runner ──────────────────────────────────────────────────────────
 
 @transaction.atomic

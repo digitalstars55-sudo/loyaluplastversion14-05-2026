@@ -1,0 +1,32 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Главная</a>
+  &rsaquo; <a href="{{ back_url }}">Запуск рассылки</a>
+  &rsaquo; Изменить текст в ВК
+</div>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:760px;padding:20px;">
+  <h2>Изменить текст рассылки в ВК</h2>
+  <p style="color:#475569;font-size:13px;">
+    Запуск: <strong>{{ send }}</strong>
+    <br>Получателей с отправленными сообщениями: <strong>{{ send.sent_count }}</strong>
+    <br><span style="color:#dc2626;">VK API позволяет редактировать только в течение 24 часов с момента отправки.
+    Сообщения старше 24ч будут пропущены — текст в их ВК останется прежним.</span>
+  </p>
+  <form method="post" style="margin-top:18px;">
+    {% csrf_token %}
+    <label style="display:block;font-weight:600;margin-bottom:6px;">Новый текст сообщения:</label>
+    <textarea name="new_text" rows="10" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-family:inherit;font-size:14px;" required>{{ current_text }}</textarea>
+    <div style="margin-top:14px;display:flex;gap:10px;">
+      <button type="submit" class="button" style="background:#0d6efd;color:#fff;border-color:#0d6efd;"
+              onclick="return confirm('Применить новый текст ко всем сообщениям этой рассылки в ВК?');">
+        ✏️ Применить изменения в ВК
+      </button>
+      <a href="{{ back_url }}" class="button">Отмена</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

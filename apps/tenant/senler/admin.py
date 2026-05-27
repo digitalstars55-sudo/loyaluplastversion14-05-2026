@@ -329,10 +329,19 @@ class BroadcastSendAdmin(admin.ModelAdmin):
         'broadcast', 'auto_broadcast_template', 'status', 'trigger_type', 'triggered_by',
         'created_at', 'started_at', 'finished_at',
         'recipients_count', 'sent_count', 'failed_count', 'skipped_count',
-        'progress_bar', 'error_message',
+        'progress_bar', 'error_message', 'manage_actions',
     ]
 
     fieldsets = [
+        ('Управление в ВК (24ч окно)', {
+            'fields': ['manage_actions'],
+            'description': (
+                'VK API позволяет редактировать и удалять исходящие сообщения '
+                'сообщества только в течение 24 часов после отправки. После '
+                'этого окна VK вернёт ошибку — действие применится только к '
+                'свежим получателям.'
+            ),
+        }),
         ('Рассылка', {
             'fields': ['broadcast', 'auto_broadcast_template', 'status', 'trigger_type', 'triggered_by'],
         }),
@@ -355,6 +364,127 @@ class BroadcastSendAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return request.user.is_superuser
+
+    # Разрешаем удалять локальную запись для CANCELLED/FAILED/DONE (история чистится).
+    def has_delete_permission(self, request, obj=None):
+        if obj is None:
+            return True
+        return obj.status in (SendStatus.CANCELLED, SendStatus.FAILED, SendStatus.DONE)
+
+    # ── Custom URLs: edit/delete/cancel ─────────────────────────────────────────
+
+    def get_urls(self):
+        urls = super().get_urls()
+        return [
+            path('<int:pk>/edit-in-vk/',   self.admin_site.admin_view(self._edit_in_vk_view),   name='senler_broadcastsend_edit_in_vk'),
+            path('<int:pk>/delete-in-vk/', self.admin_site.admin_view(self._delete_in_vk_view), name='senler_broadcastsend_delete_in_vk'),
+            path('<int:pk>/cancel/',       self.admin_site.admin_view(self._cancel_view),       name='senler_broadcastsend_cancel'),
+        ] + urls
+
+    def _edit_in_vk_view(self, request, pk):
+        from apps.tenant.senler.services import edit_broadcast_send_in_vk
+        send = BroadcastSend.objects.get(pk=pk)
+        if request.method == 'POST':
+            new_text = (request.POST.get('new_text') or '').strip()
+            if not new_text:
+                self.message_user(request, 'Текст не может быть пустым', level=messages.ERROR)
+                return HttpResponseRedirect(
+                    reverse(f'{self.admin_site.name}:senler_broadcastsend_change', args=[pk])
+                )
+            result = edit_broadcast_send_in_vk(send, new_text)
+            msg = f'Изменено в ВК: {result["updated"]}; пропущено: {len(result["skipped"])}; ошибок: {len(result["errors"])}'
+            if result['errors']:
+                msg += '. Примеры ошибок: ' + '; '.join(result['errors'][:3])
+            level = messages.WARNING if result['errors'] else messages.SUCCESS
+            self.message_user(request, msg, level=level)
+            return HttpResponseRedirect(
+                reverse(f'{self.admin_site.name}:senler_broadcastsend_change', args=[pk])
+            )
+        # GET — render simple form
+        from django.template.response import TemplateResponse
+        return TemplateResponse(request, 'admin/senler/broadcastsend_edit_in_vk.html', {
+            'send': send,
+            'title': f'Изменить текст рассылки в ВК — {send}',
+            'opts': self.model._meta,
+            'back_url': reverse(f'{self.admin_site.name}:senler_broadcastsend_change', args=[pk]),
+            'current_text': send.broadcast.message_text if send.broadcast_id else '',
+        })
+
+    def _delete_in_vk_view(self, request, pk):
+        from apps.tenant.senler.services import delete_broadcast_send_in_vk
+        send = BroadcastSend.objects.get(pk=pk)
+        if request.method != 'POST':
+            self.message_user(request, 'Удаление выполняется только через POST (нажми кнопку с confirm)', level=messages.WARNING)
+            return HttpResponseRedirect(
+                reverse(f'{self.admin_site.name}:senler_broadcastsend_change', args=[pk])
+            )
+        result = delete_broadcast_send_in_vk(send)
+        msg = f'Удалено в ВК: {result["deleted"]}; пропущено: {len(result["skipped"])}; ошибок: {len(result["errors"])}'
+        if result['errors']:
+            msg += '. Примеры ошибок: ' + '; '.join(result['errors'][:3])
+        if result['deleted'] > 0 and not result['errors']:
+            send.status = SendStatus.CANCELLED
+            send.error_message = (send.error_message or '') + '\n[Удалено из ВК через админку]'
+            send.save(update_fields=['status', 'error_message'])
+        level = messages.WARNING if result['errors'] else messages.SUCCESS
+        self.message_user(request, msg, level=level)
+        return HttpResponseRedirect(
+            reverse(f'{self.admin_site.name}:senler_broadcastsend_change', args=[pk])
+        )
+
+    def _cancel_view(self, request, pk):
+        send = BroadcastSend.objects.get(pk=pk)
+        if send.status not in (SendStatus.PENDING, SendStatus.RUNNING):
+            self.message_user(request, f'Нельзя отменить — статус «{send.get_status_display()}»', level=messages.WARNING)
+        else:
+            send.status = SendStatus.CANCELLED
+            send.error_message = (send.error_message or '') + '\n[Отменено через админку]'
+            send.save(update_fields=['status', 'error_message'])
+            self.message_user(request, f'Запуск #{pk} отменён', level=messages.SUCCESS)
+        return HttpResponseRedirect(
+            reverse(f'{self.admin_site.name}:senler_broadcastsend_change', args=[pk])
+        )
+
+    def manage_actions(self, obj):
+        if not obj or not obj.pk:
+            return '—'
+        edit_url   = reverse(f'{self.admin_site.name}:senler_broadcastsend_edit_in_vk',   args=[obj.pk])
+        delete_url = reverse(f'{self.admin_site.name}:senler_broadcastsend_delete_in_vk', args=[obj.pk])
+        cancel_url = reverse(f'{self.admin_site.name}:senler_broadcastsend_cancel',       args=[obj.pk])
+        buttons = []
+        if obj.status in (SendStatus.PENDING, SendStatus.RUNNING):
+            buttons.append(
+                f'<form method="post" action="{cancel_url}" style="display:inline-block;margin-right:8px;">'
+                f'<input type="hidden" name="csrfmiddlewaretoken" value="{{csrf}}">'
+                f'<button type="submit" class="button" '
+                f'onclick="return confirm(\'Отменить эту рассылку? Она ещё не была отправлена.\')">'
+                f'⛔ Отменить рассылку</button></form>'
+            )
+        if obj.status == SendStatus.DONE and obj.sent_count > 0:
+            buttons.append(f'<a class="button" href="{edit_url}" style="margin-right:8px;">✏️ Изменить текст в ВК</a>')
+            buttons.append(
+                f'<form method="post" action="{delete_url}" style="display:inline-block;margin-right:8px;">'
+                f'<input type="hidden" name="csrfmiddlewaretoken" value="{{csrf}}">'
+                f'<button type="submit" class="button" style="background:#dc3545;color:#fff;border-color:#dc3545;" '
+                f'onclick="return confirm(\'Удалить сообщения из ВК у всех получателей? Действие необратимо.\')">'
+                f'🗑️ Удалить из ВК</button></form>'
+            )
+        if not buttons:
+            return mark_safe('<span style="color:#888;">Нет доступных действий для текущего статуса.</span>')
+        # CSRF token resolved at render via JS so we don't have request here
+        # Use {% csrf_token %}-like marker: replace via JavaScript on page load
+        html = ''.join(buttons)
+        # Inject CSRF: find cookie csrftoken at render-time
+        html = html.replace('{csrf}', '')
+        html += (
+            '<script>'
+            'document.querySelectorAll(\'form[action*="senler_broadcastsend_"] input[name="csrfmiddlewaretoken"]\').forEach(i => '
+            'i.value = document.querySelector(\'[name=csrfmiddlewaretoken]\')?.value || '
+            '(document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || \'\');'
+            '</script>'
+        )
+        return mark_safe(html)
+    manage_actions.short_description = 'Действия'
 
     # ── Display helpers ────────────────────────────────────────────────────────
 
