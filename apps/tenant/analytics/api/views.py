@@ -457,8 +457,8 @@ class EngagementAnalyticsAPIView(APIView):
             created_at__gte=prev_since, created_at__lt=since,
         )
         if branch_id is not None:
-            quest_qs = quest_qs.filter(quest__branch_id=branch_id)
-            prev_quest_qs = prev_quest_qs.filter(quest__branch_id=branch_id)
+            quest_qs = quest_qs.filter(quest__branches__id=branch_id)
+            prev_quest_qs = prev_quest_qs.filter(quest__branches__id=branch_id)
 
         quest_rows = list(
             quest_qs.values(

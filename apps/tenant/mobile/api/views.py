@@ -637,18 +637,18 @@ class GlobalSearchAPIView(APIView):
         # ── Quests ─────────────────────────────────────────────────────────
         qsts = Quest.objects.filter(
             Q(name__icontains=q) | Q(description__icontains=q),
-        ).select_related('branch')[: self.LIMIT]
-        quests = [
-            {
+        ).prefetch_related('branches').distinct()[: self.LIMIT]
+        quests = []
+        for qst in qsts:
+            branch_names = ', '.join(b.name for b in qst.branches.all()) or '—'
+            quests.append({
                 'type':     'quest',
                 'id':       qst.pk,
                 'title':    qst.name,
-                'subtitle': f'+{qst.reward} ★ · {qst.branch.name if qst.branch_id else ""}',
+                'subtitle': f'+{qst.reward} ★ · {branch_names}',
                 'match':    '',
                 'raw':      {'id': qst.pk, 'name': qst.name, 'reward': qst.reward},
-            }
-            for qst in qsts
-        ]
+            })
 
         # ── Promotions ─────────────────────────────────────────────────────
         promos = Promotions.objects.filter(
@@ -1313,9 +1313,13 @@ class ProductDetailAPIView(APIView):
 # Quests CRUD
 # ════════════════════════════════════════════════════════════════════
 def _serialize_quest(q) -> dict:
+    branch_ids = list(q.branches.values_list('pk', flat=True))
     return {
         'id':            q.pk,
-        'branch_id':     q.branch_id,
+        # back-compat: один первый branch_id (для старых клиентов rf-mobile);
+        # новое поле — branch_ids (массив всех привязанных точек).
+        'branch_id':     branch_ids[0] if branch_ids else q.branch_id,
+        'branch_ids':    branch_ids,
         'name':          q.name,
         'description':   q.description or '',
         'reward':        q.reward,
@@ -1338,15 +1342,42 @@ class QuestListCreateAPIView(APIView):
         return Response({'quests': [_serialize_quest(q) for q in qs]})
 
     def post(self, request):
-        from apps.tenant.quest.models import Quest
+        from apps.tenant.quest.models import Quest, QuestBranch
         from apps.tenant.branch.models import Branch
         d = request.data
-        try:
-            branch_id = int(d.get('branch_id'))
-        except (TypeError, ValueError):
-            return Response({'error': 'branch_id обязателен'}, status=400)
-        if not Branch.objects.filter(pk=branch_id).exists():
-            return Response({'error': 'Точка не найдена'}, status=404)
+
+        # Принимаем (в порядке приоритета):
+        #   - branch_ids: [1,2,3]   — список точек
+        #   - all_branches: true    — все активные точки тенанта
+        #   - branch_id: 1          — legacy (одна точка)
+        raw_ids = d.get('branch_ids')
+        all_branches = bool(d.get('all_branches'))
+        legacy_id = d.get('branch_id')
+
+        branch_ids: list[int] = []
+        if isinstance(raw_ids, list) and raw_ids:
+            try:
+                branch_ids = [int(x) for x in raw_ids]
+            except (TypeError, ValueError):
+                return Response({'error': 'branch_ids должен быть массивом id'}, status=400)
+        elif all_branches:
+            branch_ids = list(Branch.objects.filter(is_active=True).values_list('pk', flat=True))
+        elif legacy_id is not None:
+            try:
+                branch_ids = [int(legacy_id)]
+            except (TypeError, ValueError):
+                return Response({'error': 'branch_id должен быть числом'}, status=400)
+        else:
+            return Response({'error': 'нужны branch_ids / all_branches / branch_id'}, status=400)
+
+        if not branch_ids:
+            return Response({'error': 'нет активных точек'}, status=400)
+
+        existing = set(Branch.objects.filter(pk__in=branch_ids).values_list('pk', flat=True))
+        missing = [b for b in branch_ids if b not in existing]
+        if missing:
+            return Response({'error': f'Точки не найдены: {missing}'}, status=404)
+
         name = (d.get('name') or '').strip()
         if not name:
             return Response({'error': 'name обязателен'}, status=400)
@@ -1356,13 +1387,14 @@ class QuestListCreateAPIView(APIView):
             return Response({'error': 'reward должен быть числом'}, status=400)
 
         q = Quest.objects.create(
-            branch_id=branch_id,
             name=name[:255],
             description=(d.get('description') or '')[:2000],
             reward=max(0, reward),
             is_active=bool(d.get('is_active', True)),
             ordering=int(d.get('ordering') or 0),
         )
+        for bid in branch_ids:
+            QuestBranch.objects.create(quest=q, branch_id=bid, ordering=q.ordering, is_active=q.is_active)
         return Response(_serialize_quest(q), status=201)
 
 
@@ -1391,6 +1423,28 @@ class QuestDetailAPIView(APIView):
             except (TypeError, ValueError):
                 return Response({'error': 'ordering должен быть числом'}, status=400)
         q.save()
+
+        # Полностью переставляем привязки к точкам, если клиент прислал branch_ids
+        # или all_branches=true. Игнорируем legacy одиночный branch_id в PATCH
+        # (создание новой связи делается через POST).
+        from apps.tenant.quest.models import QuestBranch
+        from apps.tenant.branch.models import Branch
+        new_ids: list[int] | None = None
+        if isinstance(d.get('branch_ids'), list):
+            try:
+                new_ids = [int(x) for x in d['branch_ids']]
+            except (TypeError, ValueError):
+                return Response({'error': 'branch_ids должен быть массивом id'}, status=400)
+        elif d.get('all_branches') is True:
+            new_ids = list(Branch.objects.filter(is_active=True).values_list('pk', flat=True))
+        if new_ids is not None:
+            existing = set(Branch.objects.filter(pk__in=new_ids).values_list('pk', flat=True))
+            missing = [b for b in new_ids if b not in existing]
+            if missing:
+                return Response({'error': f'Точки не найдены: {missing}'}, status=404)
+            QuestBranch.objects.filter(quest=q).delete()
+            for bid in new_ids:
+                QuestBranch.objects.create(quest=q, branch_id=bid, ordering=q.ordering, is_active=q.is_active)
         return Response(_serialize_quest(q))
 
     def delete(self, request, pk: int):

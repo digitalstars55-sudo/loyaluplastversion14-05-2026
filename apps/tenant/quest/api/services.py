@@ -107,8 +107,9 @@ def get_quests(vk_id: int, branch_id: int) -> list[dict]:
     cb = _get_client_branch(vk_id, branch_id)
     quests = (
         Quest.objects
-        .filter(branch=cb.branch, is_active=True)
+        .filter(branches=cb.branch, is_active=True)
         .order_by('ordering', 'name')
+        .distinct()
     )
     completed_ids = set(
         QuestSubmit.objects
@@ -168,7 +169,7 @@ def activate_quest(vk_id: int, branch_id: int, quest_id: int) -> QuestSubmit:
         raise QuestCooldownActive(cooldown)
 
     try:
-        quest = Quest.objects.get(pk=quest_id, branch=cb.branch, is_active=True)
+        quest = Quest.objects.get(pk=quest_id, branches=cb.branch, is_active=True)
     except Quest.DoesNotExist:
         raise QuestNotFound
 

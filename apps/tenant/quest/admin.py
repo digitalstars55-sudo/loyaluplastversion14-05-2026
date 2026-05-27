@@ -1,26 +1,36 @@
 from django.contrib import admin
-from django.utils.html import format_html
+from django.utils.html import format_html, mark_safe
 
 from apps.shared.config.admin_sites import tenant_admin
 
-from .models import Quest, QuestSubmit
+from .models import Quest, QuestBranch, QuestSubmit
+
+
+# ── Inlines ───────────────────────────────────────────────────────────────────
+
+class QuestBranchInline(admin.TabularInline):
+    """Подключение квеста к торговым точкам (по аналогии с ProductBranchInline)."""
+    model = QuestBranch
+    extra = 1
+    fields = ('branch', 'ordering', 'is_active')
+    ordering = ('ordering',)
 
 
 # ── Quest admin ────────────────────────────────────────────────────────────────
 
 @admin.register(Quest, site=tenant_admin)
 class QuestAdmin(admin.ModelAdmin):
-    list_display  = ('name', 'branch', 'reward_badge', 'is_active', 'ordering', 'updated_at')
+    inlines = [QuestBranchInline]
+    list_display  = ('name', 'branches_display', 'reward_badge', 'is_active', 'ordering', 'updated_at')
     list_display_links = ('name',)
-    list_filter   = ('branch', 'is_active')
+    list_filter   = ('branches', 'is_active')
     search_fields = ('name', 'description')
     list_editable = ('is_active', 'ordering')
-    list_select_related = ('branch',)
     ordering = ('ordering', 'name')
 
     fieldsets = (
         (None, {
-            'fields': ('branch', 'name', 'description'),
+            'fields': ('name', 'description'),
         }),
         ('Условия', {
             'fields': ('reward', 'is_active', 'ordering'),
@@ -31,6 +41,16 @@ class QuestAdmin(admin.ModelAdmin):
         }),
     )
     readonly_fields = ('created_at', 'updated_at')
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related('branches')
+
+    @admin.display(description='Точки')
+    def branches_display(self, obj):
+        names = [str(b) for b in obj.branches.all()]
+        if not names:
+            return mark_safe('<span style="color:#aaa;font-size:12px;">—</span>')
+        return ', '.join(names)
 
     @admin.display(description='Награда', ordering='reward')
     def reward_badge(self, obj):
@@ -48,9 +68,9 @@ class QuestAdmin(admin.ModelAdmin):
 class QuestSubmitAdmin(admin.ModelAdmin):
     list_display  = ('client_col', 'quest', 'status_badge', 'activated_at', 'expires_at', 'served_by_col', 'completed_at')
     list_display_links = ('client_col',)
-    list_filter   = ('quest__branch', 'quest')
+    list_filter   = ('quest__branches', 'quest')
     search_fields = ('client__client__first_name', 'client__client__last_name', 'quest__name')
-    list_select_related = ('client__client', 'quest__branch', 'served_by__client')
+    list_select_related = ('client__client', 'quest', 'served_by__client')
     date_hierarchy = 'activated_at'
     readonly_fields = (
         'client', 'quest', 'served_by',

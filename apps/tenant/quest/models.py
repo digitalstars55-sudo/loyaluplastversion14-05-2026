@@ -14,15 +14,30 @@ class Quest(TimeStampedModel):
     Задание для гостя, выполнив которое он получает баллы.
     Пример: «Опубликуй сторис с #суперкафе → 500 монет».
 
-    Каждый активный квест виден гостям в приложении.
-    Один гость может выполнить каждый квест только один раз.
+    Один квест может быть подключен сразу к нескольким торговым точкам через
+    M2M `branches` (по аналогии с Product → branches). Старый FK `branch`
+    оставлен как legacy-поле на случай отката; в новом коде использовать только
+    `branches`.
     """
 
+    # Legacy FK на одну точку (оставлен для отката миграции).
+    # В новом коде использовать M2M `branches` ниже.
     branch = models.ForeignKey(
         'branch.Branch',
         on_delete=models.CASCADE,
+        related_name='quests_legacy',
+        verbose_name='Торговая точка (legacy)',
+        null=True,
+        blank=True,
+        help_text='Устарело — точки задаются через M2M «Торговые точки».',
+    )
+    branches = models.ManyToManyField(
+        'branch.Branch',
+        through='QuestBranch',
         related_name='quests',
-        verbose_name='Торговая точка',
+        blank=True,
+        verbose_name='Торговые точки',
+        help_text='Один квест может работать сразу на нескольких точках.',
     )
     name = models.CharField(max_length=255, verbose_name='Название')
     description = models.TextField(blank=True, verbose_name='Описание')
@@ -49,10 +64,50 @@ class Quest(TimeStampedModel):
         verbose_name = 'Квест'
         verbose_name_plural = 'Квесты'
         ordering = ['ordering', 'name']
+
+
+class QuestBranch(models.Model):
+    """
+    Подключение квеста к конкретной торговой точке (по аналогии с
+    catalog.ProductBranch). Хранит per-branch настройки.
+    """
+
+    quest = models.ForeignKey(
+        Quest,
+        on_delete=models.CASCADE,
+        related_name='branch_assignments',
+        verbose_name='Квест',
+    )
+    branch = models.ForeignKey(
+        'branch.Branch',
+        on_delete=models.CASCADE,
+        related_name='quest_assignments',
+        verbose_name='Торговая точка',
+    )
+    ordering = models.PositiveIntegerField(
+        default=0,
+        verbose_name='Порядок',
+        help_text='Меньшее значение отображается выше в списке гостей.',
+        db_index=True,
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name='Активен на этой точке',
+        help_text='Неактивный квест не виден гостям этой точки.',
+    )
+
+    def __str__(self):
+        return f'{self.quest.name} → {self.branch}'
+
+    class Meta:
+        verbose_name = 'Назначение квеста в точку'
+        verbose_name_plural = 'Назначения квестов в точки'
+        unique_together = [('quest', 'branch')]
+        ordering = ['ordering']
         indexes = [
             models.Index(
-                fields=['branch', 'is_active'],
-                name='quest_branch_active_idx',
+                fields=['branch', 'is_active', 'ordering'],
+                name='qb_branch_active_idx',
             ),
         ]
 
