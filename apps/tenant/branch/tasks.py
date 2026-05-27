@@ -84,13 +84,16 @@ def poll_branch_messages(branch_id: int) -> dict:
     new_count = 0
 
     try:
-        # Get recent conversations (up to 20)
+        # Get recent conversations (up to 50). filter='all' — иначе VK возвращает
+        # только conv с непрочитанными входящими и мы пропускаем outgoing-ответы
+        # менеджера (LU-08). Поскольку для каждого conv мы делаем дедуп по
+        # vk_message_id, повторная обработка уже сохранённых сообщений безопасна.
         convs_resp = _vk_call(
             'messages.getConversations',
             token,
             group_id=group_id,
-            filter='unread',
-            count=20,
+            filter='all',
+            count=50,
         )
     except RuntimeError as e:
         return {'new_messages': 0, 'errors': [str(e)]}
