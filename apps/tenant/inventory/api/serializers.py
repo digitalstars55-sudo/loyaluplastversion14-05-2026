@@ -127,10 +127,11 @@ class BirthdayStatusSerializer(serializers.Serializer):
 
 class BirthdayProductSerializer(serializers.Serializer):
     """Product available as a birthday prize."""
-    id        = serializers.IntegerField()
-    name      = serializers.CharField()
-    image_url = serializers.SerializerMethodField()
-    price     = serializers.IntegerField()
+    id          = serializers.IntegerField()
+    name        = serializers.CharField()
+    description = serializers.CharField(allow_blank=True, default='')
+    image_url   = serializers.SerializerMethodField()
+    price       = serializers.IntegerField()
 
     def get_image_url(self, obj) -> str | None:
         if not (obj.image and obj.image.name):
