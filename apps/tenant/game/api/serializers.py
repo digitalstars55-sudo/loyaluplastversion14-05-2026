@@ -57,7 +57,7 @@ class SuperPrizeRewardSerializer(serializers.Serializer):
         branch = obj.client_branch.branch
         products = (
             Product.objects
-            .filter(branch_assignments__branch=branch, is_super_prize=True)
+            .filter(branch_assignments__branch=branch, is_super_prize=True, is_archived=False)
             .annotate(branch_ordering=F('branch_assignments__ordering'))
             .order_by('branch_ordering', 'name')
         )

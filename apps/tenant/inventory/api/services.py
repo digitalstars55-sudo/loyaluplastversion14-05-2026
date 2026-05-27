@@ -201,7 +201,7 @@ def claim_super_prize(vk_id: int, branch_id: int, product_id: int) -> SuperPrize
 
     try:
         product = Product.objects.get(
-            pk=product_id, branch_assignments__branch=cb.branch, is_super_prize=True,
+            pk=product_id, branch_assignments__branch=cb.branch, is_super_prize=True, is_archived=False,
         )
     except Product.DoesNotExist:
         raise ProductNotFound
@@ -348,7 +348,7 @@ def get_birthday_products(vk_id: int, branch_id: int):
 
     return (
         Product.objects
-        .filter(branch_assignments__branch=cb.branch, is_birthday_prize=True)
+        .filter(branch_assignments__branch=cb.branch, is_birthday_prize=True, is_archived=False)
         .annotate(branch_ordering=F('branch_assignments__ordering'))
         .order_by('branch_ordering', 'name')
     )
@@ -391,7 +391,7 @@ def claim_birthday_prize(vk_id: int, branch_id: int, product_id: int) -> Invento
 
     try:
         product = Product.objects.get(
-            pk=product_id, branch_assignments__branch=cb.branch, is_birthday_prize=True,
+            pk=product_id, branch_assignments__branch=cb.branch, is_birthday_prize=True, is_archived=False,
         )
     except Product.DoesNotExist:
         raise ProductNotFound

@@ -75,7 +75,7 @@ def get_active_products(branch_id: int):
 
     return (
         Product.objects
-        .filter(branch_assignments__branch=branch, branch_assignments__is_active=True)
+        .filter(branch_assignments__branch=branch, branch_assignments__is_active=True, is_archived=False)
         .annotate(
             branch_category_id=F('branch_assignments__category_id'),
             branch_category_name=F('branch_assignments__category__name'),
@@ -162,6 +162,7 @@ def buy_product(vk_id: int, branch_id: int, product_id: int) -> InventoryItem:
             pk=product_id,
             branch_assignments__branch=client_branch.branch,
             branch_assignments__is_active=True,
+            is_archived=False,
         )
     except Product.DoesNotExist:
         raise ProductNotFound

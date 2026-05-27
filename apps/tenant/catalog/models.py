@@ -87,6 +87,15 @@ class Product(TimeStampedModel):
         verbose_name='Подарок на ДР',
         help_text='Доступен как поздравительный подарок в день рождения гостя.',
     )
+    is_archived = models.BooleanField(
+        default=False,
+        verbose_name='Архивирован',
+        help_text=(
+            'Скрытый подарок: не выдаётся в магазине, ДР-пуле и супер-пуле. '
+            'У гостей, которые уже получили его в инвентарь, остаётся '
+            'доступным к активации — данные не теряются.'
+        ),
+    )
 
     def __str__(self):
         return f'{self.name} ({self.price} ★)'
@@ -98,6 +107,7 @@ class Product(TimeStampedModel):
         indexes = [
             models.Index(fields=['is_super_prize'],   name='catalog_prod_super_idx'),
             models.Index(fields=['is_birthday_prize'], name='catalog_prod_bday_idx'),
+            models.Index(fields=['is_archived'],       name='catalog_prod_archived_idx'),
         ]
 
 
