@@ -1157,10 +1157,10 @@ def handle_vk_admin_reply_from_poll(
     # место timeline, а не выглядели как только что отправленные.
     if vk_date and vk_date > 0:
         import datetime as _dt
-        from django.utils.timezone import make_aware, get_default_timezone
         try:
-            dt = _dt.datetime.fromtimestamp(int(vk_date))
-            dt = make_aware(dt, get_default_timezone())
+            # VK msg.date — unix timestamp в UTC. Создаём tz-aware datetime
+            # напрямую в UTC, чтобы не зависеть от системного TZ сервера.
+            dt = _dt.datetime.fromtimestamp(int(vk_date), tz=_dt.timezone.utc)
             TestimonialMessage.objects.filter(pk=msg.pk).update(created_at=dt)
         except Exception:
             pass
