@@ -28,6 +28,17 @@ class ClientConfig(models.Model):
         verbose_name='Иконка монеты',
         help_text='Опционально — активируется при подключении платного брендинга',
     )
+    brand_color = models.CharField(
+        max_length=7,
+        default='#d3a9e5',
+        verbose_name='Главный цвет бренда (HEX)',
+        help_text=(
+            'Главный цвет VK мини-приложения в формате #RRGGBB. По нему '
+            'автоматически генерируются производные оттенки (тёмный, светлый, '
+            'и т.д.) — весь миниапп перекрашивается одним полем. По умолчанию '
+            'фиолетовый #d3a9e5.'
+        ),
+    )
 
     # --- ВКонтакте ---
     vk_group_id = models.PositiveIntegerField(

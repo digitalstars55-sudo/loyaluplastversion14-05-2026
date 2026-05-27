@@ -53,8 +53,13 @@ class ClientConfigAdmin(admin.ModelAdmin):
             'fields': ('company',),
         }),
         ('Брендинг', {
-            'fields': ('logotype_image', 'logotype_preview', 'coin_image', 'coin_preview'),
-            'description': 'Опционально. Загружайте только при подключении платного брендинга.',
+            'fields': ('logotype_image', 'logotype_preview', 'coin_image', 'coin_preview', 'brand_color'),
+            'description': (
+                'Опционально. Логотип и монету загружайте при подключении '
+                'платного брендинга. Главный цвет (#RRGGBB) перекрашивает '
+                'весь VK мини-апп — производные оттенки генерируются '
+                'автоматически из этого значения.'
+            ),
         }),
         ('ВКонтакте', {
             'fields': ('vk_group_id', 'vk_group_name'),

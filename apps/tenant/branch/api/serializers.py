@@ -22,6 +22,8 @@ class BranchInfoSerializer(serializers.Serializer):
     # Кастомные сообщения для гостей (branch override → tenant default → fallback)
     code_prompt_message = serializers.CharField()
     quest_show_message  = serializers.CharField()
+    # Главный цвет бренда — фронт перекрашивает весь миниапп от него (LU-14)
+    brand_color         = serializers.CharField()
 
 
 # ── Client profile ────────────────────────────────────────────────────────────

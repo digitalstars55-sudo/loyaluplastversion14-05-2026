@@ -539,6 +539,7 @@ def get_branch_info(branch_id: int, *, tenant=None) -> dict:
         'story_image_url':     _image_url(branch.story_image),
         'code_prompt_message': code_prompt_message,
         'quest_show_message':  quest_show_message,
+        'brand_color':         (config.brand_color if config and config.brand_color else '#d3a9e5'),
     }
 
 
