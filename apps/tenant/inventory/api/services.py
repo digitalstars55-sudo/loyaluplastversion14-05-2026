@@ -76,8 +76,13 @@ def _get_client_branch(vk_id: int, branch_id: int) -> ClientBranch:
         raise ClientNotFound
 
 
-def _is_in_birthday_window(birth_date: date, today: date) -> bool:
-    """True if today is within ±BIRTHDAY_WINDOW_DAYS of the birthday (year-agnostic)."""
+def _is_in_birthday_window(birth_date: date, today: date, window_days: int | None = None) -> bool:
+    """
+    True if today is within ±window_days of the birthday (year-agnostic).
+    window_days=None → use module-level fallback BIRTHDAY_WINDOW_DAYS.
+    """
+    if window_days is None:
+        window_days = BIRTHDAY_WINDOW_DAYS
     bd = birth_date.replace(year=today.year)
     delta = (today - bd).days
     # Handle year-wrap (e.g. birthday Dec 28, today Jan 2)
@@ -85,7 +90,15 @@ def _is_in_birthday_window(birth_date: date, today: date) -> bool:
         delta += 365
     elif delta > 180:
         delta -= 365
-    return abs(delta) <= BIRTHDAY_WINDOW_DAYS
+    return abs(delta) <= window_days
+
+
+def _branch_birthday_window(cb: ClientBranch) -> int:
+    """Возвращает birthday_window_days из настроек точки (с фолбэком на хардкод)."""
+    cfg = getattr(cb.branch, 'config', None)
+    if cfg is not None and getattr(cfg, 'birthday_window_days', None) is not None:
+        return cfg.birthday_window_days
+    return BIRTHDAY_WINDOW_DAYS
 
 
 def _birth_date_is_established(cb: ClientBranch) -> bool:
@@ -106,7 +119,9 @@ def _check_birthday_eligibility(cb: ClientBranch) -> None:
         NotBirthdayWindow  — birth_date not set or today not within ±5 days
         BirthdayTooRecent  — birth_date was set less than 30 days ago (anti-abuse)
     """
-    if not cb.birth_date or not _is_in_birthday_window(cb.birth_date, timezone.localdate()):
+    if not cb.birth_date or not _is_in_birthday_window(
+        cb.birth_date, timezone.localdate(), _branch_birthday_window(cb)
+    ):
         raise NotBirthdayWindow
     if not _birth_date_is_established(cb):
         raise BirthdayTooRecent
@@ -309,7 +324,7 @@ def get_birthday_status(vk_id: int, branch_id: int) -> dict:
         return {'is_birthday_window': False, 'already_claimed': False, 'can_claim': False}
 
     today = timezone.localdate()
-    in_window = _is_in_birthday_window(cb.birth_date, today)
+    in_window = _is_in_birthday_window(cb.birth_date, today, _branch_birthday_window(cb))
     already_claimed = InventoryItem.objects.filter(
         client_branch__client=cb.client,
         acquired_from=AcquisitionSource.BIRTHDAY,
