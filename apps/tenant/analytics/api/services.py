@@ -303,6 +303,10 @@ def get_birthday_celebrants(
     """
     Unique guests who visited the cafe on their birthday (month+day of visit matches birth_date).
     Counts distinct guests from ClientBranchVisit where visit date matches their birthday.
+
+    Исключаются гости, чей ДР совпадает с днём регистрации (месяц+день) —
+    значит они в момент регистрации указали «сегодня» как ДР, и метрика не
+    должна их учитывать как «пришёл специально к ДР».
     """
     from django.db.models import F
     from django.db.models.functions import ExtractMonth, ExtractDay
@@ -317,9 +321,14 @@ def get_birthday_celebrants(
         visit_day=ExtractDay('visited_at'),
         birth_month=ExtractMonth('client__birth_date'),
         birth_day=ExtractDay('client__birth_date'),
+        reg_month=ExtractMonth('client__created_at'),
+        reg_day=ExtractDay('client__created_at'),
     ).filter(
         visit_month=F('birth_month'),
         visit_day=F('birth_day'),
+    ).exclude(
+        birth_month=F('reg_month'),
+        birth_day=F('reg_day'),
     )
     qs = _branch_filter(qs, branch_ids, 'client__branch__in')
     return qs.values('client__client_id').distinct().count()
@@ -2337,9 +2346,14 @@ def get_stat_clients(
             visit_day=ExtractDay('visited_at'),
             birth_month=ExtractMonth('client__birth_date'),
             birth_day=ExtractDay('client__birth_date'),
+            reg_month=ExtractMonth('client__created_at'),
+            reg_day=ExtractDay('client__created_at'),
         ).filter(
             visit_month=F('birth_month'),
             visit_day=F('birth_day'),
+        ).exclude(
+            birth_month=F('reg_month'),
+            birth_day=F('reg_day'),
         )
         if branch_ids:
             visits_qs = visits_qs.filter(client__branch__in=branch_ids)
