@@ -124,19 +124,29 @@ def poll_branch_messages(branch_id: int) -> dict:
             continue
 
         for msg in hist.get('items', []):
-            # Skip outgoing messages (from_id == -group_id)
-            if msg.get('from_id', 0) < 0:
-                continue
             text = (msg.get('text') or '').strip()
             if not text:
                 continue
 
-            saved = handle_vk_incoming_message(
-                group_id=group_id,
-                from_id=msg['from_id'],
-                message_id=msg['id'],
-                text=text,
-            )
+            from_id = msg.get('from_id', 0)
+            if from_id < 0:
+                # Outgoing message from community (= manager replied directly in VK
+                # without going through our admin). Save as ADMIN_REPLY and mark
+                # conv as replied so the manager doesn't reply twice. LU-08.
+                from apps.tenant.branch.api.services import handle_vk_admin_reply_from_poll
+                saved = handle_vk_admin_reply_from_poll(
+                    group_id=group_id,
+                    peer_id=peer_id,
+                    message_id=msg['id'],
+                    text=text,
+                )
+            else:
+                saved = handle_vk_incoming_message(
+                    group_id=group_id,
+                    from_id=from_id,
+                    message_id=msg['id'],
+                    text=text,
+                )
             if saved is not None:
                 new_count += 1
 

@@ -1095,6 +1095,64 @@ def handle_vk_incoming_message(
     return [msg]
 
 
+def handle_vk_admin_reply_from_poll(
+    group_id: int,
+    peer_id: int,
+    message_id: int,
+    text: str,
+) -> TestimonialMessage | None:
+    """
+    Сохраняет ИСХОДЯЩЕЕ сообщение от сообщества (менеджер ответил гостю
+    напрямую в ВК, минуя нашу админку). Помечает conv как `is_replied=True`,
+    чтобы управляющий не отвечал повторно.
+
+    peer_id    — vk_id гостя (получатель ответа).
+    message_id — id исходящего сообщения VK (для глобального дедупа).
+
+    Возвращает None если SenlerConfig не найден, сообщение уже сохранено
+    (в т.ч. нашим send_vk_reply через нашу админку), или conv ещё не создан
+    (нет входящих от этого гостя — отвечать не на что).
+    """
+    from django.utils import timezone
+    from apps.tenant.senler.models import SenlerConfig
+
+    if not SenlerConfig.objects.filter(vk_group_id=group_id).exists():
+        return None
+
+    vk_sender_id = str(peer_id)
+    vk_msg_id_str = str(message_id)
+
+    # Глобальный дедуп: если такое сообщение уже сохранено — пропускаем.
+    # Покрывает оба случая:
+    #   1) Наш send_vk_reply() уже сохранил это сообщение со вписанным
+    #      vk_message_id (= ответ из админки).
+    #   2) Прошлый poll уже подобрал это сообщение.
+    if TestimonialMessage.objects.filter(vk_message_id=vk_msg_id_str).exists():
+        return None
+
+    # Conv создаётся в handle_vk_incoming_message при первом вхождении гостя.
+    # Если conv нет — значит гость нам ничего не писал, и ответ менеджера
+    # вне контекста треда — пропускаем (не создаём conv «из ниоткуда»).
+    try:
+        conv = TestimonialConversation.objects.get(vk_sender_id=vk_sender_id)
+    except TestimonialConversation.DoesNotExist:
+        return None
+
+    msg = TestimonialMessage.objects.create(
+        conversation=conv,
+        source=TestimonialMessage.Source.ADMIN_REPLY,
+        text=text,
+        vk_message_id=vk_msg_id_str,
+    )
+
+    conv.is_replied = True
+    conv.has_unread = False
+    conv.last_message_at = timezone.now()
+    conv.save(update_fields=['is_replied', 'has_unread', 'last_message_at'])
+
+    return msg
+
+
 def send_vk_reply(
     conversation: TestimonialConversation,
     reply_text: str,
