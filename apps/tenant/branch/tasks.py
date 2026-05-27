@@ -139,6 +139,7 @@ def poll_branch_messages(branch_id: int) -> dict:
                     peer_id=peer_id,
                     message_id=msg['id'],
                     text=text,
+                    vk_date=msg.get('date'),
                 )
             else:
                 saved = handle_vk_incoming_message(

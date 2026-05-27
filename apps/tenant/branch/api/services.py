@@ -1100,6 +1100,7 @@ def handle_vk_admin_reply_from_poll(
     peer_id: int,
     message_id: int,
     text: str,
+    vk_date: int | None = None,
 ) -> TestimonialMessage | None:
     """
     Сохраняет ИСХОДЯЩЕЕ сообщение от сообщества (менеджер ответил гостю
@@ -1150,6 +1151,19 @@ def handle_vk_admin_reply_from_poll(
         text=text,
         vk_message_id=vk_msg_id_str,
     )
+
+    # Если VK сообщил оригинальную дату — выставляем её как created_at,
+    # чтобы исторические сообщения (старые рассылки) встали в правильное
+    # место timeline, а не выглядели как только что отправленные.
+    if vk_date and vk_date > 0:
+        import datetime as _dt
+        from django.utils.timezone import make_aware, get_default_timezone
+        try:
+            dt = _dt.datetime.fromtimestamp(int(vk_date))
+            dt = make_aware(dt, get_default_timezone())
+            TestimonialMessage.objects.filter(pk=msg.pk).update(created_at=dt)
+        except Exception:
+            pass
 
     # Помечаем conv как «отвечено» ТОЛЬКО если этот admin-reply — последний по
     # времени в VK. Если у гостя есть сообщения с большим vk_message_id (т.е.
