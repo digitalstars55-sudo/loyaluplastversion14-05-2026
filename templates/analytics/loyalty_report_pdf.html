@@ -112,6 +112,7 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
   </div>
 
   <!-- ═══ 1. Key metrics ═══ -->
+{% if 1 not in hidden_sections %}
   <div class="page section">
     <div class="sec-hd"><div class="sec-badge">01</div><div class="sec-title">Ключевые метрики системы за период</div></div>
     <table class="tbl">
@@ -136,7 +137,9 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
     <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-1"></div><div class="cmt-example"><b>Пример</b>За отчётный период система лояльности активно привлекает новых гостей. Большинство получают первый подарок, часть возвращается повторно.</div></div>
   </div>
 
+{% endif %}
   <!-- ═══ 2. Growth ═══ -->
+{% if 2 not in hidden_sections %}
   <div class="page section">
     <div class="sec-hd"><div class="sec-badge">02</div><div class="sec-title">Рост клиентской базы</div></div>
     <table class="tbl">
@@ -151,7 +154,9 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
     <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-2"></div><div class="cmt-example"><b>Пример</b>Конверсия первого контакта высокая: большинство гостей получают первый подарок и остаются в базе.</div></div>
   </div>
 
+{% endif %}
   <!-- ═══ 3. Scan index ═══ -->
+{% if 3 not in hidden_sections %}
   <div class="page section">
     <div class="sec-hd"><div class="sec-badge">03</div><div class="sec-title">Индекс оцифровки гостей</div></div>
     <div class="formula"><span><b>Формула:</b> Сканирования QR / общее количество гостей POS × 100%</span></div>
@@ -173,7 +178,9 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
     <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-3"></div><div class="cmt-example"><b>Пример</b>Индекс сканирования на уровне 25% — хороший показатель работы персонала и эффективности рекламных материалов.</div></div>
   </div>
 
+{% endif %}
   <!-- ═══ 4. Sources ═══ -->
+{% if 4 not in hidden_sections %}
   <div class="page section">
     <div class="sec-hd"><div class="sec-badge">04</div><div class="sec-title">Источники подключения гостей</div></div>
     <table class="tbl">
@@ -187,7 +194,9 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
     <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-4"></div><div class="cmt-example"><b>Пример</b>Основная часть подключений происходит непосредственно в кафе, заметную долю формируют гости доставки благодаря рекламе.</div></div>
   </div>
 
+{% endif %}
   <!-- ═══ 5. Engagement ═══ -->
+{% if 5 not in hidden_sections %}
   <div class="page section">
     <div class="sec-hd"><div class="sec-badge">05</div><div class="sec-title">Вовлечение гостей</div></div>
     <table class="tbl">
@@ -203,7 +212,9 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
     <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-5"></div><div class="cmt-example"><b>Пример</b>Гости активно используют игровые механики и бонусную систему, что говорит о хорошем уровне вовлечённости.</div></div>
   </div>
 
+{% endif %}
   <!-- ═══ 6. Communications ═══ -->
+{% if 6 not in hidden_sections %}
   <div class="page section">
     <div class="sec-hd"><div class="sec-badge">06</div><div class="sec-title">Коммуникации с гостями</div></div>
     <table class="tbl">
@@ -220,7 +231,9 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
     <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-6"></div><div class="cmt-example"><b>Пример</b>Высокая открываемость показывает, что гости активно реагируют на коммуникацию.</div></div>
   </div>
 
+{% endif %}
   <!-- ═══ 7. Reviews ═══ -->
+{% if 7 not in hidden_sections %}
   <div class="page section">
     <div class="sec-hd"><div class="sec-badge">07</div><div class="sec-title">Отзывы гостей</div></div>
     <table class="tbl">
@@ -236,7 +249,9 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
     <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-7"></div><div class="cmt-example"><b>Пример</b>Большинство отзывов носит позитивный характер — это говорит о хорошем уровне сервиса.</div></div>
   </div>
 
+{% endif %}
   <!-- ═══ 8. RF structure ═══ -->
+{% if 8 not in hidden_sections %}
   <div class="page section">
     <div class="sec-hd"><div class="sec-badge">08</div><div class="sec-title">Структура базы (RF-матрица)</div></div>
     <table class="tbl">
@@ -251,7 +266,9 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
     <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-8"></div><div class="cmt-example"><b>Пример (сильная база)</b>Значительная часть гостей в сегментах «лояльные» и «чемпионы» — хороший уровень удержания.</div></div>
   </div>
 
+{% endif %}
   <!-- ═══ 9. Migration ═══ -->
+{% if 9 not in hidden_sections %}
   <div class="page section">
     <div class="sec-hd"><div class="sec-badge">09</div><div class="sec-title">Динамика базы (миграция сегментов)</div></div>
     <table class="tbl">
@@ -267,20 +284,25 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
     <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-9"></div><div class="cmt-example"><b>Пример</b>Наблюдается рост лояльности гостей: часть клиентов становится более активной.</div></div>
   </div>
 
+{% endif %}
   <!-- ═══ 10. Conclusions ═══ -->
+{% if 10 not in hidden_sections %}
   <div class="page section">
     <div class="sec-hd"><div class="sec-badge">10</div><div class="sec-title">Итоговые выводы</div></div>
     <div class="sub">3 ключевых вывода по периоду, опираясь на цифры из секций 1–9.</div>
     <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-10" style="min-height:60px;"></div><div class="cmt-example"><b>Пример</b>• база программы лояльности активно растёт<br>• высокий индекс сканирования<br>• увеличивается вовлечённость гостей</div></div>
   </div>
 
+{% endif %}
   <!-- ═══ 11. Recommendations ═══ -->
+{% if 11 not in hidden_sections %}
   <div class="page section">
     <div class="sec-hd"><div class="sec-badge">11</div><div class="sec-title">Рекомендации</div></div>
     <div class="sub">3 действия для усиления результата в следующем периоде.</div>
     <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-11" style="min-height:60px;"></div><div class="cmt-example"><b>Пример</b>1. Усилить предложение QR-кода персоналом<br>2. Активнее использовать рассылку для возврата<br>3. Проводить игровые акции для повторных визитов</div></div>
   </div>
 
+{% endif %}
 </div>
 
 <script>

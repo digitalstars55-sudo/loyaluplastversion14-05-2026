@@ -205,13 +205,48 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     <button class="R-btn R-btn--ai"  onclick="generateAllComments()">🤖 Сгенерировать все комментарии</button>
     <button class="R-btn R-btn--save" onclick="saveAllComments()" id="btn-save-all" style="background:var(--ok);color:#fff;border-color:var(--ok);">💾 Сохранить все комментарии</button>
     <button class="R-btn R-btn--pdf" onclick="downloadPDF()">📄 Скачать PDF</button>
+    <button class="R-btn" type="button" onclick="document.getElementById('sections-toggle').style.display = document.getElementById('sections-toggle').style.display === 'block' ? 'none' : 'block'">🎚 Скрыть/показать секции</button>
     <a href="{% url 'analytics-general' %}?{{ period_qs }}{% if active_branch_ids %}&branches={% for bid in active_branch_ids %}{{ bid }}{% if not forloop.last %},{% endif %}{% endfor %}{% endif %}" class="R-btn">← К аналитике</a>
   </div>
+
+  <!-- ─── Section visibility toggle (LU-11) ─────────────── -->
+  <div id="sections-toggle" style="display:none;margin-bottom:18px;padding:12px 14px;border-radius:8px;background:#f8fafc;border:1px solid #cbd5e1;font-size:13px;">
+    <div style="font-weight:700;margin-bottom:8px;color:#1a2744;">Какие секции включить в отчёт и PDF:</div>
+    <form id="sections-form" method="get" style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;">
+      <input type="hidden" name="period" value="{{ active_period }}">
+      <input type="hidden" name="start" value="{{ start }}">
+      <input type="hidden" name="end" value="{{ end }}">
+      {% if active_branch_ids %}<input type="hidden" name="branches" value="{% for bid in active_branch_ids %}{{ bid }}{% if not forloop.last %},{% endif %}{% endfor %}">{% endif %}
+      {% for n, label in section_choices %}
+      <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;">
+        <input type="checkbox" name="show" value="{{ n }}" {% if n not in hidden_sections %}checked{% endif %}>
+        <span>{{ n }}. {{ label }}</span>
+      </label>
+      {% endfor %}
+      <button type="button" class="R-btn" onclick="applySectionsFilter()" style="background:#0d6efd;color:#fff;border-color:#0d6efd;">Применить</button>
+      <button type="button" class="R-btn" onclick="window.location.href=window.location.pathname + window.location.search.replace(/[?&]hide=[^&]*/g,'').replace(/^&/,'?')">Показать все</button>
+    </form>
+  </div>
+  <script>
+    function applySectionsFilter() {
+      const form = document.getElementById('sections-form');
+      const allNums = Array.from(form.querySelectorAll('input[name="show"]'));
+      const hidden = allNums.filter(cb => !cb.checked).map(cb => cb.value);
+      const params = new URLSearchParams(window.location.search);
+      if (hidden.length) {
+        params.set('hide', hidden.join(','));
+      } else {
+        params.delete('hide');
+      }
+      window.location.search = params.toString();
+    }
+  </script>
   <div id="save-banner" style="display:none;margin-bottom:18px;padding:10px 14px;border-radius:8px;background:#e8f5e9;border-left:4px solid var(--ok);color:#1b5e20;font-size:13px;font-weight:600;">
     ✓ Все комментарии сохранены. Они появятся в PDF при скачивании.
   </div>
 
   <!-- ═══ SECTION 1 — Key metrics ═════════════════════════ -->
+{% if 1 not in hidden_sections %}
   <div class="R-sec" data-section="1" data-title="Ключевые метрики системы за период">
     <div class="R-sec-hd">
       <div class="R-sec-badge">01</div>
@@ -306,7 +341,9 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     </div>
   </div>
 
+{% endif %}
   <!-- ═══ SECTION 2 — Growth ═══════════════════════════════ -->
+{% if 2 not in hidden_sections %}
   <div class="R-sec" data-section="2" data-title="Рост клиентской базы">
     <div class="R-sec-hd">
       <div class="R-sec-badge">02</div>
@@ -345,7 +382,9 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     </div>
   </div>
 
+{% endif %}
   <!-- ═══ SECTION 3 — Scan index ═══════════════════════════ -->
+{% if 3 not in hidden_sections %}
   <div class="R-sec" data-section="3" data-title="Индекс оцифровки гостей">
     <div class="R-sec-hd">
       <div class="R-sec-badge">03</div>
@@ -387,7 +426,9 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     </div>
   </div>
 
+{% endif %}
   <!-- ═══ SECTION 4 — Sources ══════════════════════════════ -->
+{% if 4 not in hidden_sections %}
   <div class="R-sec" data-section="4" data-title="Источники подключения гостей">
     <div class="R-sec-hd">
       <div class="R-sec-badge">04</div>
@@ -417,7 +458,9 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     </div>
   </div>
 
+{% endif %}
   <!-- ═══ SECTION 5 — Engagement ═══════════════════════════ -->
+{% if 5 not in hidden_sections %}
   <div class="R-sec" data-section="5" data-title="Вовлечение гостей">
     <div class="R-sec-hd">
       <div class="R-sec-badge">05</div>
@@ -457,7 +500,9 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     </div>
   </div>
 
+{% endif %}
   <!-- ═══ SECTION 6 — Communications ═══════════════════════ -->
+{% if 6 not in hidden_sections %}
   <div class="R-sec" data-section="6" data-title="Коммуникации с гостями">
     <div class="R-sec-hd">
       <div class="R-sec-badge">06</div>
@@ -490,7 +535,9 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     </div>
   </div>
 
+{% endif %}
   <!-- ═══ SECTION 7 — Reviews ══════════════════════════════ -->
+{% if 7 not in hidden_sections %}
   <div class="R-sec" data-section="7" data-title="Отзывы гостей">
     <div class="R-sec-hd">
       <div class="R-sec-badge">07</div>
@@ -530,7 +577,9 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     </div>
   </div>
 
+{% endif %}
   <!-- ═══ SECTION 8 — RF structure ═════════════════════════ -->
+{% if 8 not in hidden_sections %}
   <div class="R-sec" data-section="8" data-title="Структура базы (RF-матрица)">
     <div class="R-sec-hd">
       <div class="R-sec-badge">08</div>
@@ -561,7 +610,9 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     </div>
   </div>
 
+{% endif %}
   <!-- ═══ SECTION 9 — Migration ════════════════════════════ -->
+{% if 9 not in hidden_sections %}
   <div class="R-sec" data-section="9" data-title="Динамика базы (миграция сегментов)">
     <div class="R-sec-hd">
       <div class="R-sec-badge">09</div>
@@ -605,7 +656,9 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     </div>
   </div>
 
+{% endif %}
   <!-- ═══ SECTION 10 — Conclusions ═════════════════════════ -->
+{% if 10 not in hidden_sections %}
   <div class="R-sec" data-section="10" data-title="Итоговые выводы">
     <div class="R-sec-hd">
       <div class="R-sec-badge">10</div>
@@ -620,7 +673,9 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     </div>
   </div>
 
+{% endif %}
   <!-- ═══ SECTION 11 — Recommendations ═════════════════════ -->
+{% if 11 not in hidden_sections %}
   <div class="R-sec" data-section="11" data-title="Рекомендации">
     <div class="R-sec-hd">
       <div class="R-sec-badge">11</div>
@@ -635,6 +690,7 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     </div>
   </div>
 
+{% endif %}
   <!-- ─── Footer ─────────────────────────────────────────── -->
   <div class="R-footer">
     <img src="{% static 'images/LoyalUpLogo.png' %}" alt="ЛоялUP" class="R-footer-logo">

@@ -869,6 +869,15 @@ class LoyaltyReportView(View):
         except Exception:
             company_name = 'Кафе'
 
+        # LU-11: список скрытых секций (?hide=4,6,7). Все 11 секций по умолчанию видны.
+        hide_raw = request.GET.get('hide', '').strip()
+        hidden_sections: list[int] = []
+        if hide_raw:
+            for part in hide_raw.split(','):
+                part = part.strip()
+                if part.isdigit():
+                    hidden_sections.append(int(part))
+
         context = {
             'title':             'Отчёт по системе лояльности',
             'company_name':      company_name,
@@ -884,6 +893,21 @@ class LoyaltyReportView(View):
             'end':               end.isoformat(),
             'start_display':     start.strftime('%d.%m.%Y'),
             'end_display':       end.strftime('%d.%m.%Y'),
+            'hidden_sections':   hidden_sections,
+            'hide_qs':           hide_raw,
+            'section_choices':   [
+                (1,  'Ключевые метрики'),
+                (2,  'Рост клиентской базы'),
+                (3,  'Индекс оцифровки'),
+                (4,  'Источники подключения (cafe / доставка)'),
+                (5,  'Вовлечение гостей'),
+                (6,  'Коммуникации с гостями'),
+                (7,  'Отзывы гостей'),
+                (8,  'RF-матрица'),
+                (9,  'Миграция сегментов'),
+                (10, 'Итоговые выводы'),
+                (11, 'Рекомендации'),
+            ],
         }
         if request.GET.get('format') == 'pdf':
             response = render(request, 'analytics/loyalty_report_pdf.html', context)
