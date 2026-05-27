@@ -542,17 +542,99 @@ def get_branch_info(branch_id: int, *, tenant=None) -> dict:
     }
 
 
+def _resync_vk_status_cached(profile: ClientBranch) -> None:
+    """
+    Перепроверяет community + newsletter через VK API при каждом init.
+    Кеш в Redis 60 секунд: не больше 1 VK-вызова на гостя за минуту.
+
+    Используется в get_client_profile, чтобы поймать гостей, отписавшихся
+    от рассылки/сообщества вне приложения. VK Bridge silent-check есть
+    только для community; для newsletter единственный путь — server-side.
+    """
+    import logging
+    from django.core.cache import cache
+    from apps.tenant.senler.models import SenlerConfig
+
+    logger = logging.getLogger(__name__)
+
+    vk_id = profile.client.vk_id
+    cache_key = f'vk_sub_resync:{profile.branch_id}:{vk_id}'
+    if cache.get(cache_key):
+        return
+    cache.set(cache_key, 1, 60)
+
+    config = (
+        SenlerConfig.objects.filter(branch=profile.branch).first()
+        or SenlerConfig.objects.filter(is_active=True).order_by('branch_id').first()
+    )
+    if not config or not config.vk_community_token or not config.vk_group_id:
+        return
+
+    import json
+    import urllib.parse
+    import urllib.request
+
+    token = config.vk_community_token
+    group_id = config.vk_group_id
+
+    def _vk_call(method, **params):
+        params['access_token'] = token
+        params['v'] = '5.131'
+        url = f'https://api.vk.com/method/{method}?' + urllib.parse.urlencode(params)
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read())
+        if 'error' in data:
+            raise RuntimeError(data['error'].get('error_msg', ''))
+        return data.get('response', {})
+
+    is_member = None
+    is_subscriber = None
+    try:
+        resp = _vk_call('groups.isMember', group_id=group_id, user_id=vk_id)
+        is_member = bool(resp) if isinstance(resp, int) else bool(resp.get('member', 0))
+    except Exception as e:
+        logger.info('resync groups.isMember vk_id=%s: %s', vk_id, e)
+
+    try:
+        resp = _vk_call('messages.isMessagesFromGroupAllowed', group_id=group_id, user_id=vk_id)
+        is_subscriber = bool(resp.get('is_allowed', 0))
+    except Exception as e:
+        logger.info('resync isMessagesFromGroupAllowed vk_id=%s: %s', vk_id, e)
+
+    if is_member is None and is_subscriber is None:
+        return  # обе ошибки — не трогаем БД
+    # Если одна из проверок упала, не перезаписываем второе поле — берём текущее
+    vk_status = getattr(profile, 'vk_status', None)
+    cur_member     = (vk_status.is_community_member      if vk_status else False) if is_member is None else is_member
+    cur_subscriber = (vk_status.is_newsletter_subscriber if vk_status else False) if is_subscriber is None else is_subscriber
+    ClientVKStatus.sync(profile, is_member=cur_member, is_subscriber=cur_subscriber)
+
+
 def get_client_profile(vk_id: int, branch_id: int) -> ClientBranch:
     """
     Returns ClientBranch for the given (vk_id, branch_id) pair.
+
+    На каждом init дополнительно re-syncs community + newsletter через VK API
+    (с Redis-кешем 60 сек): ловим гостей, отписавшихся от рассылки/сообщества
+    вне приложения.
 
     Raises:
         ClientNotFound — no profile exists for this combination
     """
     try:
-        return _profile_qs().get(client__vk_id=vk_id, branch__branch_id=branch_id)
+        profile = _profile_qs().get(client__vk_id=vk_id, branch__branch_id=branch_id)
     except ClientBranch.DoesNotExist:
         raise ClientNotFound
+
+    try:
+        _resync_vk_status_cached(profile)
+        # Возвращаем профиль ещё раз чтобы подхватить обновлённый vk_status
+        profile = _profile_qs().get(pk=profile.pk)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('resync VK status failed for vk_id=%s', vk_id)
+
+    return profile
 
 
 @transaction.atomic
