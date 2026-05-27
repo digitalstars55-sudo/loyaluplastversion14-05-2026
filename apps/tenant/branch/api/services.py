@@ -1151,10 +1151,33 @@ def handle_vk_admin_reply_from_poll(
         vk_message_id=vk_msg_id_str,
     )
 
-    conv.is_replied = True
-    conv.has_unread = False
-    conv.last_message_at = timezone.now()
-    conv.save(update_fields=['is_replied', 'has_unread', 'last_message_at'])
+    # Помечаем conv как «отвечено» ТОЛЬКО если этот admin-reply — последний по
+    # времени в VK. Если у гостя есть сообщения с большим vk_message_id (т.е.
+    # он написал что-то после ответа менеджера) — оставляем conv в статусе
+    # «ожидает ответа», иначе мы скроем conv от менеджера.
+    try:
+        admin_msg_id_int = int(vk_msg_id_str)
+    except (TypeError, ValueError):
+        admin_msg_id_int = 0
+    later_guest_exists = False
+    for guest_id_str in (
+        TestimonialMessage.objects
+        .filter(conversation=conv, source=TestimonialMessage.Source.VK_MESSAGE)
+        .exclude(vk_message_id='')
+        .values_list('vk_message_id', flat=True)
+    ):
+        try:
+            if int(guest_id_str) > admin_msg_id_int:
+                later_guest_exists = True
+                break
+        except (TypeError, ValueError):
+            continue
+
+    if not later_guest_exists:
+        conv.is_replied = True
+        conv.has_unread = False
+        conv.last_message_at = timezone.now()
+        conv.save(update_fields=['is_replied', 'has_unread', 'last_message_at'])
 
     return msg
 
