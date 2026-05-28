@@ -349,6 +349,7 @@ def handle_vk_callback(data: dict) -> None:
                 from_id=from_id,
                 message_id=message_id,
                 text=text,
+                vk_date=message.get('date'),
             )
         elif from_id and from_id < 0 and peer_id and peer_id > 0 and message_id and text:
             # Некоторые сообщества доставляют исходящие (ответ менеджера) тоже
@@ -1068,6 +1069,7 @@ def handle_vk_incoming_message(
     from_id: int,
     message_id: int,
     text: str,
+    vk_date: int | None = None,
 ) -> list[TestimonialMessage]:
     """
     Создаёт сообщение типа VK_MESSAGE в одном треде, привязанном к группе.
@@ -1111,6 +1113,17 @@ def handle_vk_incoming_message(
         text=text,
         vk_message_id=vk_msg_id_str,
     )
+
+    # Реальное VK-время → created_at, чтобы порядок в треде совпадал с ВК
+    # (иначе сообщение гостя со временем сохранения встаёт не на своё место
+    # относительно ответа менеджера). LU-08.
+    if vk_date and vk_date > 0:
+        import datetime as _dt
+        try:
+            dt = _dt.datetime.fromtimestamp(int(vk_date), tz=_dt.timezone.utc)
+            TestimonialMessage.objects.filter(pk=msg.pk).update(created_at=dt)
+        except Exception:
+            pass
 
     conv.has_unread = True
     conv.is_replied = False

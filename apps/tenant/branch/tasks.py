@@ -159,6 +159,7 @@ def poll_branch_messages(branch_id: int) -> dict:
                     from_id=from_id,
                     message_id=msg['id'],
                     text=text,
+                    vk_date=msg.get('date'),
                 )
             if saved is not None:
                 new_count += 1
