@@ -338,9 +338,15 @@ class GuestListAPIView(APIView):
         except (TypeError, ValueError):
             limit, offset = 2000, 0
 
-        # ClientBranch.client FK имеет related_name='branch_profiles'
-        client_ids_in_tenant = ClientBranch.objects.values_list('client_id', flat=True)
-        qs = Client.objects.filter(pk__in=client_ids_in_tenant)
+        # Только гости подписавшиеся ЧЕРЕЗ ПРИЛОЖЕНИЕ (✓ app):
+        # community_via_app=True ИЛИ newsletter_via_app=True на ClientVKStatus.
+        # Это совпадает с метрикой get_total_vk_subscribers() в analytics.
+        app_client_ids = list(
+            ClientBranch.objects.filter(
+                Q(vk_status__community_via_app=True) | Q(vk_status__newsletter_via_app=True)
+            ).values_list('client_id', flat=True).distinct()
+        )
+        qs = Client.objects.filter(pk__in=app_client_ids)
         if search:
             qs = qs.filter(
                 Q(first_name__icontains=search) |
