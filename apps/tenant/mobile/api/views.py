@@ -333,7 +333,7 @@ class GuestListAPIView(APIView):
 
         search = request.query_params.get('search', '').strip()
         try:
-            limit = min(int(request.query_params.get('limit', 2000)), 2000)
+            limit = min(int(request.query_params.get('limit', 10000)), 10000)
             offset = max(int(request.query_params.get('offset', 0)), 0)
         except (TypeError, ValueError):
             limit, offset = 2000, 0
