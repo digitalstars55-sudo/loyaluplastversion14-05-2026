@@ -714,10 +714,10 @@ class CampaignsHistoryAPIView(APIView):
         from apps.tenant.senler.models import BroadcastSend
 
         try:
-            limit = int(request.query_params.get('limit', 100))
+            limit = int(request.query_params.get('limit', 2000))
         except (TypeError, ValueError):
-            limit = 100
-        limit = max(1, min(limit, 500))
+            limit = 2000
+        limit = max(1, min(limit, 2000))
 
         sends = (
             BroadcastSend.objects
@@ -809,13 +809,40 @@ class RFSegmentListAPIView(APIView):
         ]})
 
 
-class CampaignDeleteAPIView(APIView):
+class CampaignDetailAPIView(APIView):
     """
-    DELETE /api/v1/analytics/campaigns/<pk>/
-
-    Удалить одну рассылку (BroadcastSend). Нельзя удалить со статусом running.
+    PATCH /api/v1/analytics/campaigns/<pk>/  — изменить текст рассылки через VK API (24ч окно)
+    DELETE /api/v1/analytics/campaigns/<pk>/ — удалить запись рассылки
     """
     permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk: int):
+        from apps.tenant.senler.models import BroadcastSend
+        from apps.tenant.senler.services import edit_broadcast_send_in_vk
+
+        new_text = request.data.get('message_text', '').strip()
+        if not new_text:
+            return Response({'detail': 'message_text обязателен'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            send = BroadcastSend.objects.select_related('broadcast').get(pk=pk)
+        except BroadcastSend.DoesNotExist:
+            return Response({'detail': 'Рассылка не найдена'}, status=status.HTTP_404_NOT_FOUND)
+
+        if send.status not in ('done', 'cancelled', 'failed'):
+            return Response(
+                {'detail': 'Редактировать можно только завершённые рассылки.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Обновляем текст в Broadcast-шаблоне
+        if send.broadcast_id:
+            send.broadcast.message_text = new_text
+            send.broadcast.save(update_fields=['message_text'])
+
+        # Отправляем изменения в VK (только сообщения в 24-часовом окне)
+        result = edit_broadcast_send_in_vk(send, new_text)
+        return Response({'ok': True, **result})
 
     def delete(self, request, pk: int):
         from apps.tenant.senler.models import BroadcastSend

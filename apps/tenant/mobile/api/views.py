@@ -333,10 +333,10 @@ class GuestListAPIView(APIView):
 
         search = request.query_params.get('search', '').strip()
         try:
-            limit = min(int(request.query_params.get('limit', 200)), 500)
+            limit = min(int(request.query_params.get('limit', 2000)), 2000)
             offset = max(int(request.query_params.get('offset', 0)), 0)
         except (TypeError, ValueError):
-            limit, offset = 200, 0
+            limit, offset = 2000, 0
 
         # ClientBranch.client FK имеет related_name='branch_profiles'
         client_ids_in_tenant = ClientBranch.objects.values_list('client_id', flat=True)
