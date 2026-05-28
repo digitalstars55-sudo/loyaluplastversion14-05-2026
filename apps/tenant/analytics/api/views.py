@@ -147,8 +147,10 @@ class RFMigrationsListAPIView(APIView):
         for f in flows:
             grew = self._segment_rank(f['to_code']) >= self._segment_rank(f['from_code'])
             migrations.append({
-                'from':  f['from_name'],
-                'to':    f['to_name'],
+                'from':       f['from_name'],
+                'to':         f['to_name'],
+                'from_emoji': f.get('from_emoji', ''),
+                'to_emoji':   f.get('to_emoji', ''),
                 'count': f['count'] if grew else -f['count'],
             })
         return Response({'migrations': migrations})
