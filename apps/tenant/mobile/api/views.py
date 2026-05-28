@@ -347,7 +347,7 @@ class GuestListAPIView(APIView):
                 Q(last_name__icontains=search) |
                 Q(vk_id__icontains=search)
             )
-        qs = qs.order_by('-pk')
+        qs = qs.order_by('-created_at')
         total = qs.count()
         clients = list(qs[offset:offset + limit])
 
