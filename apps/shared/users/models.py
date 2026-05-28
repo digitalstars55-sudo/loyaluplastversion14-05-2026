@@ -35,6 +35,13 @@ class User(AbstractUser):
         help_text='Тенанты, к которым у пользователя есть доступ. Для Супер Администратора (is_superuser) не требуется.',
     )
 
+    # Профиль владельца для мобильного приложения (редактируется через /api/v1/me/)
+    phone = models.CharField('Телефон', max_length=20, blank=True, default='')
+    city = models.CharField('Город', max_length=80, blank=True, default='')
+    birthday = models.DateField('Дата рождения', null=True, blank=True)
+    # Фиксируется при первой установке ДР — после этого менять может только админ.
+    birthday_set_at = models.DateTimeField('ДР зафиксирован', null=True, blank=True)
+
     @property
     def is_superadmin(self):
         return self.role == self.Role.SUPERADMIN

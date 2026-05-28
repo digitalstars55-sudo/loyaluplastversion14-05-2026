@@ -1710,7 +1710,10 @@ def get_migration_effectiveness(
         to_segment__isnull=False,
     )
     if branch_ids:
-        qs = qs.filter(client__branch__in=branch_ids)
+        # client — guest.Client; привязка к точке через branch_profiles (ClientBranch).
+        # distinct() убирает дубли join'а, когда гость состоит в нескольких
+        # выбранных точках; 'id' в values ниже сохраняет идентичность миграции.
+        qs = qs.filter(client__branch_profiles__branch__in=branch_ids).distinct()
 
     # Map segment pk → r_score (higher = more recent; 1 = R0/lost)
     # Используем стабильное отображение по коду сегмента (R3F1 → r_score=4),
@@ -1726,7 +1729,7 @@ def get_migration_effectiveness(
 
     growth = cooling = lost_to_r0 = reactivated = 0
 
-    for mig in qs.values('from_segment_id', 'to_segment_id'):
+    for mig in qs.values('id', 'from_segment_id', 'to_segment_id'):
         from_r = seg_r_score.get(mig['from_segment_id'], 0)
         to_r   = seg_r_score.get(mig['to_segment_id'],   0)
 

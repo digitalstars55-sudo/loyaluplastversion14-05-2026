@@ -5,13 +5,16 @@ from .views import (
     AutoReplySettingsAPIView, EngagementAnalyticsAPIView,
     CampaignsHistoryAPIView,
     SendSegmentBroadcastAPIView, GenerateBroadcastTextAPIView,
-    GenerateReportCommentAPIView,
+    GenerateReportCommentAPIView, RFMigrationsListAPIView,
+    LoyaltyReportAPIView,
 )
 
 urlpatterns = [
     path('analytics/stats/',            GeneralStatsAPIView.as_view(), name='analytics-stats'),
+    path('analytics/report/',           LoyaltyReportAPIView.as_view(), name='analytics-report-json'),
     path('analytics/stats/slow/',       SlowStatsAPIView.as_view(),    name='analytics-stats-slow'),
     path('analytics/rf/',               RFStatsAPIView.as_view(),      name='analytics-rf'),
+    path('analytics/rf/migrations/',    RFMigrationsListAPIView.as_view(), name='analytics-rf-migrations'),
     path('analytics/rf/recalculate/',   RecalculateRFView.as_view(),   name='analytics-rf-recalculate'),
     path('analytics/rf/thresholds/',    RFThresholdsAPIView.as_view(), name='analytics-rf-thresholds'),
     path('analytics/auto-reply/settings/', AutoReplySettingsAPIView.as_view(), name='analytics-auto-reply-settings'),

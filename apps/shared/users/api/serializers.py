@@ -31,7 +31,6 @@ class ProfileSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     role_label = serializers.SerializerMethodField()
     branch_ids = serializers.SerializerMethodField()
-    phone = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
     tenant_domain = serializers.SerializerMethodField()
     tenant_name = serializers.SerializerMethodField()
@@ -40,7 +39,8 @@ class ProfileSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'full_name', 'role', 'role_label',
-            'email', 'phone', 'avatar_url', 'branch_ids',
+            'email', 'phone', 'city', 'birthday', 'birthday_set_at',
+            'avatar_url', 'branch_ids',
             'tenant_domain', 'tenant_name',
         ]
         read_only_fields = fields
@@ -64,9 +64,6 @@ class ProfileSerializer(serializers.ModelSerializer):
         # На public-схеме branches не существуют — отдаём пусто.
         # Мобайл подтянет их отдельным запросом по тенантскому домену.
         return []
-
-    def get_phone(self, obj) -> str | None:
-        return getattr(obj, 'phone', None)
 
     def get_avatar_url(self, obj) -> str | None:
         return None

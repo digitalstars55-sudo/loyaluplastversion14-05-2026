@@ -11,6 +11,8 @@ from .views import (
     MobileReviewReplyAPIView,
     MobileReviewResolveAPIView,
     GuestBirthdaysAPIView,
+    GuestDetailAPIView,
+    AdjustGuestCoinsAPIView,
     DailyCodesListAPIView,
     GenerateDailyCodeAPIView,
     RegenerateReviewDraftAPIView,
@@ -18,6 +20,7 @@ from .views import (
     GlobalSearchAPIView,
     AuditLogAPIView,
     SubscriptionStatusAPIView,
+    BillingPayAPIView,
     StaffListAPIView,
     StaffDetailAPIView,
     StaffInviteAPIView,
@@ -41,6 +44,16 @@ urlpatterns = [
         'guests/birthdays/',
         GuestBirthdaysAPIView.as_view(),
         name='guests-birthdays',
+    ),
+    path(
+        'guests/<int:vk_id>/',
+        GuestDetailAPIView.as_view(),
+        name='guest-detail',
+    ),
+    path(
+        'guests/<int:vk_id>/adjust-coins/',
+        AdjustGuestCoinsAPIView.as_view(),
+        name='guest-adjust-coins',
     ),
 
     # Daily codes (read + manual generate)
@@ -86,6 +99,11 @@ urlpatterns = [
         'billing/status/',
         SubscriptionStatusAPIView.as_view(),
         name='billing-status',
+    ),
+    path(
+        'billing/pay/',
+        BillingPayAPIView.as_view(),
+        name='billing-pay',
     ),
 
     # Staff

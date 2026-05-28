@@ -11,6 +11,7 @@ urlpatterns = [
     path('auth/login/',    LoginAPIView.as_view(),    name='mobile-auth-login'),
     path('auth/logout/',   LogoutAPIView.as_view(),   name='mobile-auth-logout'),
     path('auth/me/',       MeAPIView.as_view(),       name='mobile-auth-me'),
+    path('me/',            MeAPIView.as_view(),       name='mobile-me'),
     path('auth/refresh/',  RefreshAPIView.as_view(),  name='mobile-auth-refresh'),
     path('push/register/', PushRegisterAPIView.as_view(), name='mobile-push-register'),
 ]

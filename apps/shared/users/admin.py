@@ -15,7 +15,7 @@ class UserPublicAdmin(BaseUserAdmin):
     # так как они не имеют эффекта — права управляются исключительно через role.
     fieldsets = (
         (None, {'fields': ('username', 'password')}),
-        ('Личные данные', {'fields': ('first_name', 'last_name', 'email')}),
+        ('Личные данные', {'fields': ('first_name', 'last_name', 'email', 'phone', 'city', 'birthday', 'birthday_set_at')}),
         ('Роль и доступ', {'fields': ('role', 'companies', 'is_active', 'is_superuser')}),
         ('Даты', {'fields': ('last_login', 'date_joined')}),
     )

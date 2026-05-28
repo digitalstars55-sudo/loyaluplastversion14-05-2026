@@ -292,6 +292,273 @@ class GuestBirthdaysAPIView(APIView):
         return Response({'birthdays': birthdays})
 
 
+# ── Маппинг типов/источников транзакций бэка → enum мобильного приложения ──────
+# Бэк: type=income|expense, source=game|quest|shop|birthday|delivery|manual.
+# Мобайл (GuestCoinTxn): type=EARN|SPEND|BIRTHDAY_GIFT|REFERRAL|ADJUST,
+#                        source=QR_SCAN|PURCHASE|GAME|QUEST|BIRTHDAY|ADMIN|STORY|REFERRAL.
+_MOBILE_TXN_SOURCE = {
+    'game':     'GAME',
+    'quest':    'QUEST',
+    'shop':     'PURCHASE',
+    'birthday': 'BIRTHDAY',
+    'delivery': 'PURCHASE',
+    'manual':   'ADMIN',
+}
+
+
+def _mobile_txn_type(tx) -> str:
+    if tx.source == 'manual':
+        return 'ADJUST'
+    if tx.source == 'birthday' and tx.type == 'income':
+        return 'BIRTHDAY_GIFT'
+    return 'EARN' if tx.type == 'income' else 'SPEND'
+
+
+class GuestDetailAPIView(APIView):
+    """
+    GET /api/v1/guests/<vk_id>/
+
+    Карточка гостя для мобильного приложения. Агрегирует данные по всем
+    ClientBranch-профилям гостя в текущем тенанте: баланс монет (income−expense),
+    RF-сегмент, последние визиты и транзакции, VK-статус, призы и отзывы.
+
+    Один гость (guest.Client по vk_id) = одна карточка, даже если он состоит
+    в нескольких точках сети.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, vk_id: int):
+        from django.db.models import Sum, Q
+        from apps.shared.guest.models import Client
+        from apps.tenant.branch.models import (
+            ClientBranch, ClientBranchVisit, CoinTransaction,
+        )
+        from apps.tenant.inventory.models import InventoryItem
+
+        client = Client.objects.filter(vk_id=vk_id).first()
+        if not client:
+            return Response({'detail': 'Гость не найден'}, status=status.HTTP_404_NOT_FOUND)
+
+        cbs = list(
+            ClientBranch.objects.select_related('branch').filter(client=client)
+        )
+        if not cbs:
+            return Response({'detail': 'Гость не найден в этой сети'}, status=status.HTTP_404_NOT_FOUND)
+
+        cb_ids = [cb.pk for cb in cbs]
+        cb_by_id = {cb.pk: cb for cb in cbs}
+
+        # Баланс монет: суммы по всем CB-профилям гостя.
+        coin_agg = CoinTransaction.objects.filter(client_id__in=cb_ids).aggregate(
+            income=Sum('amount', filter=Q(type='income')),
+            expense=Sum('amount', filter=Q(type='expense')),
+        )
+        total_earned = coin_agg['income'] or 0
+        total_spent = coin_agg['expense'] or 0
+        coins_balance = total_earned - total_spent
+
+        # RF-метрика (per-Client). Прямой запрос, а не client.rf_score —
+        # обратный OneToOne-аксессор кидает RelatedObjectDoesNotExist, если
+        # score ещё не рассчитан (getattr с дефолтом его НЕ перехватывает).
+        from apps.tenant.analytics.models import GuestRFScore
+        recency_days, frequency = 0, 0
+        segment_key = segment_emoji = segment_name = None
+        score = GuestRFScore.objects.select_related('segment').filter(client=client).first()
+        if score:
+            recency_days = score.recency_days
+            frequency = score.frequency
+            segment_key = f'{score.r_score}_{score.f_score}'
+            if score.segment_id:
+                segment_emoji = score.segment.emoji
+                segment_name = score.segment.name
+
+        # Дата регистрации в программе — самый ранний профиль.
+        registered_at = min(cb.created_at for cb in cbs)
+
+        # ДР — первый профиль, где он указан.
+        birthday = None
+        for cb in cbs:
+            if cb.birth_date:
+                birthday = cb.birth_date.isoformat()
+                break
+
+        # VK-статус: OR по всем профилям. Прямой запрос (тот же нюанс
+        # обратного OneToOne, что и с rf_score выше).
+        from apps.tenant.branch.models import ClientVKStatus
+        is_community = is_newsletter = False
+        for vks in ClientVKStatus.objects.filter(client_id__in=cb_ids):
+            is_community = is_community or vks.is_community_member
+            is_newsletter = is_newsletter or vks.is_newsletter_subscriber
+
+        # Последние визиты (до 20).
+        visits = list(
+            ClientBranchVisit.objects.filter(client_id__in=cb_ids).order_by('-visited_at')[:20]
+        )
+        recent_visits = []
+        for v in visits:
+            cb = cb_by_id.get(v.client_id)
+            recent_visits.append({
+                'id':           v.pk,
+                'branch_id':    cb.branch_id if cb else None,
+                'branch_name':  cb.branch.name if (cb and cb.branch_id) else '',
+                'visited_at':   v.visited_at.isoformat(),
+                'table_number': None,
+            })
+        last_seen_at = visits[0].visited_at.isoformat() if visits else None
+
+        # Транзакции с бегущим балансом: считаем по всей истории, отдаём последние 20.
+        all_txns = list(
+            CoinTransaction.objects.filter(client_id__in=cb_ids).order_by('created_at', 'id')
+        )
+        running = 0
+        enriched = []
+        for tx in all_txns:
+            signed = tx.amount if tx.type == 'income' else -tx.amount
+            running += signed
+            enriched.append((tx, signed, running))
+        recent_txns = [{
+            'id':            tx.pk,
+            'type':          _mobile_txn_type(tx),
+            'source':        _MOBILE_TXN_SOURCE.get(tx.source, tx.source.upper()),
+            'amount':        signed,
+            'balance_after': bal,
+            'description':   tx.description or '',
+            'created_at':    tx.created_at.isoformat(),
+        } for (tx, signed, bal) in reversed(enriched[-20:])]
+
+        # Призы и отзывы.
+        prizes_received = InventoryItem.objects.filter(client_branch_id__in=cb_ids).count()
+        prizes_activated = InventoryItem.objects.filter(
+            client_branch_id__in=cb_ids, activated_at__isnull=False,
+        ).count()
+        reviews_count = TestimonialConversation.objects.filter(
+            Q(client_id__in=cb_ids) | Q(vk_guest_id=client.pk)
+        ).distinct().count()
+
+        # Телефон — из последнего отзыва, где гость его указал.
+        phone = TestimonialMessage.objects.filter(
+            conversation__client_id__in=cb_ids,
+        ).exclude(phone='').order_by('-created_at').values_list('phone', flat=True).first() or ''
+
+        return Response({
+            'vk_id':         str(client.vk_id),
+            'first_name':    client.first_name or '',
+            'last_name':     client.last_name or '',
+            'phone':         phone,
+            'birthday':      birthday,
+            'registered_at': registered_at.isoformat(),
+            'recency_days':  recency_days,
+            'frequency':     frequency,
+            'coins_balance': coins_balance,
+            'total_earned':  total_earned,
+            'total_spent':   total_spent,
+            'segment_key':   segment_key,
+            'segment_emoji': segment_emoji,
+            'segment_name':  segment_name,
+            'vk_status': {
+                'is_subscribed_community':  is_community,
+                'is_subscribed_newsletter': is_newsletter,
+                'is_blocked':               not client.is_active,
+                'last_seen_at':             last_seen_at,
+            },
+            'recent_visits':    recent_visits,
+            'recent_txns':      recent_txns,
+            'prizes_received':  prizes_received,
+            'prizes_activated': prizes_activated,
+            'reviews_count':    reviews_count,
+        })
+
+
+class AdjustGuestCoinsAPIView(APIView):
+    """
+    POST /api/v1/guests/<vk_id>/adjust-coins/  body: {amount: int (знаковое), reason: str}
+
+    Ручная корректировка баланса монет гостя администратором.
+    amount > 0 — начисление (income), amount < 0 — списание (expense).
+    Транзакция привязывается к самому свежему ClientBranch-профилю гостя;
+    достаточность баланса проверяется по агрегату всех профилей (как его
+    видит мобайл). Требует право adjust_coins.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, vk_id: int):
+        from django.db.models import Sum, Q
+        from apps.shared.guest.models import Client
+        from apps.tenant.branch.models import (
+            ClientBranch, CoinTransaction, TransactionType, TransactionSource, AuditLog,
+        )
+        from apps.tenant.branch.audit import log_audit
+
+        if not _user_has_perm(request.user, 'adjust_coins'):
+            return Response(
+                {'detail': 'Недостаточно прав для корректировки баланса.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            amount = int(request.data.get('amount'))
+        except (TypeError, ValueError):
+            return Response({'detail': 'amount должен быть целым числом'}, status=status.HTTP_400_BAD_REQUEST)
+        if amount == 0:
+            return Response({'detail': 'amount не может быть нулём'}, status=status.HTTP_400_BAD_REQUEST)
+        reason = (request.data.get('reason') or '').strip()
+        if len(reason) < 3:
+            return Response(
+                {'detail': 'Укажите причину корректировки (минимум 3 символа).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        client = Client.objects.filter(vk_id=vk_id).first()
+        if not client:
+            return Response({'detail': 'Гость не найден'}, status=status.HTTP_404_NOT_FOUND)
+        cbs = list(
+            ClientBranch.objects.select_related('branch')
+            .filter(client=client).order_by('-created_at')
+        )
+        if not cbs:
+            return Response({'detail': 'Гость не найден в этой сети'}, status=status.HTTP_404_NOT_FOUND)
+        cb_ids = [cb.pk for cb in cbs]
+
+        with transaction.atomic():
+            agg = CoinTransaction.objects.filter(client_id__in=cb_ids).aggregate(
+                income=Sum('amount', filter=Q(type='income')),
+                expense=Sum('amount', filter=Q(type='expense')),
+            )
+            balance = (agg['income'] or 0) - (agg['expense'] or 0)
+            if amount < 0 and balance + amount < 0:
+                return Response(
+                    {'detail': 'Недостаточно монет на балансе для списания.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            tx = CoinTransaction.objects.create(
+                client=cbs[0],  # самый свежий профиль гостя
+                type=TransactionType.INCOME if amount > 0 else TransactionType.EXPENSE,
+                source=TransactionSource.MANUAL,
+                amount=abs(amount),
+                description=reason,
+            )
+            new_balance = balance + amount
+
+        log_audit(
+            request.user, AuditLog.Action.COIN_ADJUST,
+            target_type='guest', target_id=client.vk_id,
+            target_label=str(client)[:255],
+            details=reason[:500],
+            delta={'amount': amount, 'balance_after': new_balance},
+        )
+
+        return Response({
+            'id':            tx.pk,
+            'type':          _mobile_txn_type(tx),
+            'source':        'ADMIN',
+            'amount':        amount,
+            'balance_after': new_balance,
+            'description':   tx.description or '',
+            'created_at':    tx.created_at.isoformat(),
+        }, status=status.HTTP_201_CREATED)
+
+
 # ════════════════════════════════════════════════════════════════════
 # Daily codes — read-only list + manual generation
 # ════════════════════════════════════════════════════════════════════
@@ -763,6 +1030,65 @@ class SubscriptionStatusAPIView(APIView):
         })
 
 
+_BANK_LABELS = {
+    'sberbank': 'Сбербанк',
+    'tinkoff':  'Т-Банк',
+    'alfabank': 'Альфа-Банк',
+    'sbp':      'СБП',
+}
+
+
+class BillingPayAPIView(APIView):
+    """
+    POST /api/v1/billing/pay/  body: {plan, bank}
+
+    Заглушка оплаты: онлайн-эквайринг пока не подключён. Endpoint фиксирует
+    заявку на оплату и отправляет её менеджеру LoyalUP через support-чат
+    (с релеем в CheckUp) — менеджер выставит счёт и обновит paid_until.
+    Возвращает {payment_url: '', status: 'manager_request', message}, чтобы
+    экран оплаты не падал. Реальный платёжный провайдер добавим позже.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from django.db import connection
+        from apps.shared.clients.models import Company
+        from apps.tenant.branch.models import SupportChatMessage
+
+        plan = (request.data.get('plan') or '').strip()
+        bank = (request.data.get('bank') or '').strip()
+
+        tenant = getattr(connection, 'tenant', None)
+        price_rub = getattr(tenant, 'plan_price_rub', None) or 4900
+        plan_code = plan or (getattr(tenant, 'plan_code', None) or 'standard')
+        try:
+            plan_label = Company.Plan(plan_code).label
+        except ValueError:
+            plan_label = plan_code or 'Стандарт'
+
+        bank_label = _BANK_LABELS.get(bank, bank or '—')
+        text = (
+            '💳 Заявка на оплату подписки\n'
+            f'Тариф: «{plan_label}» — {price_rub} ₽\n'
+            f'Способ оплаты: {bank_label}\n'
+            f'Запросил: {request.user.get_full_name() or request.user.username}'
+        )
+
+        m = SupportChatMessage.objects.create(
+            sender=SupportChatMessage.Sender.USER,
+            author_id=request.user.pk if request.user.is_authenticated else None,
+            text=text,
+        )
+        _safe_relay_to_checkup(message=m, user=request.user)
+
+        return Response({
+            'payment_url': '',
+            'status':      'manager_request',
+            'message':     'Заявка на оплату принята. Менеджер LoyalUP свяжется '
+                           'с вами в чате для выставления счёта.',
+        })
+
+
 # ════════════════════════════════════════════════════════════════════
 # Staff — list + update role/active
 # ════════════════════════════════════════════════════════════════════
@@ -808,6 +1134,16 @@ def _merge_permissions(stored: dict, mobile_role: str) -> dict:
     merged = {**defaults, **(stored or {})}
     # Удалим возможные неизвестные ключи, чтобы не утекали в API
     return {k: bool(merged.get(k, defaults[k])) for k in _PERMS_KEYS}
+
+
+def _user_has_perm(user, perm_key: str) -> bool:
+    """Есть ли у пользователя право perm_key (с учётом роли и StaffProfile)."""
+    if user.is_superuser:
+        return True
+    profile = _get_or_create_staff_profile(user)
+    mob_role = _BACKEND_ROLE_TO_MOBILE.get(user.role, 'viewer')
+    perms = _merge_permissions(profile.permissions, mob_role)
+    return bool(perms.get(perm_key))
 
 
 def _serialize_staff(user) -> dict:

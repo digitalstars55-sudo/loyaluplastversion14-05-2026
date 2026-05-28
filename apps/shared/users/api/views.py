@@ -79,11 +79,49 @@ class LoginAPIView(APIView):
 
 
 class MeAPIView(APIView):
-    """GET /api/v1/auth/me/  — текущий профиль по Bearer-токену"""
+    """
+    GET   /api/v1/me/ (и /api/v1/auth/me/) — текущий профиль по Bearer-токену.
+    PATCH /api/v1/me/ — редактирование своего профиля из мобильного приложения.
+
+    Редактируемые поля: full_name (ФИО одной строкой → хранится в first_name),
+    city, birthday. ДР можно установить только один раз: при первой установке
+    проставляется birthday_set_at, после чего повторные изменения игнорируются
+    (менять может только админ в Django-админке).
+    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         return Response(ProfileSerializer(request.user).data)
+
+    def patch(self, request):
+        user = request.user
+        data = request.data or {}
+
+        if 'full_name' in data:
+            full_name = (data.get('full_name') or '').strip()
+            # ФИО хранится целиком в first_name, чтобы get_full_name() отдавал
+            # строку обратно без перестановки порядка слов.
+            user.first_name = full_name[:150]
+            user.last_name = ''
+
+        if 'city' in data:
+            user.city = (data.get('city') or '').strip()[:80]
+
+        if 'birthday' in data and not user.birthday_set_at:
+            raw = (data.get('birthday') or '').strip()
+            if raw:
+                try:
+                    bday = datetime.date.fromisoformat(raw)
+                except ValueError:
+                    return Response(
+                        {'detail': 'birthday должен быть в формате YYYY-MM-DD'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                user.birthday = bday
+                user.birthday_set_at = datetime.datetime.now(datetime.timezone.utc)
+
+        user.save()
+        return Response(ProfileSerializer(user).data)
 
 
 class LogoutAPIView(APIView):

@@ -40,6 +40,30 @@ def _period_qs(active_period: str, start: date, end: date) -> str:
     return f'period={active_period}'
 
 
+def _staff_user_from_token(token: str | None):
+    """
+    Достаёт staff-пользователя из JWT access-токена (?token=...).
+    Нужно для PDF-выгрузки отчёта из мобильного приложения: ссылка
+    открывается во внешнем браузере без session-cookie. Токен read-only,
+    отдаётся только по HTTPS. Возвращает None, если токен невалиден или
+    пользователь не staff.
+    """
+    if not token:
+        return None
+    try:
+        from apps.shared.users.auth import decode_token
+        payload = decode_token(token)
+    except Exception:
+        return None
+    if payload.get('typ') != 'access':
+        return None
+    from django.contrib.auth import get_user_model
+    user = get_user_model().objects.filter(pk=payload.get('sub')).first()
+    if user and user.is_active and user.is_staff:
+        return user
+    return None
+
+
 def _parse_period(request) -> tuple[date, date, str]:
     today  = date.today()
     preset = request.GET.get('period', '30d')
@@ -718,13 +742,25 @@ class CreateBroadcastForAllGuestsView(View):
         return HttpResponseRedirect(request.META.get('HTTP_REFERER', '/analytics/rf/'))
 
 
-@method_decorator(staff_member_required, name='dispatch')
 class LoyaltyReportView(View):
     """
     GET /analytics/report/
     Loyalty system report page with all metrics, charts, AI-generated comments, and PDF export.
+
+    Авторизация: веб — staff-сессия (как раньше); мобайл — JWT в ?token=
+    (PDF открывается во внешнем браузере без cookie). Если ни то ни другое —
+    редирект на логин (поведение как у staff_member_required).
     """
     template_name = 'analytics/loyalty_report.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        if not (request.user.is_authenticated and request.user.is_staff):
+            user = _staff_user_from_token(request.GET.get('token'))
+            if user is None:
+                from django.contrib.auth.views import redirect_to_login
+                return redirect_to_login(request.get_full_path())
+            request.user = user
+        return super().dispatch(request, *args, **kwargs)
 
     def get(self, request):
         start, end, active_period = _parse_period(request)

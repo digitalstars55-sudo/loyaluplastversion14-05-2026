@@ -111,6 +111,150 @@ class RFStatsAPIView(APIView):
         })
 
 
+class RFMigrationsListAPIView(APIView):
+    """
+    GET /api/v1/analytics/rf/migrations/?mode=restaurant&trend_days=30
+
+    Полный список миграций между RF-сегментами за период для отдельного
+    экрана мобильного приложения: [{from, to, count}]. count знаковый —
+    «+» если гость перешёл в более сильный сегмент (рост по R+F),
+    «−» если в более слабый (ослабление). Это позволяет мобайлу
+    фильтровать поток «приток / отток».
+    """
+    permission_classes = [IsAuthenticated]
+
+    @staticmethod
+    def _segment_rank(code: str) -> int:
+        # Код вида 'R3F2': R-метка в позиции 1, F-метка в позиции 3.
+        try:
+            return int(code[1]) + int(code[3])
+        except (IndexError, ValueError, TypeError):
+            return 0
+
+    @extend_schema(parameters=[RFQuerySerializer], responses={200: OpenApiTypes.OBJECT})
+    def get(self, request):
+        ser = RFQuerySerializer(data=request.query_params)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        branch_ids = ser.validated_data['branch_ids'] or None
+        mode       = ser.validated_data['mode']
+        trend_days = ser.validated_data['trend_days']
+
+        flows = services.get_rf_migration_summary(branch_ids, days=trend_days, mode=mode)
+
+        migrations = []
+        for f in flows:
+            grew = self._segment_rank(f['to_code']) >= self._segment_rank(f['from_code'])
+            migrations.append({
+                'from':  f['from_name'],
+                'to':    f['to_name'],
+                'count': f['count'] if grew else -f['count'],
+            })
+        return Response({'migrations': migrations})
+
+
+class LoyaltyReportAPIView(APIView):
+    """
+    GET /api/v1/analytics/report/?branch_ids=&period=&start=&end=
+
+    JSON-версия отчёта лояльности для мобильного приложения (тип LoyaltyReport).
+    Переиспользует те же расчёты, что и HTML-страница LoyaltyReportView:
+    общая статистика, тональность отзывов, RF-сводка, миграции, источники.
+    ai_summary не генерируется здесь (дорого + Anthropic-кредиты), мобайл
+    обрабатывает его как опциональный.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(parameters=[StatsQuerySerializer], responses={200: OpenApiTypes.OBJECT})
+    def get(self, request):
+        from django.db.models import Count
+        from apps.tenant.branch.models import TestimonialConversation
+
+        ser = StatsQuerySerializer(data=request.query_params)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+        branch_ids = ser.validated_data['branch_ids'] or None
+        start_date = ser.validated_data['start']
+        end_date   = ser.validated_data['end']
+
+        stats = services.get_general_stats(branch_ids, start_date, end_date)
+        stats['period_label'] = f'{start_date:%d.%m}–{end_date:%d.%m.%Y}'
+
+        # ── Отзывы по тональности ─────────────────────────────────────────────
+        rq = TestimonialConversation.objects.filter(
+            last_message_at__date__gte=start_date,
+            last_message_at__date__lte=end_date,
+        )
+        if branch_ids:
+            rq = rq.filter(branch_id__in=branch_ids)
+        S = TestimonialConversation.Sentiment
+        sc = {row['sentiment']: row['cnt'] for row in rq.values('sentiment').annotate(cnt=Count('id'))}
+        reviews = {
+            'positive': sc.get(S.POSITIVE, 0),
+            'negative': sc.get(S.NEGATIVE, 0),
+            'partial':  sc.get(S.PARTIALLY_NEGATIVE, 0),
+            'neutral':  sc.get(S.NEUTRAL, 0),
+            'spam':     sc.get(S.SPAM, 0),
+            'total':    rq.count(),
+        }
+
+        # ── RF: сводка + сегменты ─────────────────────────────────────────────
+        rf = services.get_rf_stats(branch_ids, mode='restaurant')
+        summary = rf.get('summary', {})
+        cells = rf.get('matrix', {}).get('cells', {})
+        # active_r3 — гости с лучшим R-баллом (самый «свежий» уровень). У бэка
+        # шкала R 1..N, верхний уровень = mobile active_r3.
+        max_r = max((c.get('r_score', 0) for c in cells.values()), default=0)
+        active_r3 = sum(c.get('count', 0) for c in cells.values() if c.get('r_score') == max_r) if max_r else 0
+        rf_summary = {
+            'total':      summary.get('total', 0),
+            'active_r3':  active_r3,
+            'at_risk_r1': summary.get('at_risk', 0),
+            'lost_r0':    summary.get('lost_r0', 0),
+        }
+        segment_counts: dict[str, int] = {}
+        for c in cells.values():
+            name = c.get('segment_name', '—')
+            segment_counts[name] = segment_counts.get(name, 0) + c.get('count', 0)
+
+        # ── Эффективность миграций ────────────────────────────────────────────
+        days_delta = (end_date - start_date).days or 30
+        eff = services.get_migration_effectiveness(branch_ids, days=days_delta, mode='restaurant')
+
+        MigModel = services._get_migration_model('restaurant')
+        new_q = MigModel.objects.filter(
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date,
+            from_segment__isnull=True,
+            to_segment__isnull=False,
+        )
+        if branch_ids:
+            new_q = new_q.filter(client__branch_profiles__branch__in=branch_ids)
+        new_users = new_q.values('client_id').distinct().count()
+
+        migration = {
+            'promoted':   eff.get('growth', 0),
+            'demoted':    eff.get('cooling', 0),
+            'new_users':  new_users,
+            'lost_users': eff.get('lost_to_r0', 0),
+        }
+
+        # ── Источники: кафе vs доставка (непересекающиеся доли qr_scans) ──────
+        from_delivery = services.get_delivery_activators_count(branch_ids, start_date, end_date)
+        from_cafe = max(0, stats.get('qr_scans', 0) - from_delivery)
+
+        return Response({
+            'stats':          stats,
+            'reviews':        reviews,
+            'rf_summary':     rf_summary,
+            'segment_counts': segment_counts,
+            'migration':      migration,
+            'sources':        {'from_cafe': from_cafe, 'from_delivery': from_delivery},
+            'ai_summary':     '',
+        })
+
+
 class RecalculateRFView(APIView):
     """
     POST /api/v1/analytics/rf/recalculate/
