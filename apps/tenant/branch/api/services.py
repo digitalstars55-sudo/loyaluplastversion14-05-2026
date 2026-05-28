@@ -340,6 +340,7 @@ def handle_vk_callback(data: dict) -> None:
         msg_obj    = data.get('object', {})
         message    = msg_obj.get('message', msg_obj)
         from_id    = message.get('from_id')
+        peer_id    = message.get('peer_id')
         message_id = message.get('id')
         text       = (message.get('text') or '').strip()
         if from_id and from_id > 0 and message_id and text:
@@ -348,6 +349,35 @@ def handle_vk_callback(data: dict) -> None:
                 from_id=from_id,
                 message_id=message_id,
                 text=text,
+            )
+        elif from_id and from_id < 0 and peer_id and peer_id > 0 and message_id and text:
+            # Некоторые сообщества доставляют исходящие (ответ менеджера) тоже
+            # как message_new с from_id<0 — сохраняем как ответ админа. LU-08.
+            handle_vk_admin_reply_from_poll(
+                group_id=group_id,
+                peer_id=peer_id,
+                message_id=message_id,
+                text=text,
+                vk_date=message.get('date'),
+            )
+
+    elif event == 'message_reply':
+        # Исходящий ответ сообщества/оператора («сервисный отдел»). VK шлёт это
+        # СОБЫТИЕ отдельно от message_new — раньше мы его не слушали, поэтому
+        # ответы менеджера из ВК не попадали в тред админки. LU-08.
+        # from_id = -group_id, peer_id = vk_id гостя, admin_author_id = оператор.
+        msg_obj    = data.get('object', {})
+        message    = msg_obj.get('message', msg_obj)
+        peer_id    = message.get('peer_id')
+        message_id = message.get('id')
+        text       = (message.get('text') or '').strip()
+        if peer_id and peer_id > 0 and message_id and text:
+            handle_vk_admin_reply_from_poll(
+                group_id=group_id,
+                peer_id=peer_id,
+                message_id=message_id,
+                text=text,
+                vk_date=message.get('date'),
             )
 
     elif event in ('group_join', 'group_leave', 'message_allow', 'message_deny'):
