@@ -338,20 +338,18 @@ class GuestListAPIView(APIView):
         except (TypeError, ValueError):
             limit, offset = 10000, 0
 
-        # Только гости подписавшиеся ЧЕРЕЗ ПРИЛОЖЕНИЕ (✓ app)
-        app_client_ids = list(
-            ClientBranch.objects.filter(
-                Q(vk_status__community_via_app=True) | Q(vk_status__newsletter_via_app=True)
-            ).values_list('client_id', flat=True).distinct()
+        # Все гости тенанта (с ClientBranch), сортировка по алфавиту — как в Django-админе
+        all_client_ids = list(
+            ClientBranch.objects.values_list('client_id', flat=True).distinct()
         )
-        qs = Client.objects.filter(pk__in=app_client_ids)
+        qs = Client.objects.filter(pk__in=all_client_ids)
         if search:
             qs = qs.filter(
                 Q(first_name__icontains=search) |
                 Q(last_name__icontains=search) |
                 Q(vk_id__icontains=search)
             )
-        qs = qs.order_by('-created_at')
+        qs = qs.order_by('last_name', 'first_name')
         total = qs.count()
         clients = list(qs[offset:offset + limit])
 
@@ -390,12 +388,15 @@ class GuestListAPIView(APIView):
         # Реальные визиты из ClientBranchVisit (не из GuestRFScore — он кешируется)
         client_visit_count: dict[int, int] = {}
         client_last_visit_dt: dict[int, object] = {}
+        total_visits = 0
         for row in ClientBranchVisit.objects.filter(client_id__in=all_cb_ids).values('client_id').annotate(
             vcnt=Count('pk'), last_v=Max('visited_at')
         ):
             cid = cb_to_client.get(row['client_id'])
             if cid:
-                client_visit_count[cid] = client_visit_count.get(cid, 0) + row['vcnt']
+                cnt = row['vcnt']
+                client_visit_count[cid] = client_visit_count.get(cid, 0) + cnt
+                total_visits += cnt
                 existing = client_last_visit_dt.get(cid)
                 if existing is None or row['last_v'] > existing:
                     client_last_visit_dt[cid] = row['last_v']
@@ -422,7 +423,7 @@ class GuestListAPIView(APIView):
                 'coins':        client_coins.get(c.pk, 0),
             })
 
-        return Response({'guests': guests, 'total': total})
+        return Response({'guests': guests, 'total': total, 'total_visits': total_visits})
 
 
 class GuestDetailAPIView(APIView):
