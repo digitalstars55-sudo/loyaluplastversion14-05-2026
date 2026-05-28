@@ -62,3 +62,31 @@ def send_expo_push(
     except Exception as e:
         logger.exception('Expo push send failed: %s', e)
         return {'sent': 0, 'errors': [str(e)]}
+
+
+def log_notification(users, ntype: str, title: str, body: str, data: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Записать уведомление в историю (Notification) для каждого пользователя.
+    Best-effort: ошибки не пробрасываются — логирование не должно ломать отправку.
+    Вызывать в public schema (Notification живёт там же где User).
+    """
+    try:
+        from django_tenants.utils import schema_context
+        from apps.shared.users.models import Notification
+
+        user_list = list(users)
+        if not user_list:
+            return
+        with schema_context('public'):
+            Notification.objects.bulk_create([
+                Notification(
+                    user=u,
+                    type=ntype,
+                    title=title or '',
+                    body=body or '',
+                    data=data or {},
+                )
+                for u in user_list
+            ])
+    except Exception as e:
+        logger.warning('log_notification failed: %s', e)

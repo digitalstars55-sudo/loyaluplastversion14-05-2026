@@ -105,3 +105,37 @@ class PushToken(models.Model):
             models.Index(fields=['user', 'platform']),
             models.Index(fields=['-last_seen_at']),
         ]
+
+
+class Notification(models.Model):
+    """
+    История push-уведомлений пользователя мобильного приложения.
+    Пишется при каждой отправке пуша (см. log_notification в push.py),
+    чтобы мобилка показывала ВСЕ уведомления независимо от того, было ли
+    приложение открыто/в фоне — системный трей клиент прочитать не может.
+
+    Лежит в public schema (как User/PushToken) — доступна из любого тенанта.
+    """
+    user = models.ForeignKey(
+        'users.User',
+        on_delete=models.CASCADE,
+        related_name='notifications',
+        verbose_name='Пользователь',
+    )
+    type = models.CharField('Тип', max_length=40)
+    title = models.CharField('Заголовок', max_length=255, blank=True)
+    body = models.TextField('Текст', blank=True)
+    data = models.JSONField('Доп. данные', default=dict, blank=True)
+    read_at = models.DateTimeField('Прочитано', null=True, blank=True)
+    created_at = models.DateTimeField('Создано', auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.user_id} · {self.type} · {self.created_at:%Y-%m-%d %H:%M}'
+
+    class Meta:
+        verbose_name = 'Уведомление'
+        verbose_name_plural = 'Уведомления'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+        ]

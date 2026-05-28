@@ -5,7 +5,10 @@ URL-конфиг мобильного auth API. Подключается из ma
 
 from django.urls import path
 
-from .views import LoginAPIView, LogoutAPIView, MeAPIView, PushRegisterAPIView, RefreshAPIView
+from .views import (
+    LoginAPIView, LogoutAPIView, MeAPIView, PushRegisterAPIView, RefreshAPIView,
+    NotificationListAPIView,
+)
 
 urlpatterns = [
     path('auth/login/',    LoginAPIView.as_view(),    name='mobile-auth-login'),
@@ -14,4 +17,5 @@ urlpatterns = [
     path('me/',            MeAPIView.as_view(),       name='mobile-me'),
     path('auth/refresh/',  RefreshAPIView.as_view(),  name='mobile-auth-refresh'),
     path('push/register/', PushRegisterAPIView.as_view(), name='mobile-push-register'),
+    path('notifications/', NotificationListAPIView.as_view(), name='mobile-notifications'),
 ]

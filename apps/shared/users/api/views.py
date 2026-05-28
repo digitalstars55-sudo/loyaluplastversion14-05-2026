@@ -210,3 +210,53 @@ class PushRegisterAPIView(APIView):
             token=ser.validated_data['token'],
         ).delete()
         return Response({'ok': True})
+
+
+class NotificationListAPIView(APIView):
+    """
+    GET /api/v1/notifications/?limit=50 — история уведомлений текущего пользователя.
+    POST /api/v1/notifications/ {ids?: [int], all?: true} — отметить прочитанными.
+
+    Notification лежит в public schema, поэтому работает из любого тенант-домена.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django_tenants.utils import schema_context
+        from apps.shared.users.models import Notification
+
+        try:
+            limit = min(int(request.query_params.get('limit', 50)), 200)
+        except (TypeError, ValueError):
+            limit = 50
+
+        with schema_context('public'):
+            qs = Notification.objects.filter(user=request.user).order_by('-created_at')[:limit]
+            items = [{
+                'id':          n.pk,
+                'type':        n.type,
+                'title':       n.title,
+                'body':        n.body,
+                'data':        n.data or {},
+                'read':        n.read_at is not None,
+                'created_at':  n.created_at.isoformat(),
+            } for n in qs]
+            unread = Notification.objects.filter(user=request.user, read_at__isnull=True).count()
+
+        return Response({'notifications': items, 'unread': unread})
+
+    def post(self, request):
+        from django_tenants.utils import schema_context
+        from django.utils import timezone
+        from apps.shared.users.models import Notification
+
+        ids = request.data.get('ids')
+        mark_all = request.data.get('all', False)
+
+        with schema_context('public'):
+            qs = Notification.objects.filter(user=request.user, read_at__isnull=True)
+            if not mark_all and ids:
+                qs = qs.filter(pk__in=ids)
+            qs.update(read_at=timezone.now())
+
+        return Response({'ok': True})

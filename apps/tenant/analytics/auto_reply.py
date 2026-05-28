@@ -180,25 +180,26 @@ def push_draft_ready(schema_name: str, tenant_name: str, conversation_id: int) -
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
-        admin_users = User.objects.filter(
+        admin_users = list(User.objects.filter(
             Q(role='network_admin') | Q(role='superadmin') | Q(is_superuser=True),
             companies__schema_name=schema_name,
-        ).distinct()
+        ).distinct())
         tokens = list(
             PushToken.objects.filter(user__in=admin_users)
             .values_list('token', flat=True)
         )
 
+    title = 'Готов AI-черновик'
+    body = f'{tenant_name}: новый отзыв ждёт ответа. Черновик готов.'
+    data = {'type': 'draft_ready', 'review_id': conversation_id}
+
+    from apps.shared.users.push import send_expo_push, log_notification
+    log_notification(admin_users, 'draft_ready', title, body, data)
+
     if not tokens:
         return {'sent': 0, 'reason': 'no_tokens'}
 
-    from apps.shared.users.push import send_expo_push
-    return send_expo_push(
-        tokens=tokens,
-        title='Готов AI-черновик',
-        body=f'{tenant_name}: новый отзыв ждёт ответа. Черновик готов.',
-        data={'type': 'draft_ready', 'review_id': conversation_id},
-    )
+    return send_expo_push(tokens=tokens, title=title, body=body, data=data)
 
 
 def push_chat_message(
@@ -220,30 +221,26 @@ def push_chat_message(
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
-        admin_users = User.objects.filter(
+        admin_users = list(User.objects.filter(
             Q(role='network_admin') | Q(role='superadmin') | Q(is_superuser=True),
             companies__schema_name=schema_name,
-        ).distinct()
+        ).distinct())
         tokens = list(
             PushToken.objects.filter(user__in=admin_users)
             .values_list('token', flat=True)
         )
 
+    body_text = (preview if preview else 'Новое сообщение в саппорт-чате')[:200]
+    title = manager_name or 'Менеджер'
+    data = {'type': 'chat_message', 'message_id': message_id, 'tenant_name': tenant_name}
+
+    from apps.shared.users.push import send_expo_push, log_notification
+    log_notification(admin_users, 'chat_message', title, body_text, data)
+
     if not tokens:
         return {'sent': 0, 'reason': 'no_tokens'}
 
-    body_text = preview if preview else 'Новое сообщение в саппорт-чате'
-    from apps.shared.users.push import send_expo_push
-    return send_expo_push(
-        tokens=tokens,
-        title=manager_name or 'Менеджер',
-        body=body_text[:200],
-        data={
-            'type': 'chat_message',
-            'message_id': message_id,
-            'tenant_name': tenant_name,
-        },
-    )
+    return send_expo_push(tokens=tokens, title=title, body=body_text, data=data)
 
 def push_review_new(
     schema_name: str,
@@ -264,27 +261,24 @@ def push_review_new(
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
-        admin_users = User.objects.filter(
+        admin_users = list(User.objects.filter(
             Q(role='network_admin') | Q(role='superadmin') | Q(is_superuser=True),
             companies__schema_name=schema_name,
-        ).distinct()
+        ).distinct())
         tokens = list(
             PushToken.objects.filter(user__in=admin_users)
             .values_list('token', flat=True)
         )
 
+    label = 'из приложения' if source == 'APP' else 'из ВКонтакте'
+    title = 'Новый отзыв'
+    body = f'{tenant_name}: новый отзыв {label}. Открой и ответь.'
+    data = {'type': 'review_new', 'review_id': conversation_id, 'source': source}
+
+    from apps.shared.users.push import send_expo_push, log_notification
+    log_notification(admin_users, 'review_new', title, body, data)
+
     if not tokens:
         return {'sent': 0, 'reason': 'no_tokens'}
 
-    label = 'из приложения' if source == 'APP' else 'из ВКонтакте'
-    from apps.shared.users.push import send_expo_push
-    return send_expo_push(
-        tokens=tokens,
-        title='Новый отзыв',
-        body=f'{tenant_name}: новый отзыв {label}. Открой и ответь.',
-        data={
-            'type': 'review_new',
-            'review_id': conversation_id,
-            'source': source,
-        },
-    )
+    return send_expo_push(tokens=tokens, title=title, body=body, data=data)
