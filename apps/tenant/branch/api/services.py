@@ -1168,8 +1168,16 @@ def handle_vk_admin_reply_from_poll(
     # вне контекста треда — пропускаем (не создаём conv «из ниоткуда»).
     # У старых гостей может быть несколько conv (legacy с branch=X +
     # новый с branch=None из Fix A 7c3e89e) — берём самый свежий.
+    # Ответ менеджера в ВК относится к VK-треду гостя. Гостевые VK-сообщения
+    # всегда сохраняются в conv с branch=None (handle_vk_incoming_message), поэтому
+    # СНАЧАЛА ищем именно branch=None тред — иначе ответ уезжает в APP-тред
+    # (branch=X) и в админке не виден рядом с сообщениями гостя (LU-08, asap_orel).
     conv = (
         TestimonialConversation.objects
+        .filter(vk_sender_id=vk_sender_id, branch__isnull=True)
+        .order_by('-last_message_at', '-created_at')
+        .first()
+        or TestimonialConversation.objects
         .filter(vk_sender_id=vk_sender_id)
         .order_by('-last_message_at', '-created_at')
         .first()
