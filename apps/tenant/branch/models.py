@@ -938,6 +938,10 @@ class TestimonialConversation(TimeStampedModel):
     last_message_at = models.DateTimeField(
         'Последнее сообщение', null=True, blank=True, db_index=True,
     )
+    last_reminded_at = models.DateTimeField(
+        'Последнее напоминание', null=True, blank=True,
+        help_text='Когда последний раз отправляли push-напоминание о неотвеченном черновике. Не чаще 1 раза в сутки.',
+    )
 
     def __str__(self):
         ident = str(self.client) if self.client_id else (f'VK {self.vk_sender_id}' if self.vk_sender_id else '?')

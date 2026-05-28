@@ -267,6 +267,7 @@ def send_draft_reminders_task() -> dict:
     """
     from django.utils import timezone
     from datetime import timedelta
+    from django.db.models import Q
     from django_tenants.utils import get_tenant_model, schema_context
     from apps.tenant.analytics.auto_reply import push_draft_ready
 
@@ -283,17 +284,25 @@ def send_draft_reminders_task() -> dict:
                 if not cfg.enabled:
                     continue
                 reminder_min = int(cfg.reminder_minutes or 180)
-                cutoff = timezone.now() - timedelta(minutes=reminder_min)
+                now = timezone.now()
+                cutoff = now - timedelta(minutes=reminder_min)
+                day_ago = now - timedelta(hours=24)
 
+                # Неотвеченные отзывы с черновиком старше reminder_minutes,
+                # которым НЕ напоминали последние 24ч (1 раз в сутки, без спама).
                 qs = TestimonialConversation.objects.filter(
                     is_replied=False,
                     ai_draft_rejected=False,
                     updated_at__lt=cutoff,
+                ).filter(
+                    Q(last_reminded_at__isnull=True) | Q(last_reminded_at__lt=day_ago)
                 ).exclude(ai_draft='').exclude(ai_draft__isnull=True)
                 ids = list(qs.values_list('pk', flat=True)[:50])
                 summary['tenants'] += 1
             for conv_id in ids:
                 push_draft_ready(tenant.schema_name, tenant.name, conv_id)
+                with schema_context(tenant.schema_name):
+                    TestimonialConversation.objects.filter(pk=conv_id).update(last_reminded_at=timezone.now())
                 summary['reminders_sent'] += 1
         except Exception as e:
             logger.warning(
