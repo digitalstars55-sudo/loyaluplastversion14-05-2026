@@ -282,3 +282,37 @@ def push_review_new(
         return {'sent': 0, 'reason': 'no_tokens'}
 
     return send_expo_push(tokens=tokens, title=title, body=body, data=data)
+
+
+def push_daily_codes(schema_name: str, tenant_name: str, body: str) -> dict:
+    """
+    Отправить push 'daily_codes' админам тенанта — утренняя сводка кодов дня.
+    Вызывается из beat-таски push_daily_codes_task в 08:00 MSK.
+    """
+    from django_tenants.utils import schema_context
+    from django.db.models import Q
+
+    with schema_context('public'):
+        from apps.shared.users.models import PushToken
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+
+        admin_users = list(User.objects.filter(
+            Q(role='network_admin') | Q(role='superadmin') | Q(is_superuser=True),
+            companies__schema_name=schema_name,
+        ).distinct())
+        tokens = list(
+            PushToken.objects.filter(user__in=admin_users)
+            .values_list('token', flat=True)
+        )
+
+    title = 'Коды дня обновлены'
+    data = {'type': 'daily_codes'}
+
+    from apps.shared.users.push import send_expo_push, log_notification
+    log_notification(admin_users, 'daily_codes', title, body, data)
+
+    if not tokens:
+        return {'sent': 0, 'reason': 'no_tokens'}
+
+    return send_expo_push(tokens=tokens, title=title, body=body[:250], data=data)

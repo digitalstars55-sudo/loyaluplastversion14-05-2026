@@ -65,6 +65,11 @@ app.conf.beat_schedule = {
         'task': 'apps.tenant.branch.tasks.generate_daily_codes_task',
         'schedule': crontab(hour=3, minute=0),
     },
+    # Push daily-codes summary to admins at 08:00 MSK (codes ready since 03:00)
+    'push-daily-codes': {
+        'task': 'apps.tenant.branch.tasks.push_daily_codes_task',
+        'schedule': crontab(hour=8, minute=0),
+    },
     # VK membership catchup: catch group_join/leave/message_allow/deny missed while server was down
     'vk-membership-catchup': {
         'task': 'apps.tenant.branch.tasks.vk_membership_catchup_task',

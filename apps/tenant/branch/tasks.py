@@ -230,6 +230,51 @@ def generate_daily_codes_task() -> dict:
     return {'created': created_total, 'skipped': skipped_total, 'date': str(today)}
 
 
+@shared_task(name='apps.tenant.branch.tasks.push_daily_codes_task')
+def push_daily_codes_task() -> dict:
+    """
+    Celery Beat task: утром (08:00 MSK) шлёт админам каждого тенанта push
+    со сводкой кодов дня. Коды генерируются в 03:00, к 08:00 уже готовы.
+    """
+    from django_tenants.utils import get_tenant_model, schema_context
+    from apps.tenant.branch.models import current_code_date
+    from apps.tenant.analytics.auto_reply import push_daily_codes
+
+    PURPOSE_LABEL = {'BIRTHDAY': 'ДР', 'SUPERPRIZE': 'Игра', 'OTHER': 'Квест'}
+
+    TenantModel = get_tenant_model()
+    today = current_code_date()
+    sent_total = 0
+
+    for tenant in TenantModel.objects.exclude(schema_name='public'):
+        body = ''
+        with schema_context(tenant.schema_name):
+            from apps.tenant.branch.models import DailyCode
+            codes = list(
+                DailyCode.objects.filter(valid_date=today, branch__is_active=True)
+                .select_related('branch')
+                .order_by('branch__name')
+            )
+            if not codes:
+                continue
+            by_branch: dict[str, list[str]] = {}
+            for c in codes:
+                name = c.branch.name if c.branch_id else '—'
+                by_branch.setdefault(name, []).append(f'{PURPOSE_LABEL.get(c.purpose, c.purpose)} {c.code}')
+            parts = [f'{name}: {" · ".join(items)}' for name, items in by_branch.items()]
+            body = ' | '.join(parts)
+
+        if body:
+            try:
+                res = push_daily_codes(tenant.schema_name, getattr(tenant, 'name', tenant.schema_name), body)
+                sent_total += res.get('sent', 0)
+            except Exception as e:
+                logger.warning('push_daily_codes failed for %s: %s', tenant.schema_name, e)
+
+    logger.info('push_daily_codes: sent=%d date=%s', sent_total, today)
+    return {'sent': sent_total, 'date': str(today)}
+
+
 @shared_task(name='apps.tenant.branch.tasks.poll_all_vk_messages_task')
 def poll_all_vk_messages_task() -> dict:
     """
