@@ -28,3 +28,4 @@ prod.sql
 backups/
 backup_*.sql
 host-pre-rsync-*.tar.gz
+.DS_Store
