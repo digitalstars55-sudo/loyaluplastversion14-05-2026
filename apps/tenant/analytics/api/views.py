@@ -777,6 +777,38 @@ class CampaignsHistoryAPIView(APIView):
         return Response({'campaigns': campaigns})
 
 
+class RFSegmentListAPIView(APIView):
+    """
+    GET /api/v1/analytics/segments/
+
+    Список RF-сегментов для выбора аудитории рассылки.
+    Возвращает глобальные сегменты (branch=null) + число гостей в каждом.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.tenant.analytics.models import RFSegment, GuestRFScore
+        from django.db.models import Count
+
+        # Количество гостей в каждом сегменте
+        counts = {
+            row['segment_id']: row['cnt']
+            for row in GuestRFScore.objects.values('segment_id').annotate(cnt=Count('pk'))
+        }
+
+        segments = RFSegment.objects.filter(branch__isnull=True).order_by('pk')
+        return Response({'segments': [
+            {
+                'id':    s.pk,
+                'code':  s.code,
+                'name':  s.name,
+                'emoji': s.emoji,
+                'count': counts.get(s.pk, 0),
+            }
+            for s in segments
+        ]})
+
+
 class CampaignDeleteAPIView(APIView):
     """
     DELETE /api/v1/analytics/campaigns/<pk>/

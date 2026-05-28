@@ -338,7 +338,9 @@ class GuestListAPIView(APIView):
         except (TypeError, ValueError):
             limit, offset = 200, 0
 
-        qs = Client.objects.filter(clientbranch__isnull=False).distinct()
+        # ClientBranch.client FK имеет related_name='branch_profiles'
+        client_ids_in_tenant = ClientBranch.objects.values_list('client_id', flat=True)
+        qs = Client.objects.filter(pk__in=client_ids_in_tenant)
         if search:
             qs = qs.filter(
                 Q(first_name__icontains=search) |
