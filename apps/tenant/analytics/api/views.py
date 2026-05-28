@@ -751,7 +751,7 @@ class CampaignsHistoryAPIView(APIView):
             image_uri = ''
             if br and br.image:
                 try:
-                    image_uri = br.image.url
+                    image_uri = request.build_absolute_uri(br.image.url)
                 except Exception:
                     image_uri = ''
 
@@ -775,6 +775,32 @@ class CampaignsHistoryAPIView(APIView):
             })
 
         return Response({'campaigns': campaigns})
+
+
+class CampaignDeleteAPIView(APIView):
+    """
+    DELETE /api/v1/analytics/campaigns/<pk>/
+
+    Удалить одну рассылку (BroadcastSend). Нельзя удалить со статусом running.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk: int):
+        from apps.tenant.senler.models import BroadcastSend
+
+        try:
+            send = BroadcastSend.objects.get(pk=pk)
+        except BroadcastSend.DoesNotExist:
+            return Response({'detail': 'Рассылка не найдена'}, status=status.HTTP_404_NOT_FOUND)
+
+        if send.status == 'running':
+            return Response(
+                {'detail': 'Нельзя удалить запущенную рассылку — дождитесь завершения.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        send.delete()
+        return Response({'ok': True})
 
 
 class SlowStatsAPIView(APIView):

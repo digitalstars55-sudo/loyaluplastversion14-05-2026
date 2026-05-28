@@ -314,6 +314,97 @@ def _mobile_txn_type(tx) -> str:
     return 'EARN' if tx.type == 'income' else 'SPEND'
 
 
+class GuestListAPIView(APIView):
+    """
+    GET /api/v1/guests/?search=&limit=100&offset=0
+
+    Все гости тенанта с RF-метриками, монетами и датой последнего визита.
+    """
+    permission_classes = [IsAuthenticated]
+
+    _MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
+
+    def get(self, request):
+        from datetime import date, timedelta
+        from django.db.models import Q, Sum
+        from apps.shared.guest.models import Client
+        from apps.tenant.branch.models import ClientBranch, CoinTransaction
+        from apps.tenant.analytics.models import GuestRFScore
+
+        search = request.query_params.get('search', '').strip()
+        try:
+            limit = min(int(request.query_params.get('limit', 200)), 500)
+            offset = max(int(request.query_params.get('offset', 0)), 0)
+        except (TypeError, ValueError):
+            limit, offset = 200, 0
+
+        qs = Client.objects.filter(clientbranch__isnull=False).distinct()
+        if search:
+            qs = qs.filter(
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(vk_id__icontains=search)
+            )
+        qs = qs.order_by('-pk')
+        total = qs.count()
+        clients = list(qs[offset:offset + limit])
+
+        if not clients:
+            return Response({'guests': [], 'total': total})
+
+        client_ids = [c.pk for c in clients]
+
+        # RF-метрики
+        scores = {
+            s.client_id: s
+            for s in GuestRFScore.objects.filter(client_id__in=client_ids)
+        }
+
+        # ClientBranch PKs
+        cb_map: dict[int, list[int]] = {}
+        for cb in ClientBranch.objects.filter(client_id__in=client_ids).values('client_id', 'pk'):
+            cb_map.setdefault(cb['client_id'], []).append(cb['pk'])
+
+        all_cb_ids = [pk for pks in cb_map.values() for pk in pks]
+
+        # Монеты per CB → суммируем по клиенту
+        cb_balance: dict[int, int] = {}
+        for row in CoinTransaction.objects.filter(client_id__in=all_cb_ids).values('client_id').annotate(
+            income=Sum('amount', filter=Q(type='income')),
+            expense=Sum('amount', filter=Q(type='expense')),
+        ):
+            cb_balance[row['client_id']] = (row['income'] or 0) - (row['expense'] or 0)
+        client_coins: dict[int, int] = {
+            cid: sum(cb_balance.get(pk, 0) for pk in pks)
+            for cid, pks in cb_map.items()
+        }
+
+        today = date.today()
+        guests = []
+        for c in clients:
+            score = scores.get(c.pk)
+            recency_days = frequency = 0
+            if score:
+                recency_days = score.recency_days or 0
+                frequency = score.frequency or 0
+            if recency_days > 0:
+                d = today - timedelta(days=recency_days)
+                last_visit = f"{d.day} {self._MONTHS[d.month - 1]}"
+            else:
+                last_visit = '—'
+            guests.append({
+                'vk_id':        str(c.vk_id),
+                'first_name':   c.first_name or '',
+                'last_name':    c.last_name or '',
+                'last_visit':   last_visit,
+                'frequency':    frequency,
+                'recency_days': recency_days,
+                'coins':        client_coins.get(c.pk, 0),
+            })
+
+        return Response({'guests': guests, 'total': total})
+
+
 class GuestDetailAPIView(APIView):
     """
     GET /api/v1/guests/<vk_id>/
