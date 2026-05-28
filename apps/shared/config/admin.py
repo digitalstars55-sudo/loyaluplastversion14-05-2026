@@ -22,6 +22,30 @@ class ClientConfigForm(forms.ModelForm):
         model = ClientConfig
         fields = '__all__'
 
+    def clean_logotype_image(self):
+        """Валидируем логотип только при НОВОЙ загрузке (не трогаем существующий)."""
+        from django.core.files.uploadedfile import UploadedFile
+        image = self.cleaned_data.get('logotype_image')
+        if not isinstance(image, UploadedFile):
+            return image  # файл не менялся — пропускаем
+        if image.size > 1024 * 1024:
+            raise forms.ValidationError('Логотип должен быть не больше 1 МБ.')
+        name = (getattr(image, 'name', '') or '').lower()
+        if not name.endswith('.png'):
+            raise forms.ValidationError('Логотип должен быть в формате PNG (с прозрачным фоном).')
+        try:
+            from PIL import Image
+            image.seek(0)
+            w, h = Image.open(image).size
+            image.seek(0)
+        except Exception:
+            return image  # не смогли прочитать размеры — не блокируем
+        if max(w, h) and abs(w - h) > max(w, h) * 0.05:
+            raise forms.ValidationError(f'Логотип должен быть квадратным (загружено {w}×{h}, рекомендуется 512×512).')
+        if w < 256 or w > 2048:
+            raise forms.ValidationError(f'Сторона логотипа — 256–2048 px (загружено {w}×{h}, рекомендуется 512×512).')
+        return image
+
     def clean(self):
         cleaned_data = super().clean()
         pos_type = cleaned_data.get('pos_type')
@@ -47,18 +71,45 @@ class ClientConfigAdmin(admin.ModelAdmin):
     list_filter = ('pos_type',)
     search_fields = ('company__name', 'vk_group_name')
     readonly_fields = ('logotype_preview', 'coin_preview')
+    actions = ('apply_birthday_window_to_branches',)
+
+    @admin.action(description='Применить окно ДР ко всем точкам сети')
+    def apply_birthday_window_to_branches(self, request, queryset):
+        from django.contrib import messages
+        from django_tenants.utils import schema_context
+        total_branches = 0
+        for cfg in queryset:
+            company = cfg.company
+            schema = getattr(company, 'schema_name', None)
+            if not schema:
+                continue
+            try:
+                with schema_context(schema):
+                    from apps.tenant.branch.models import BranchConfig
+                    n = BranchConfig.objects.update(birthday_window_days=cfg.birthday_window_days)
+                    total_branches += n
+            except Exception as e:
+                self.message_user(
+                    request, f'{company.name}: ошибка — {e}', level=messages.ERROR,
+                )
+        self.message_user(
+            request,
+            f'Окно ДР ({", ".join(str(c.birthday_window_days) for c in queryset)} дн.) '
+            f'применено к {total_branches} точкам.',
+            level=messages.SUCCESS,
+        )
 
     fieldsets = (
         (None, {
             'fields': ('company',),
         }),
         ('Брендинг', {
-            'fields': ('logotype_image', 'logotype_preview', 'coin_image', 'coin_preview', 'brand_color'),
+            'fields': ('logotype_image', 'logotype_preview', 'coin_image', 'coin_preview', 'brand_color', 'brand_color_secondary'),
             'description': (
-                'Опционально. Логотип и монету загружайте при подключении '
-                'платного брендинга. Главный цвет (#RRGGBB) перекрашивает '
-                'весь VK мини-апп — производные оттенки генерируются '
-                'автоматически из этого значения.'
+                'Опционально. Логотип — PNG с прозрачным фоном, квадрат '
+                '(512×512), до 1 МБ. Главный и акцентный цвета (#RRGGBB) '
+                'перекрашивают весь VK мини-апп — производные оттенки '
+                'генерируются автоматически.'
             ),
         }),
         ('ВКонтакте', {
@@ -70,6 +121,15 @@ class ClientConfigAdmin(admin.ModelAdmin):
             'description': (
                 'Тексты-подсказки, которые гость видит в приложении. '
                 'Точка может переопределить их в своих настройках.'
+            ),
+        }),
+        ('Подарок на день рождения', {
+            'fields': ('birthday_window_days',),
+            'description': (
+                'Окно подарка ДР на уровне всей сети (±дней). Точка может '
+                'переопределить в своих настройках. Чтобы проставить это значение '
+                'сразу всем точкам — выделите эту запись в списке и выберите действие '
+                '«Применить окно ДР ко всем точкам сети».'
             ),
         }),
         ('Кассовая система', {

@@ -179,6 +179,7 @@ def start_game(vk_id: int, branch_id: int, code: str | None = None, delivery: bo
         return {'session_token': token, 'score': 10}
 
     # Attempt 3+ → require daily code unless the guest came via delivery
+    validated_code: str | None = None
     if attempt_num >= 3:
         has_active_delivery = client_branch.activated_deliveries.filter(
             expires_at__gt=timezone.now(),
@@ -188,6 +189,7 @@ def start_game(vk_id: int, branch_id: int, code: str | None = None, delivery: bo
             if not code:
                 raise CodeRequired
             _validate_game_code(client_branch.branch, code)
+            validated_code = code.upper().strip()
 
     coins, score = _coin_reward_for(attempt_num)
     token = signing.dumps({
@@ -196,6 +198,7 @@ def start_game(vk_id: int, branch_id: int, code: str | None = None, delivery: bo
         'rt':    'c',       # reward type: coin
         'ra':    coins,     # reward amount
         'dl':    delivery,  # delivery flag
+        'gc':    validated_code,  # validated game code (re-checked at claim, LU-05)
     })
     return {'session_token': token, 'score': score}
 
@@ -265,6 +268,19 @@ def claim_game(session_token: str, employee_id: int | None = None, delivery: boo
         )
         if active_delivery is None:
             raise DeliveryCodeNotActivated
+
+    # Daily-code gate (LU-05): re-validated on EVERY claim, independently of the
+    # subscription branch. start_game embeds the validated code in the token;
+    # here we re-check it against today's code so the path
+    # «unsubscribed → resubscribed → re-claim with old token» cannot skip it.
+    # Delivery sessions with an active delivery code bypass the code (as in start_game).
+    attempt_num = current_count + 1
+    code_bypassed_by_delivery = is_delivery_session and active_delivery is not None
+    if attempt_num >= 3 and not code_bypassed_by_delivery:
+        embedded_code = payload.get('gc')
+        if not embedded_code:
+            raise CodeRequired
+        _validate_game_code(client_branch.branch, embedded_code)
 
     # VK subscription gate: guest must be subscribed to BOTH the community
     # and newsletter before the prize is awarded.  If not, we return early

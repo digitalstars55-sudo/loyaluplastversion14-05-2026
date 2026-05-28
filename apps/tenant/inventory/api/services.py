@@ -93,11 +93,33 @@ def _is_in_birthday_window(birth_date: date, today: date, window_days: int | Non
     return abs(delta) <= window_days
 
 
+def _network_birthday_window() -> int | None:
+    """Сетевое значение окна ДР из ClientConfig текущего тенанта (или None)."""
+    try:
+        from django.db import connection
+        from apps.shared.config.models import ClientConfig
+        company = getattr(connection, 'tenant', None)
+        if company is None:
+            return None
+        cfg = ClientConfig.objects.filter(company=company).first()
+        return cfg.birthday_window_days if cfg else None
+    except Exception:
+        return None
+
+
 def _branch_birthday_window(cb: ClientBranch) -> int:
-    """Возвращает birthday_window_days из настроек точки (с фолбэком на хардкод)."""
+    """
+    Резолв окна подарка ДР (LU-13): точка → сеть → хардкод.
+    - BranchConfig.birthday_window_days (если задано на точке)
+    - ClientConfig.birthday_window_days (сетевое значение)
+    - BIRTHDAY_WINDOW_DAYS (константа-фолбэк)
+    """
     cfg = getattr(cb.branch, 'config', None)
     if cfg is not None and getattr(cfg, 'birthday_window_days', None) is not None:
         return cfg.birthday_window_days
+    net = _network_birthday_window()
+    if net is not None:
+        return net
     return BIRTHDAY_WINDOW_DAYS
 
 

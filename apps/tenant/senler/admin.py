@@ -412,12 +412,23 @@ class BroadcastSendAdmin(admin.ModelAdmin):
 
     def _delete_in_vk_view(self, request, pk):
         from apps.tenant.senler.services import delete_broadcast_send_in_vk
+        from django.template.response import TemplateResponse
         send = BroadcastSend.objects.get(pk=pk)
+        back_url = reverse(f'{self.admin_site.name}:senler_broadcastsend_change', args=[pk])
         if request.method != 'POST':
-            self.message_user(request, 'Удаление выполняется только через POST (нажми кнопку с confirm)', level=messages.WARNING)
-            return HttpResponseRedirect(
-                reverse(f'{self.admin_site.name}:senler_broadcastsend_change', args=[pk])
-            )
+            # GET → страница подтверждения с настоящей {% csrf_token %} формой
+            # (как у редактирования — LU-12, чтобы не падать на CSRF 403).
+            return TemplateResponse(request, 'admin/senler/broadcastsend_confirm_action.html', {
+                'send': send,
+                'title': f'Удалить рассылку из ВК — {send}',
+                'action_title': 'Удалить сообщения из ВК',
+                'warning': 'Сообщения будут удалены у всех получателей (в пределах 24ч окна VK API). Действие необратимо.',
+                'btn_label': '🗑️ Удалить из ВК',
+                'btn_color': '#dc3545',
+                'confirm_text': 'Удалить сообщения из ВК у всех получателей? Действие необратимо.',
+                'opts': self.model._meta,
+                'back_url': back_url,
+            })
         result = delete_broadcast_send_in_vk(send)
         msg = f'Удалено в ВК: {result["deleted"]}; пропущено: {len(result["skipped"])}; ошибок: {len(result["errors"])}'
         if result['errors']:
@@ -433,7 +444,21 @@ class BroadcastSendAdmin(admin.ModelAdmin):
         )
 
     def _cancel_view(self, request, pk):
+        from django.template.response import TemplateResponse
         send = BroadcastSend.objects.get(pk=pk)
+        back_url = reverse(f'{self.admin_site.name}:senler_broadcastsend_change', args=[pk])
+        if request.method != 'POST':
+            return TemplateResponse(request, 'admin/senler/broadcastsend_confirm_action.html', {
+                'send': send,
+                'title': f'Отменить рассылку — {send}',
+                'action_title': 'Отменить рассылку',
+                'warning': 'Рассылка ещё не была отправлена. Отмена остановит её запуск.',
+                'btn_label': '⛔ Отменить рассылку',
+                'btn_color': '#d97706',
+                'confirm_text': 'Отменить эту рассылку? Она ещё не была отправлена.',
+                'opts': self.model._meta,
+                'back_url': back_url,
+            })
         if send.status not in (SendStatus.PENDING, SendStatus.RUNNING):
             self.message_user(request, f'Нельзя отменить — статус «{send.get_status_display()}»', level=messages.WARNING)
         else:
@@ -441,9 +466,7 @@ class BroadcastSendAdmin(admin.ModelAdmin):
             send.error_message = (send.error_message or '') + '\n[Отменено через админку]'
             send.save(update_fields=['status', 'error_message'])
             self.message_user(request, f'Запуск #{pk} отменён', level=messages.SUCCESS)
-        return HttpResponseRedirect(
-            reverse(f'{self.admin_site.name}:senler_broadcastsend_change', args=[pk])
-        )
+        return HttpResponseRedirect(back_url)
 
     def manage_actions(self, obj):
         if not obj or not obj.pk:
@@ -451,39 +474,24 @@ class BroadcastSendAdmin(admin.ModelAdmin):
         edit_url   = reverse(f'{self.admin_site.name}:senler_broadcastsend_edit_in_vk',   args=[obj.pk])
         delete_url = reverse(f'{self.admin_site.name}:senler_broadcastsend_delete_in_vk', args=[obj.pk])
         cancel_url = reverse(f'{self.admin_site.name}:senler_broadcastsend_cancel',       args=[obj.pk])
+        # LU-12: все действия — GET-ссылки на страницы подтверждения с настоящей
+        # Django-формой {% csrf_token %} (как у редактирования). Раньше delete/cancel
+        # были inline-формами с CSRF-токеном через JS-инъекцию → падали на 403.
         buttons = []
         if obj.status in (SendStatus.PENDING, SendStatus.RUNNING):
             buttons.append(
-                f'<form method="post" action="{cancel_url}" style="display:inline-block;margin-right:8px;">'
-                f'<input type="hidden" name="csrfmiddlewaretoken" value="{{csrf}}">'
-                f'<button type="submit" class="button" '
-                f'onclick="return confirm(\'Отменить эту рассылку? Она ещё не была отправлена.\')">'
-                f'⛔ Отменить рассылку</button></form>'
+                f'<a class="button" href="{cancel_url}" style="margin-right:8px;">⛔ Отменить рассылку</a>'
             )
         if obj.status == SendStatus.DONE and obj.sent_count > 0:
             buttons.append(f'<a class="button" href="{edit_url}" style="margin-right:8px;">✏️ Изменить текст в ВК</a>')
             buttons.append(
-                f'<form method="post" action="{delete_url}" style="display:inline-block;margin-right:8px;">'
-                f'<input type="hidden" name="csrfmiddlewaretoken" value="{{csrf}}">'
-                f'<button type="submit" class="button" style="background:#dc3545;color:#fff;border-color:#dc3545;" '
-                f'onclick="return confirm(\'Удалить сообщения из ВК у всех получателей? Действие необратимо.\')">'
-                f'🗑️ Удалить из ВК</button></form>'
+                f'<a class="button" href="{delete_url}" '
+                f'style="margin-right:8px;background:#dc3545;color:#fff;border-color:#dc3545;">'
+                f'🗑️ Удалить из ВК</a>'
             )
         if not buttons:
             return mark_safe('<span style="color:#888;">Нет доступных действий для текущего статуса.</span>')
-        # CSRF token resolved at render via JS so we don't have request here
-        # Use {% csrf_token %}-like marker: replace via JavaScript on page load
-        html = ''.join(buttons)
-        # Inject CSRF: find cookie csrftoken at render-time
-        html = html.replace('{csrf}', '')
-        html += (
-            '<script>'
-            'document.querySelectorAll(\'form[action*="senler_broadcastsend_"] input[name="csrfmiddlewaretoken"]\').forEach(i => '
-            'i.value = document.querySelector(\'[name=csrfmiddlewaretoken]\')?.value || '
-            '(document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || \'\');'
-            '</script>'
-        )
-        return mark_safe(html)
+        return mark_safe(''.join(buttons))
     manage_actions.short_description = 'Действия'
 
     # ── Display helpers ────────────────────────────────────────────────────────

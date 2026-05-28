@@ -132,10 +132,19 @@ def poll_branch_messages(branch_id: int) -> dict:
                 continue
 
             from_id = msg.get('from_id', 0)
-            if from_id < 0:
-                # Outgoing message from community (= manager replied directly in VK
-                # without going through our admin). Save as ADMIN_REPLY and mark
-                # conv as replied so the manager doesn't reply twice. LU-08.
+            # Определяем исходящее (ответ менеджера) НАДЁЖНО — не только по from_id<0.
+            # VK помечает сообщения сообщества полем out=1; админ, ответивший от себя
+            # или через сервисный аккаунт («Service A»), может иметь положительный
+            # from_id, но out=1 и/или admin_author_id. Раньше ловили только from_id<0,
+            # поэтому «Service A»-ответы уходили как гостевые и отзыв висел «Ожидает». LU-08.
+            is_outgoing = (
+                msg.get('out') == 1
+                or from_id < 0
+                or bool(msg.get('admin_author_id'))
+            )
+            if is_outgoing:
+                # Ответ со стороны сообщества (менеджер / сервисный аккаунт).
+                # Сохраняем как ADMIN_REPLY и помечаем conv отвеченным.
                 from apps.tenant.branch.api.services import handle_vk_admin_reply_from_poll
                 saved = handle_vk_admin_reply_from_poll(
                     group_id=group_id,

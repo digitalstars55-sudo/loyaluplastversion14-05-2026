@@ -1,0 +1,29 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Главная</a>
+  &rsaquo; <a href="{{ back_url }}">Запуск рассылки</a>
+  &rsaquo; {{ action_title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:760px;padding:20px;">
+  <h2>{{ action_title }}</h2>
+  <p style="color:#475569;font-size:13px;">
+    Запуск: <strong>{{ send }}</strong>
+    <br>Получателей с отправленными сообщениями: <strong>{{ send.sent_count }}</strong>
+    <br><span style="color:#dc2626;">{{ warning }}</span>
+  </p>
+  <form method="post" style="margin-top:18px;">
+    {% csrf_token %}
+    <div style="display:flex;gap:10px;">
+      <button type="submit" class="button" style="background:{{ btn_color }};color:#fff;border-color:{{ btn_color }};"
+              onclick="return confirm('{{ confirm_text }}');">
+        {{ btn_label }}
+      </button>
+      <a href="{{ back_url }}" class="button">Отмена</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
