@@ -325,10 +325,10 @@ class GuestListAPIView(APIView):
     _MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 
     def get(self, request):
-        from datetime import date, timedelta
-        from django.db.models import Q, Sum
+        from datetime import date, timedelta, timezone as dt_tz
+        from django.db.models import Q, Sum, Count, Max
         from apps.shared.guest.models import Client
-        from apps.tenant.branch.models import ClientBranch, CoinTransaction
+        from apps.tenant.branch.models import ClientBranch, CoinTransaction, ClientBranchVisit
         from apps.tenant.analytics.models import GuestRFScore
 
         search = request.query_params.get('search', '').strip()
@@ -336,11 +336,9 @@ class GuestListAPIView(APIView):
             limit = min(int(request.query_params.get('limit', 10000)), 10000)
             offset = max(int(request.query_params.get('offset', 0)), 0)
         except (TypeError, ValueError):
-            limit, offset = 2000, 0
+            limit, offset = 10000, 0
 
-        # Только гости подписавшиеся ЧЕРЕЗ ПРИЛОЖЕНИЕ (✓ app):
-        # community_via_app=True ИЛИ newsletter_via_app=True на ClientVKStatus.
-        # Это совпадает с метрикой get_total_vk_subscribers() в analytics.
+        # Только гости подписавшиеся ЧЕРЕЗ ПРИЛОЖЕНИЕ (✓ app)
         app_client_ids = list(
             ClientBranch.objects.filter(
                 Q(vk_status__community_via_app=True) | Q(vk_status__newsletter_via_app=True)
@@ -362,20 +360,22 @@ class GuestListAPIView(APIView):
 
         client_ids = [c.pk for c in clients]
 
-        # RF-метрики
+        # RF-сегменты (только для emoji/name — могут быть не у всех)
         scores = {
             s.client_id: s
             for s in GuestRFScore.objects.filter(client_id__in=client_ids)
         }
 
-        # ClientBranch PKs
+        # ClientBranch PKs → маппинг cb_pk → client_pk
         cb_map: dict[int, list[int]] = {}
+        cb_to_client: dict[int, int] = {}
         for cb in ClientBranch.objects.filter(client_id__in=client_ids).values('client_id', 'pk'):
             cb_map.setdefault(cb['client_id'], []).append(cb['pk'])
+            cb_to_client[cb['pk']] = cb['client_id']
 
         all_cb_ids = [pk for pks in cb_map.values() for pk in pks]
 
-        # Монеты per CB → суммируем по клиенту
+        # Монеты
         cb_balance: dict[int, int] = {}
         for row in CoinTransaction.objects.filter(client_id__in=all_cb_ids).values('client_id').annotate(
             income=Sum('amount', filter=Q(type='income')),
@@ -387,18 +387,30 @@ class GuestListAPIView(APIView):
             for cid, pks in cb_map.items()
         }
 
+        # Реальные визиты из ClientBranchVisit (не из GuestRFScore — он кешируется)
+        client_visit_count: dict[int, int] = {}
+        client_last_visit_dt: dict[int, object] = {}
+        for row in ClientBranchVisit.objects.filter(client_id__in=all_cb_ids).values('client_id').annotate(
+            vcnt=Count('pk'), last_v=Max('visited_at')
+        ):
+            cid = cb_to_client.get(row['client_id'])
+            if cid:
+                client_visit_count[cid] = client_visit_count.get(cid, 0) + row['vcnt']
+                existing = client_last_visit_dt.get(cid)
+                if existing is None or row['last_v'] > existing:
+                    client_last_visit_dt[cid] = row['last_v']
+
         today = date.today()
         guests = []
         for c in clients:
-            score = scores.get(c.pk)
-            recency_days = frequency = 0
-            if score:
-                recency_days = score.recency_days or 0
-                frequency = score.frequency or 0
-            if recency_days > 0:
-                d = today - timedelta(days=recency_days)
-                last_visit = f"{d.day} {self._MONTHS[d.month - 1]}"
+            frequency = client_visit_count.get(c.pk, 0)
+            last_v = client_last_visit_dt.get(c.pk)
+            if last_v:
+                last_v_date = last_v.date() if hasattr(last_v, 'date') else last_v
+                recency_days = (today - last_v_date).days
+                last_visit = f"{last_v_date.day} {self._MONTHS[last_v_date.month - 1]}"
             else:
+                recency_days = 0
                 last_visit = '—'
             guests.append({
                 'vk_id':        str(c.vk_id),
