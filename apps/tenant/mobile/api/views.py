@@ -1288,6 +1288,27 @@ def _user_has_perm(user, perm_key: str) -> bool:
     return bool(perms.get(perm_key))
 
 
+# ── RBAC: кто кем может управлять (роли по убыванию: owner > manager > viewer) ──
+_ROLE_RANK = {'owner': 3, 'manager': 2, 'viewer': 1}
+
+
+def _actor_mobile_role(user) -> str:
+    if getattr(user, 'is_superuser', False):
+        return 'owner'
+    return _BACKEND_ROLE_TO_MOBILE.get(getattr(user, 'role', None), 'viewer')
+
+
+def _can_manage_role(actor, target_mobile_role: str) -> bool:
+    """
+    Актор может управлять пользователем только СТРОГО ниже своей роли:
+      owner → manager + viewer, manager → только viewer, viewer → никого.
+    owner-над-owner запрещён (нельзя создать/повысить до owner=superadmin из мобилки).
+    """
+    actor_rank = _ROLE_RANK.get(_actor_mobile_role(actor), 0)
+    target_rank = _ROLE_RANK.get(target_mobile_role, 99)
+    return actor_rank > target_rank
+
+
 def _serialize_staff(user) -> dict:
     profile = _get_or_create_staff_profile(user)
     mob_role = _BACKEND_ROLE_TO_MOBILE.get(user.role, 'viewer')
@@ -1328,7 +1349,13 @@ class StaffListAPIView(APIView):
             # superadmin или явно привязанные к этой компании
             qs = qs.filter(Q(role='superadmin') | Q(companies=tenant)).distinct()
         qs = qs.order_by('pk')
-        return Response({'staff': [_serialize_staff(u) for u in qs]})
+        # RBAC: какие роли актор может назначать/создавать (строго ниже своей).
+        manageable = [r for r in ('manager', 'viewer') if _can_manage_role(request.user, r)]
+        return Response({
+            'staff': [_serialize_staff(u) for u in qs],
+            'actor_role': _actor_mobile_role(request.user),
+            'manageable_roles': manageable,
+        })
 
 
 class StaffDetailAPIView(APIView):
@@ -1352,6 +1379,14 @@ class StaffDetailAPIView(APIView):
 
         profile = _get_or_create_staff_profile(user)
 
+        # RBAC: управлять можно только сотрудником СТРОГО ниже своей роли.
+        target_current_role = _BACKEND_ROLE_TO_MOBILE.get(user.role, 'viewer')
+        if not _can_manage_role(request.user, target_current_role):
+            return Response(
+                {'error': 'Недостаточно прав для управления этим сотрудником.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         changed_user_fields: list[str] = []
         changed_profile_fields: list[str] = []
         before = {
@@ -1369,6 +1404,12 @@ class StaffDetailAPIView(APIView):
                 return Response(
                     {'error': f'role: допустимы {list(_MOBILE_ROLE_TO_BACKEND.keys())}'},
                     status=status.HTTP_400_BAD_REQUEST,
+                )
+            # RBAC: нельзя назначить роль не ниже своей (нет эскалации привилегий).
+            if not _can_manage_role(request.user, mob_role):
+                return Response(
+                    {'error': 'Недостаточно прав назначить эту роль.'},
+                    status=status.HTTP_403_FORBIDDEN,
                 )
             if user.role != backend_role:
                 user.role = backend_role
@@ -1483,6 +1524,12 @@ class StaffInviteAPIView(APIView):
         if mob_role not in ('manager', 'viewer'):
             return Response({'error': 'role: допустимы manager, viewer'},
                             status=status.HTTP_400_BAD_REQUEST)
+        # RBAC: создавать можно только сотрудника СТРОГО ниже своей роли.
+        if not _can_manage_role(request.user, mob_role):
+            return Response(
+                {'error': 'Недостаточно прав для создания сотрудника с этой ролью.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         backend_role = _MOBILE_ROLE_TO_BACKEND[mob_role]
 
         # Генерим уникальный username
