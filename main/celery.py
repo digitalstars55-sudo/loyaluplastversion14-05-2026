@@ -17,10 +17,12 @@ app.autodiscover_tasks()
 # ── Periodic schedule ──────────────────────────────────────────────────────────
 
 app.conf.beat_schedule = {
-    # Poll VK group messages every 30 seconds
+    # Poll VK group messages every 2 minutes (резерв — основной канал теперь
+    # VK Callback message_new/message_reply в реальном времени; поллинг лишь
+    # подстраховка, чтобы не теребить VK API частыми запросами).
     'poll-vk-messages': {
         'task': 'apps.tenant.branch.tasks.poll_all_vk_messages_task',
-        'schedule': 30.0,
+        'schedule': 120.0,
     },
     # Classify all WAITING conversations with AI every 30 seconds
     'reclassify-waiting-reviews': {
