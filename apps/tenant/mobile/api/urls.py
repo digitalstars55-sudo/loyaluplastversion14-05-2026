@@ -31,6 +31,7 @@ from .views import (
     PromotionListCreateAPIView, PromotionDetailAPIView,
     SupportChatManagerAPIView, SupportChatMessagesAPIView,
     AssistantAskAPIView,
+    AssistantContextAPIView,
 )
 
 urlpatterns = [
@@ -39,6 +40,11 @@ urlpatterns = [
         'assistant/ask/',
         AssistantAskAPIView.as_view(),
         name='assistant-ask',
+    ),
+    path(
+        'assistant/context/',
+        AssistantContextAPIView.as_view(),
+        name='assistant-context',
     ),
 
     # Branches
