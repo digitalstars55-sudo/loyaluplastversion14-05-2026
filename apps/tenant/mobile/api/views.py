@@ -1502,6 +1502,55 @@ class StaffDetailAPIView(APIView):
 
         return Response(_serialize_staff(user))
 
+    def delete(self, request, staff_id: int):
+        """Удалить сотрудника из ТЕКУЩЕЙ сети (отвязать от тенанта).
+        Если сетей больше не осталось — деактивируем. Юзера физически не
+        удаляем (целостность аудита/истории)."""
+        from django.contrib.auth import get_user_model
+        from django.db import connection
+        User = get_user_model()
+        try:
+            user = User.objects.get(pk=staff_id)
+        except User.DoesNotExist:
+            return Response({'error': 'Сотрудник не найден'}, status=status.HTTP_404_NOT_FOUND)
+
+        if user.pk == request.user.pk:
+            return Response({'error': 'Нельзя удалить самого себя.'}, status=status.HTTP_400_BAD_REQUEST)
+        if user.is_superuser:
+            return Response({'error': 'Владельца удалить нельзя.'}, status=status.HTTP_403_FORBIDDEN)
+
+        tenant = getattr(connection, 'tenant', None)
+        if (tenant is not None and getattr(tenant, 'pk', None)
+                and not user.companies.filter(pk=tenant.pk).exists()):
+            return Response(
+                {'error': 'Этот сотрудник не из текущей сети. Переключитесь на его сеть.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        target_current_role = _BACKEND_ROLE_TO_MOBILE.get(user.role, 'viewer')
+        if not _can_manage_role(request.user, target_current_role):
+            return Response(
+                {'error': 'Недостаточно прав для удаления этого сотрудника.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        label = (user.get_full_name() or user.username)[:255]
+        if tenant is not None and getattr(tenant, 'pk', None):
+            user.companies.remove(tenant)
+        if not user.companies.exists():
+            user.is_active = False
+            user.save(update_fields=['is_active'])
+
+        from apps.tenant.branch.audit import log_audit
+        log_audit(
+            request.user, 'STAFF_DELETE',
+            target_type='staff',
+            target_id=user.pk,
+            target_label=label,
+            details=f'removed_from_tenant={getattr(tenant, "schema_name", None)}',
+        )
+        return Response({'ok': True})
+
 
 class StaffInviteAPIView(APIView):
     """
@@ -1616,7 +1665,8 @@ class StaffInviteAPIView(APIView):
         )
 
         body = _serialize_staff(user)
-        # Одноразовая выдача учётки — мобайл показывает админу.
+        # Одноразовая выдача учётки — мобайл показывает админу (письма не шлём).
+        body['login'] = username
         body['temp_password'] = password
         body['invitation_token'] = invitation_token
         return Response(body, status=status.HTTP_201_CREATED)
