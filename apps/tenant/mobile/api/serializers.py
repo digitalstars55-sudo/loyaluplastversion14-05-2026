@@ -140,17 +140,30 @@ class ReviewListSerializer(serializers.ModelSerializer):
 # Review messages
 # ════════════════════════════════════════════════════════════════════
 class ReviewMessageSerializer(serializers.ModelSerializer):
-    admin_name = serializers.SerializerMethodField()
+    admin_name  = serializers.SerializerMethodField()
+    attachments = serializers.SerializerMethodField()
 
     class Meta:
         model = TestimonialMessage
-        fields = ['id', 'source', 'text', 'rating', 'created_at', 'admin_name']
+        fields = ['id', 'source', 'text', 'rating', 'created_at', 'admin_name', 'attachments']
         read_only_fields = fields
 
     def get_admin_name(self, obj):
         # У TestimonialMessage сейчас нет поля admin — отдаём None.
         # Когда добавится связь TestimonialMessage.admin = FK(User), сюда вернём имя.
         return None
+
+    def get_attachments(self, obj):
+        # [{'type','url','purged'}]. url доводим до абсолютного (для мобилки),
+        # если есть request в контексте и url относительный (/media/...).
+        req = self.context.get('request')
+        out = []
+        for a in obj.display_attachments():
+            url = a['url']
+            if url and req is not None and url.startswith('/'):
+                url = req.build_absolute_uri(url)
+            out.append({'type': a['type'], 'url': url, 'purged': a['purged']})
+        return out
 
 
 # ════════════════════════════════════════════════════════════════════

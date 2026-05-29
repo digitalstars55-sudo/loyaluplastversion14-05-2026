@@ -72,6 +72,11 @@ app.conf.beat_schedule = {
         'task': 'apps.tenant.branch.tasks.push_daily_codes_task',
         'schedule': crontab(hour=8, minute=0),
     },
+    # Purge VK photo attachments older than 90 days (rolling retention) at 04:00 MSK
+    'purge-old-vk-attachments': {
+        'task': 'apps.tenant.branch.tasks.purge_old_vk_attachments_task',
+        'schedule': crontab(hour=4, minute=0),
+    },
     # VK membership catchup: catch group_join/leave/message_allow/deny missed while server was down
     'vk-membership-catchup': {
         'task': 'apps.tenant.branch.tasks.vk_membership_catchup_task',

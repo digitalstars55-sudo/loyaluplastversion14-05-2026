@@ -128,7 +128,9 @@ def poll_branch_messages(branch_id: int) -> dict:
 
         for msg in hist.get('items', []):
             text = (msg.get('text') or '').strip()
-            if not text:
+            attachments = msg.get('attachments') or []
+            # Пропускаем только если нет НИ текста, НИ вложений (фото-только — оставляем).
+            if not text and not attachments:
                 continue
 
             from_id = msg.get('from_id', 0)
@@ -152,6 +154,7 @@ def poll_branch_messages(branch_id: int) -> dict:
                     message_id=msg['id'],
                     text=text,
                     vk_date=msg.get('date'),
+                    attachments=attachments,
                 )
             else:
                 saved = handle_vk_incoming_message(
@@ -160,6 +163,7 @@ def poll_branch_messages(branch_id: int) -> dict:
                     message_id=msg['id'],
                     text=text,
                     vk_date=msg.get('date'),
+                    attachments=attachments,
                 )
             if saved is not None:
                 new_count += 1
@@ -325,6 +329,124 @@ def poll_all_vk_messages_task() -> dict:
         logger.warning('VK poll all errors: %s', total_err)
 
     return {'new_messages': total_new, 'errors': total_err}
+
+
+# ── VK вложения (фото): скачивание в media + очистка по сроку хранения ─────────
+
+VK_ATTACHMENT_RETENTION_DAYS = 90  # скользящее окно хранения фото в нашей базе
+_VK_PHOTO_MAX_BYTES = 15 * 1024 * 1024  # 15 МБ на файл — защита от мусора
+
+
+def _download_one_vk_photo(schema_name: str, msg_pk: int, idx: int, url: str) -> str | None:
+    """Скачивает одно фото в MEDIA_ROOT/vk_attachments/<schema>/<pk>_<idx>.jpg.
+    Возвращает media-относительный путь или None при ошибке."""
+    import os
+    import urllib.request
+    from django.conf import settings
+
+    rel_dir  = os.path.join('vk_attachments', schema_name)
+    abs_dir  = os.path.join(settings.MEDIA_ROOT, rel_dir)
+    rel_path = os.path.join(rel_dir, f'{msg_pk}_{idx}.jpg')
+    abs_path = os.path.join(settings.MEDIA_ROOT, rel_path)
+    try:
+        os.makedirs(abs_dir, exist_ok=True)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = resp.read(_VK_PHOTO_MAX_BYTES + 1)
+        if not data or len(data) > _VK_PHOTO_MAX_BYTES:
+            logger.warning('VK photo skip (empty/too big) msg=%s idx=%s', msg_pk, idx)
+            return None
+        with open(abs_path, 'wb') as f:
+            f.write(data)
+        return rel_path.replace('\\', '/')
+    except Exception:
+        logger.warning('VK photo download failed msg=%s idx=%s', msg_pk, idx, exc_info=True)
+        return None
+
+
+@shared_task(name='apps.tenant.branch.tasks.download_vk_attachments_task')
+def download_vk_attachments_task(schema_name: str, message_pk: int) -> dict:
+    """
+    Скачивает фото-вложения сообщения (по сохранённым VK-url'ам) в наш media
+    и заменяет {'src':url} → {'file':media-path}. Идемпотентно: уже скачанные
+    (downloaded/file) и очищенные (purged) — пропускает.
+    Вызывается отложенно из VK-обработчиков, чтобы не тормозить VK Callback.
+    """
+    from django_tenants.utils import schema_context
+    with schema_context(schema_name):
+        from apps.tenant.branch.models import TestimonialMessage
+        try:
+            msg = TestimonialMessage.objects.get(pk=message_pk)
+        except TestimonialMessage.DoesNotExist:
+            return {'skipped': 'not_found'}
+
+        atts = list(msg.attachments or [])
+        downloaded = 0
+        for i, a in enumerate(atts):
+            if a.get('file') or a.get('purged') or not a.get('src'):
+                continue
+            local = _download_one_vk_photo(schema_name, message_pk, i, a['src'])
+            if local:
+                atts[i] = {
+                    'type': a.get('type', 'photo'),
+                    'file': local,
+                    'width': a.get('width'),
+                    'height': a.get('height'),
+                }
+                downloaded += 1
+        if downloaded:
+            TestimonialMessage.objects.filter(pk=message_pk).update(attachments=atts)
+        return {'downloaded': downloaded}
+
+
+@shared_task(name='apps.tenant.branch.tasks.purge_old_vk_attachments_task')
+def purge_old_vk_attachments_task() -> dict:
+    """
+    Скользящая очистка (90 дней): удаляет ФАЙЛЫ фото старше окна из media по всем
+    тенантам. Текст сообщения остаётся; вложение помечается {'purged':True}, в UI
+    показывается «фото удалено по сроку хранения». Запускается beat'ом раз в сутки.
+    """
+    import os
+    from datetime import timedelta
+    from django.conf import settings
+    from django.utils import timezone
+    from django_tenants.utils import get_tenant_model, schema_context
+
+    cutoff = timezone.now() - timedelta(days=VK_ATTACHMENT_RETENTION_DAYS)
+    TenantModel = get_tenant_model()
+    purged_files = 0
+
+    for tenant in TenantModel.objects.exclude(schema_name='public'):
+        with schema_context(tenant.schema_name):
+            from apps.tenant.branch.models import TestimonialMessage
+            qs = (
+                TestimonialMessage.objects
+                .filter(created_at__lt=cutoff)
+                .exclude(attachments=[])
+            )
+            for msg in qs.iterator():
+                atts = list(msg.attachments or [])
+                changed = False
+                for i, a in enumerate(atts):
+                    if a.get('purged'):
+                        continue
+                    f = a.get('file')
+                    if f:
+                        try:
+                            os.remove(os.path.join(settings.MEDIA_ROOT, f))
+                        except FileNotFoundError:
+                            pass
+                        except Exception:
+                            logger.warning('purge: не удалось удалить %s', f, exc_info=True)
+                        purged_files += 1
+                    atts[i] = {'type': a.get('type', 'photo'), 'purged': True}
+                    changed = True
+                if changed:
+                    TestimonialMessage.objects.filter(pk=msg.pk).update(attachments=atts)
+
+    logger.info('purge_old_vk_attachments: удалено файлов=%d (>%d дн)',
+                purged_files, VK_ATTACHMENT_RETENTION_DAYS)
+    return {'purged': purged_files}
 
 
 # ── VK membership catchup via Long Poll ───────────────────────────────────────

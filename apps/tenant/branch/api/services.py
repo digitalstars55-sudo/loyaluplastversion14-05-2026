@@ -337,21 +337,25 @@ def handle_vk_callback(data: dict) -> None:
         raise VKCallbackForbidden
 
     if event == 'message_new':
-        msg_obj    = data.get('object', {})
-        message    = msg_obj.get('message', msg_obj)
-        from_id    = message.get('from_id')
-        peer_id    = message.get('peer_id')
-        message_id = message.get('id')
-        text       = (message.get('text') or '').strip()
-        if from_id and from_id > 0 and message_id and text:
+        msg_obj     = data.get('object', {})
+        message     = msg_obj.get('message', msg_obj)
+        from_id     = message.get('from_id')
+        peer_id     = message.get('peer_id')
+        message_id  = message.get('id')
+        text        = (message.get('text') or '').strip()
+        attachments = message.get('attachments') or []
+        # Сообщение «с контентом» = есть текст ИЛИ есть вложения (фото-только тоже).
+        has_content = bool(text or attachments)
+        if from_id and from_id > 0 and message_id and has_content:
             handle_vk_incoming_message(
                 group_id=group_id,
                 from_id=from_id,
                 message_id=message_id,
                 text=text,
                 vk_date=message.get('date'),
+                attachments=attachments,
             )
-        elif from_id and from_id < 0 and peer_id and peer_id > 0 and message_id and text:
+        elif from_id and from_id < 0 and peer_id and peer_id > 0 and message_id and has_content:
             # Некоторые сообщества доставляют исходящие (ответ менеджера) тоже
             # как message_new с from_id<0 — сохраняем как ответ админа. LU-08.
             handle_vk_admin_reply_from_poll(
@@ -360,6 +364,7 @@ def handle_vk_callback(data: dict) -> None:
                 message_id=message_id,
                 text=text,
                 vk_date=message.get('date'),
+                attachments=attachments,
             )
 
     elif event == 'message_reply':
@@ -367,18 +372,20 @@ def handle_vk_callback(data: dict) -> None:
         # СОБЫТИЕ отдельно от message_new — раньше мы его не слушали, поэтому
         # ответы менеджера из ВК не попадали в тред админки. LU-08.
         # from_id = -group_id, peer_id = vk_id гостя, admin_author_id = оператор.
-        msg_obj    = data.get('object', {})
-        message    = msg_obj.get('message', msg_obj)
-        peer_id    = message.get('peer_id')
-        message_id = message.get('id')
-        text       = (message.get('text') or '').strip()
-        if peer_id and peer_id > 0 and message_id and text:
+        msg_obj     = data.get('object', {})
+        message     = msg_obj.get('message', msg_obj)
+        peer_id     = message.get('peer_id')
+        message_id  = message.get('id')
+        text        = (message.get('text') or '').strip()
+        attachments = message.get('attachments') or []
+        if peer_id and peer_id > 0 and message_id and (text or attachments):
             handle_vk_admin_reply_from_poll(
                 group_id=group_id,
                 peer_id=peer_id,
                 message_id=message_id,
                 text=text,
                 vk_date=message.get('date'),
+                attachments=attachments,
             )
 
     elif event in ('group_join', 'group_leave', 'message_allow', 'message_deny'):
@@ -1064,12 +1071,57 @@ def submit_app_review(
     return msg
 
 
+def extract_vk_photo_attachments(raw_attachments: list | None) -> list[dict]:
+    """
+    Из массива VK attachments вытаскивает фото в наш формат:
+    [{'type':'photo','src':<url самого большого размера>,'width','height'}].
+    Видео/прочее пока пропускаем (Фаза 2). Лимит 10 фото на сообщение.
+    Скачивание выполняется позже в celery (download_vk_attachments_task) —
+    здесь только парсинг url'ов, без сети (callback должен отвечать быстро).
+    """
+    result: list[dict] = []
+    for att in (raw_attachments or []):
+        if att.get('type') != 'photo':
+            continue
+        photo = att.get('photo') or {}
+        sizes = photo.get('sizes') or []
+        if not sizes:
+            continue
+        best = max(sizes, key=lambda s: (s.get('width', 0) or 0) * (s.get('height', 0) or 0))
+        url = best.get('url')
+        if not url:
+            continue
+        result.append({
+            'type': 'photo',
+            'src': url,
+            'width': best.get('width'),
+            'height': best.get('height'),
+        })
+        if len(result) >= 10:
+            break
+    return result
+
+
+def _enqueue_attachment_download(message_pk: int) -> None:
+    """Ставит в celery скачивание вложений сообщения. Не падает, если брокер недоступен."""
+    try:
+        from django.db import connection
+        from apps.tenant.branch.tasks import download_vk_attachments_task
+        download_vk_attachments_task.delay(connection.schema_name, message_pk)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning(
+            'Не удалось поставить скачивание вложений msg=%s', message_pk, exc_info=True,
+        )
+
+
 def handle_vk_incoming_message(
     group_id: int,
     from_id: int,
     message_id: int,
     text: str,
     vk_date: int | None = None,
+    attachments: list | None = None,
 ) -> list[TestimonialMessage]:
     """
     Создаёт сообщение типа VK_MESSAGE в одном треде, привязанном к группе.
@@ -1095,24 +1147,31 @@ def handle_vk_incoming_message(
 
     conv = _get_or_create_conversation(None, vk_sender_id, link_vk_guest=True)
 
+    photo_atts = extract_vk_photo_attachments(attachments)
+
     # Dedup: if same text was already saved as an APP message in the last 5 min, skip.
     # This handles VK Callback retries echoing messages submitted via the app form.
+    # Пустой text не дедупим по APP (фото-только сообщение не имеет текста).
     from datetime import timedelta
-    recent_cutoff = timezone.now() - timedelta(minutes=5)
-    if TestimonialMessage.objects.filter(
-        conversation=conv,
-        source=TestimonialMessage.Source.APP,
-        text=text,
-        created_at__gte=recent_cutoff,
-    ).exists():
-        return []
+    if text:
+        recent_cutoff = timezone.now() - timedelta(minutes=5)
+        if TestimonialMessage.objects.filter(
+            conversation=conv,
+            source=TestimonialMessage.Source.APP,
+            text=text,
+            created_at__gte=recent_cutoff,
+        ).exists():
+            return []
 
     msg = TestimonialMessage.objects.create(
         conversation=conv,
         source=TestimonialMessage.Source.VK_MESSAGE,
         text=text,
         vk_message_id=vk_msg_id_str,
+        attachments=photo_atts,
     )
+    if photo_atts:
+        _enqueue_attachment_download(msg.pk)
 
     # Реальное VK-время → created_at, чтобы порядок в треде совпадал с ВК
     # (иначе сообщение гостя со временем сохранения встаёт не на своё место
@@ -1130,8 +1189,11 @@ def handle_vk_incoming_message(
     conv.last_message_at = timezone.now()
     conv.save(update_fields=['has_unread', 'is_replied', 'last_message_at'])
 
-    from apps.tenant.analytics.ai_service import analyze_and_save
-    analyze_and_save(conv.id, text, TestimonialMessage.Source.VK_MESSAGE)
+    # AI-классификация только если есть текст. Фото-только сообщение нечего
+    # анализировать тональностью (vision не используем) — оставляем как есть.
+    if text:
+        from apps.tenant.analytics.ai_service import analyze_and_save
+        analyze_and_save(conv.id, text, TestimonialMessage.Source.VK_MESSAGE)
 
     # Push only on FIRST message in the thread (= new VK-originated review).
     if TestimonialMessage.objects.filter(conversation=conv).count() == 1:
@@ -1146,6 +1208,7 @@ def handle_vk_admin_reply_from_poll(
     message_id: int,
     text: str,
     vk_date: int | None = None,
+    attachments: list | None = None,
 ) -> TestimonialMessage | None:
     """
     Сохраняет ИСХОДЯЩЕЕ сообщение от сообщества (менеджер ответил гостю
@@ -1198,12 +1261,16 @@ def handle_vk_admin_reply_from_poll(
     if conv is None:
         return None
 
+    photo_atts = extract_vk_photo_attachments(attachments)
     msg = TestimonialMessage.objects.create(
         conversation=conv,
         source=TestimonialMessage.Source.ADMIN_REPLY,
         text=text,
         vk_message_id=vk_msg_id_str,
+        attachments=photo_atts,
     )
+    if photo_atts:
+        _enqueue_attachment_download(msg.pk)
 
     # Если VK сообщил оригинальную дату — выставляем её как created_at,
     # чтобы исторические сообщения (старые рассылки) встали в правильное

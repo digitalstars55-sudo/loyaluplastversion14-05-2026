@@ -107,6 +107,16 @@
         {% for msg in conv.messages.all %}
         <div class="msg {% if msg.source == 'ADMIN_REPLY' %}admin{% elif msg.source == 'APP' %}app{% else %}vk{% endif %}">
           {{ msg.text }}
+          {% for a in msg.display_attachments %}
+            {% if a.purged %}
+            <div class="msg-meta" style="font-style:italic;">🖼 фото удалено по сроку хранения</div>
+            {% elif a.url %}
+            <a href="{{ a.url }}" target="_blank" rel="noopener">
+              <img src="{{ a.url }}" loading="lazy"
+                   style="display:block;max-width:220px;max-height:220px;border-radius:8px;margin-top:6px;object-fit:cover;">
+            </a>
+            {% endif %}
+          {% endfor %}
           {% if msg.rating %}
           <div class="msg-rating">{% for i in "12345" %}{% if forloop.counter <= msg.rating %}★{% else %}☆{% endif %}{% endfor %}</div>
           {% endif %}

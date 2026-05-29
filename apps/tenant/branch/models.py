@@ -986,6 +986,12 @@ class TestimonialMessage(models.Model):
         'VK ID сообщения', max_length=50, blank=True, db_index=True,
     )
 
+    # ── Вложения (фото из ВК) ──────────────────────────────────────────────────
+    # Список dict'ов. До скачивания: {'type':'photo','src':<vk_url>,'width','height'}.
+    # После скачивания в media: {'type':'photo','file':<media-rel-path>,'width','height'}.
+    # После очистки по сроку хранения (90 дн): {'type':'photo','purged':True}.
+    attachments = models.JSONField('Вложения', default=list, blank=True)
+
     # ── Read tracking (for ADMIN_REPLY messages) ───────────────────────────────
     read_at = models.DateTimeField(
         'Прочитано', null=True, blank=True,
@@ -996,6 +1002,27 @@ class TestimonialMessage(models.Model):
 
     def __str__(self):
         return f'[{self.get_source_display()}] {self.text[:60]}'
+
+    def display_attachments(self) -> list[dict]:
+        """
+        Нормализованный список вложений для UI/API:
+        [{'type','url','purged'}]. url = локальный media-URL если уже скачано,
+        иначе исходный VK-url (пока celery не скачал). purged → url=None.
+        """
+        from django.conf import settings
+        out: list[dict] = []
+        for a in (self.attachments or []):
+            atype = a.get('type', 'photo')
+            if a.get('purged'):
+                out.append({'type': atype, 'url': None, 'purged': True})
+                continue
+            if a.get('file'):
+                url = settings.MEDIA_URL + a['file']
+            else:
+                url = a.get('src')  # ещё не скачано — временно отдаём VK-url
+            if url:
+                out.append({'type': atype, 'url': url, 'purged': False})
+        return out
 
     class Meta:
         verbose_name = 'Сообщение'
