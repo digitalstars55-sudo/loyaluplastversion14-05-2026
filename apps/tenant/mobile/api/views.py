@@ -711,6 +711,15 @@ class DailyCodesListAPIView(APIView):
         from django.utils import timezone
         from apps.tenant.branch.models import DailyCode
 
+        # Самовосстановление: если коды на сегодня не сгенерированы (например,
+        # celery-beat пропустил тик 03:00 из-за read-only Redis) — создаём их
+        # прямо сейчас, при открытии экрана. Идемпотентно (get_or_create).
+        try:
+            from apps.tenant.branch.tasks import ensure_today_daily_codes
+            ensure_today_daily_codes()
+        except Exception:
+            pass
+
         since = timezone.localdate() - timedelta(days=7)
         qs = (
             DailyCode.objects

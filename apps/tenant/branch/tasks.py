@@ -198,6 +198,34 @@ def poll_vk_messages_task(self, schema_name: str, branch_id: int) -> dict:
         raise self.retry(exc=exc)
 
 
+def ensure_today_daily_codes() -> int:
+    """
+    Идемпотентно создаёт коды дня (game/quest/birthday) для всех активных точек
+    ТЕКУЩЕГО тенанта на сегодня. get_or_create → повторный вызов ничего не дублирует.
+    Возвращает число созданных кодов. Должна вызываться внутри schema_context тенанта.
+
+    Используется и beat-таском (03:00), и лениво при открытии экрана кодов —
+    чтобы коды появлялись даже если beat пропустил тик (напр. Redis был read-only).
+    """
+    import random
+    from apps.tenant.branch.models import Branch, DailyCode, DailyCodePurpose, current_code_date
+
+    today = current_code_date()  # кодовые сутки начинаются в 03:00 MSK
+    purposes = [p.value for p in DailyCodePurpose]
+    created = 0
+    for branch in Branch.objects.filter(is_active=True):
+        for purpose in purposes:
+            _, was_created = DailyCode.objects.get_or_create(
+                branch=branch,
+                purpose=purpose,
+                valid_date=today,
+                defaults={'code': f'{random.randint(0, 99999):05d}'},
+            )
+            if was_created:
+                created += 1
+    return created
+
+
 @shared_task(name='apps.tenant.branch.tasks.generate_daily_codes_task')
 def generate_daily_codes_task() -> dict:
     """
@@ -205,39 +233,19 @@ def generate_daily_codes_task() -> dict:
     in every tenant for today (game, quest, birthday purposes).
     Runs daily at 03:00 Moscow time (configured in main/celery.py).
     """
-    import random
     from django_tenants.utils import get_tenant_model, schema_context
     from apps.tenant.branch.models import current_code_date
 
     TenantModel = get_tenant_model()
-    today       = current_code_date()  # кодовые сутки начинаются в 03:00 MSK
+    today = current_code_date()
     created_total = 0
-    skipped_total = 0
 
     for tenant in TenantModel.objects.exclude(schema_name='public'):
         with schema_context(tenant.schema_name):
-            from apps.tenant.branch.models import Branch, DailyCode, DailyCodePurpose
-            branches  = Branch.objects.filter(is_active=True)
-            purposes  = [p.value for p in DailyCodePurpose]
-            for branch in branches:
-                for purpose in purposes:
-                    code = f'{random.randint(0, 99999):05d}'
-                    _, created = DailyCode.objects.get_or_create(
-                        branch=branch,
-                        purpose=purpose,
-                        valid_date=today,
-                        defaults={'code': code},
-                    )
-                    if created:
-                        created_total += 1
-                    else:
-                        skipped_total += 1
+            created_total += ensure_today_daily_codes()
 
-    logger.info(
-        'generate_daily_codes: created=%d already_existed=%d date=%s',
-        created_total, skipped_total, today,
-    )
-    return {'created': created_total, 'skipped': skipped_total, 'date': str(today)}
+    logger.info('generate_daily_codes: created=%d date=%s', created_total, today)
+    return {'created': created_total, 'date': str(today)}
 
 
 @shared_task(name='apps.tenant.branch.tasks.push_daily_codes_task')
