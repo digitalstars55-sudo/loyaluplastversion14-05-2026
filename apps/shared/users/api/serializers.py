@@ -34,6 +34,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField()
     tenant_domain = serializers.SerializerMethodField()
     tenant_name = serializers.SerializerMethodField()
+    companies = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -41,7 +42,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             'id', 'username', 'full_name', 'role', 'role_label',
             'email', 'phone', 'city', 'birthday', 'birthday_set_at',
             'avatar_url', 'branch_ids',
-            'tenant_domain', 'tenant_name',
+            'tenant_domain', 'tenant_name', 'companies',
         ]
         read_only_fields = fields
 
@@ -69,12 +70,19 @@ class ProfileSerializer(serializers.ModelSerializer):
         return None
 
     def _primary_company(self, obj):
-        """Первая активная компания пользователя. Кэш на инстансе."""
+        """Первая активная компания пользователя. Кэш на инстансе.
+        Суперюзер без M2M-компаний → первая активная компания (он видит все)."""
         cached = getattr(obj, '_primary_company_cache', 'sentinel')
         if cached != 'sentinel':
             return cached
         try:
             company = obj.companies.filter(is_active=True).first() or obj.companies.first()
+            if company is None and obj.is_superuser:
+                from apps.shared.clients.models import Company
+                company = (
+                    Company.objects.filter(is_active=True)
+                    .exclude(schema_name='public').order_by('id').first()
+                )
         except Exception:
             company = None
         obj._primary_company_cache = company
@@ -99,6 +107,37 @@ class ProfileSerializer(serializers.ModelSerializer):
     def get_tenant_name(self, obj) -> str | None:
         company = self._primary_company(obj)
         return company.name if company else None
+
+    def get_companies(self, obj) -> list[dict]:
+        """
+        Все сети (тенанты), доступные пользователю — для переключателя в мобилке.
+        Суперюзер видит все активные тенанты (как в вебе), остальные — свои из M2M.
+        Каждый элемент: {id, name, domain}. Без домена — пропускаем.
+        """
+        try:
+            from apps.shared.clients.models import Company, Domain
+        except Exception:
+            return []
+        try:
+            if obj.is_superuser:
+                comps = list(
+                    Company.objects.filter(is_active=True)
+                    .exclude(schema_name='public').order_by('name')
+                )
+            else:
+                comps = list(obj.companies.filter(is_active=True)) or list(obj.companies.all())
+        except Exception:
+            comps = []
+        out: list[dict] = []
+        for c in comps:
+            try:
+                d = (Domain.objects.filter(tenant=c, is_primary=True).first()
+                     or Domain.objects.filter(tenant=c).first())
+            except Exception:
+                d = None
+            if d:
+                out.append({'id': c.pk, 'name': c.name, 'domain': d.domain})
+        return out
 
 
 class LoginResponseSerializer(serializers.Serializer):
