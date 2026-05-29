@@ -30,9 +30,17 @@ from .views import (
     QuestListCreateAPIView, QuestDetailAPIView,
     PromotionListCreateAPIView, PromotionDetailAPIView,
     SupportChatManagerAPIView, SupportChatMessagesAPIView,
+    AssistantAskAPIView,
 )
 
 urlpatterns = [
+    # AI-ассистент «Лояльчик»
+    path(
+        'assistant/ask/',
+        AssistantAskAPIView.as_view(),
+        name='assistant-ask',
+    ),
+
     # Branches
     path(
         'mobile/branches/',

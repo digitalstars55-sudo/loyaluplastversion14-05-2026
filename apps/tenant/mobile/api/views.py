@@ -2270,3 +2270,95 @@ class SupportChatMessagesAPIView(APIView):
             _safe_relay_to_checkup(message=m, user=request.user)
 
         return Response(_serialize_support_message(m), status=201)
+
+
+# ════════════════════════════════════════════════════════════════════
+# AI-ассистент «Лояльчик» — отвечает на вопросы по системе
+# ════════════════════════════════════════════════════════════════════
+_ASSISTANT_SYSTEM_PROMPT = """Ты — «Лояльчик», дружелюбный AI-ассистент мобильного приложения LoyalUP.
+LoyalUP — это приложение для ВЛАДЕЛЬЦЕВ и управляющих кафе/ресторанов: оно управляет
+программой лояльности гостей в мини-приложении ВКонтакте.
+
+Твоя задача — помогать владельцу разобраться, КАК пользоваться приложением и системой.
+Отвечай коротко, по-доброму, на русском, по делу (2–5 предложений). Без воды.
+Лёгкий космический тон уместен, но без перебора (ты «выводишь лояльность на орбиту» 🚀).
+
+Что умеет приложение (по разделам):
+- Главная: задачи дня, ключевые показатели, коды дня, дни рождения гостей.
+- Аналитика (RF): сегменты гостей по давности (R) и частоте (F) визитов — чемпионы,
+  группа риска, потерянные; миграция сегментов; пороги RF можно настроить.
+- Отзывы: отзывы из ВК и приложения, AI определяет тональность, можно ответить гостю
+  прямо из приложения; есть AI-черновики ответов.
+- Чат: связь с поддержкой LoyalUP.
+- Ещё: рассылки (VK), коды дня (игра/квест/день рождения), каталог призов, категории,
+  квесты, акции, гости, отчёты (PDF, можно выбрать разделы), сотрудники (роли и доступы),
+  настройки автоответов, профиль, переключение сети (если их несколько).
+- Брендинг (цвета/логотип сети) настраивается в веб-админке, не в приложении.
+
+Правила:
+- Отвечай ТОЛЬКО про LoyalUP и работу с приложением/программой лояльности.
+- Если вопрос не по теме или ты не уверен — честно скажи и предложи написать в поддержку
+  (раздел «Чат»). Не выдумывай функции, которых нет.
+- Не обещай того, чего система не делает."""
+
+
+class AssistantAskAPIView(APIView):
+    """
+    POST /api/v1/assistant/ask/
+    body: {question: str, history?: [{role: 'user'|'assistant', content: str}]}
+    Возвращает {answer}. AI «Лояльчик» — ответы по системе через Claude (прокси).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        import logging
+        logger = logging.getLogger(__name__)
+
+        question = (request.data.get('question') or '').strip()
+        if not question:
+            return Response({'error': 'Пустой вопрос'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(question) > 1000:
+            question = question[:1000]
+
+        # Контекст диалога (последние реплики) — для связного ответа.
+        history = request.data.get('history') or []
+        msgs = []
+        if isinstance(history, list):
+            for h in history[-10:]:
+                if not isinstance(h, dict):
+                    continue
+                role = h.get('role')
+                content = (h.get('content') or '').strip()
+                if role in ('user', 'assistant') and content:
+                    msgs.append({'role': role, 'content': content[:2000]})
+        msgs.append({'role': 'user', 'content': question})
+
+        try:
+            import os
+            import anthropic
+            from django.conf import settings
+            api_key = getattr(settings, 'ANTHROPIC_API_KEY', None)
+            if not api_key:
+                return Response(
+                    {'error': 'AI временно недоступен'},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            proxy_url = os.getenv('AI_PROXY_URL', '')
+            client = (anthropic.Anthropic(api_key=api_key, base_url=proxy_url)
+                      if proxy_url else anthropic.Anthropic(api_key=api_key))
+            resp = client.messages.create(
+                model='claude-haiku-4-5-20251001',
+                max_tokens=600,
+                system=_ASSISTANT_SYSTEM_PROMPT,
+                messages=msgs,
+            )
+            answer = (resp.content[0].text or '').strip()
+            if not answer:
+                answer = 'Хм, не смог сформулировать ответ. Попробуй переформулировать вопрос 🚀'
+            return Response({'answer': answer})
+        except Exception as e:
+            logger.warning('AssistantAsk failed: %s', e)
+            return Response(
+                {'error': 'Лояльчик засмотрелся на звёзды и не ответил. Попробуйте ещё раз.'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
