@@ -945,7 +945,15 @@ class TestimonialConversation(TimeStampedModel):
     )
 
     def __str__(self):
-        ident = str(self.client) if self.client_id else (f'VK {self.vk_sender_id}' if self.vk_sender_id else '?')
+        # Имя гостя: client → vk_guest (имя из ВК) → VK id (если имени нет).
+        if self.client_id:
+            ident = str(self.client)
+        elif self.vk_guest_id and (self.vk_guest.first_name or self.vk_guest.last_name):
+            ident = f'{self.vk_guest.first_name} {self.vk_guest.last_name}'.strip()
+        elif self.vk_sender_id:
+            ident = f'VK {self.vk_sender_id}'
+        else:
+            ident = '?'
         branch_name = self.branch.name if self.branch_id else 'ВК группа'
         return f'{ident} — {branch_name}'
 

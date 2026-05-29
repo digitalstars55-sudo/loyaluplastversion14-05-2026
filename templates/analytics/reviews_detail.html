@@ -78,6 +78,7 @@
           <span class="text-muted small text-nowrap">{{ conv.last_message_at|date:"d.m.Y H:i" }}</span>
           <span class="fw-semibold" style="color:#1a2744;">
             {% if conv.client %}{{ conv.client.client.first_name|default:"Гость" }} {{ conv.client.client.last_name }}
+            {% elif conv.vk_guest and conv.vk_guest.first_name %}{{ conv.vk_guest.first_name }} {{ conv.vk_guest.last_name }}
             {% else %}VK {{ conv.vk_sender_id }}{% endif %}
           </span>
           <span class="badge bg-light text-dark border">{{ conv.branch.name }}</span>
