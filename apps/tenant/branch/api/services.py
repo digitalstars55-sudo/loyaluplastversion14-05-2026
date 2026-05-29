@@ -1149,6 +1149,12 @@ def handle_vk_incoming_message(
 
     photo_atts = extract_vk_photo_attachments(attachments)
 
+    # Контентное сообщение гостя = текст ИЛИ фото. Стикеры/голосовые/служебные
+    # (без текста и без фото) НЕ сохраняем: иначе они сбрасывают is_replied=False
+    # на уже отвеченных отзывах и плодят AI-черновики/напоминания (регрессия фото-фичи).
+    if not text and not photo_atts:
+        return []
+
     # Dedup: if same text was already saved as an APP message in the last 5 min, skip.
     # This handles VK Callback retries echoing messages submitted via the app form.
     # Пустой text не дедупим по APP (фото-только сообщение не имеет текста).
