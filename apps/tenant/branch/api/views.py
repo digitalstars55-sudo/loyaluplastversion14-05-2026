@@ -53,7 +53,11 @@ class BranchInfoView(APIView):
                 {'detail': 'Торговая точка неактивна.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        for key in ('logotype_url', 'coin_icon_url', 'story_image_url'):
+        # logotype_url НЕ делаем абсолютным: фронт миниаппа сам подставляет
+        # https://<domain>${logotype}. build_absolute_uri за nginx отдаёт http://
+        # (нет X-Forwarded-Proto) → фронт склеивал битый URL → логотип не грузился.
+        # Относительный путь (/media/...) + префикс фронта = корректный https-URL.
+        for key in ('coin_icon_url', 'story_image_url'):
             if data.get(key):
                 data[key] = request.build_absolute_uri(data[key])
         return Response(BranchInfoSerializer(data).data)
