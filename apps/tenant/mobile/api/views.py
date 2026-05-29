@@ -99,6 +99,15 @@ class MobileReviewMessagesAPIView(generics.ListAPIView):
 
     def get_queryset(self):
         review_id = self.kwargs['review_id']
+        conv = TestimonialConversation.objects.filter(pk=review_id).first()
+        # Если это VK-гость — объединяем сообщения ВСЕХ его тредов по vk_sender_id.
+        # Исторически диалог мог разъехаться (legacy branch=X + новый branch=None):
+        # сообщения гостя в одном треде, ответы менеджера в другом. Показываем
+        # полный диалог, чтобы в мобилке были видны и сообщения, и ответы.
+        if conv and conv.vk_sender_id:
+            return TestimonialMessage.objects.filter(
+                conversation__vk_sender_id=conv.vk_sender_id,
+            ).order_by('created_at')
         return TestimonialMessage.objects.filter(
             conversation_id=review_id,
         ).order_by('created_at')
@@ -113,10 +122,9 @@ class MobileReviewReplyAPIView(APIView):
     """
     POST /api/v1/mobile/reviews/{review_id}/reply/  body: {text}
 
-    Создаёт TestimonialMessage(source=ADMIN_REPLY) и обновляет
-    conversation.is_replied=True, has_unread=False.
-    Не отправляет сообщение во внешний VK — это делает существующая
-    Celery-задача после сохранения (если такая есть в проекте).
+    Для VK-диалога (есть vk_sender_id) РЕАЛЬНО отправляет сообщение гостю в
+    ВКонтакте через send_vk_reply (он же сохранит ADMIN_REPLY с vk_message_id
+    и обновит conv). Для APP-отзыва (нет VK-канала) — сохраняет ответ локально.
     """
     permission_classes = [IsAuthenticated]
 
@@ -126,16 +134,29 @@ class MobileReviewReplyAPIView(APIView):
         text = ser.validated_data['text'].strip()
 
         conv = get_object_or_404(TestimonialConversation, pk=review_id)
-        with transaction.atomic():
-            msg = TestimonialMessage.objects.create(
-                conversation=conv,
-                source=TestimonialMessage.Source.ADMIN_REPLY,
-                text=text,
-            )
-            conv.is_replied = True
-            conv.has_unread = False
-            conv.last_message_at = msg.created_at
-            conv.save(update_fields=['is_replied', 'has_unread', 'last_message_at'])
+
+        if conv.vk_sender_id:
+            # VK-диалог → отправляем в ВК. Раньше ответ только сохранялся
+            # локально и гость его НЕ получал (Леся Хромова: «ответ не улетел»).
+            from apps.tenant.branch.api.services import send_vk_reply
+            try:
+                msg = send_vk_reply(conv, text)
+            except Exception as e:
+                return Response(
+                    {'detail': f'Не удалось отправить ответ в ВКонтакте: {e}'},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+        else:
+            with transaction.atomic():
+                msg = TestimonialMessage.objects.create(
+                    conversation=conv,
+                    source=TestimonialMessage.Source.ADMIN_REPLY,
+                    text=text,
+                )
+                conv.is_replied = True
+                conv.has_unread = False
+                conv.last_message_at = msg.created_at
+                conv.save(update_fields=['is_replied', 'has_unread', 'last_message_at'])
 
         from apps.tenant.branch.audit import log_audit
         log_audit(
