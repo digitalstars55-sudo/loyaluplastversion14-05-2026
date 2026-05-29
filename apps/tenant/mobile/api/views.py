@@ -1345,9 +1345,10 @@ class StaffListAPIView(APIView):
         User = get_user_model()
         tenant = getattr(connection, 'tenant', None)
         qs = User.objects.filter(role__in=('superadmin', 'network_admin', 'client'))
-        # Суперадмин (владелец) видит ВСЕХ — как в вебе /admin/users/user/.
-        # Остальные (управляющий) — суперадминов + сотрудников этой сети.
-        if not request.user.is_superuser and tenant is not None and getattr(tenant, 'pk', None):
+        # СТРОГО по текущей сети: суперадмины-владельцы (доступ ко всем сетям)
+        # + сотрудники именно ЭТОЙ сети. Сотрудников чужих сетей не показываем —
+        # иначе можно случайно выдать права человеку не из той сети.
+        if tenant is not None and getattr(tenant, 'pk', None):
             qs = qs.filter(Q(role='superadmin') | Q(companies=tenant)).distinct()
         qs = qs.order_by('pk')
         # RBAC: какие роли актор может назначать/создавать (строго ниже своей).
@@ -1371,12 +1372,24 @@ class StaffDetailAPIView(APIView):
 
     def patch(self, request, staff_id: int):
         from django.contrib.auth import get_user_model
+        from django.db import connection
         from apps.tenant.branch.models import Branch
         User = get_user_model()
         try:
             user = User.objects.get(pk=staff_id)
         except User.DoesNotExist:
             return Response({'error': 'Сотрудник не найден'}, status=status.HTTP_404_NOT_FOUND)
+
+        # СТРОГО по сети: редактировать можно только сотрудника ТЕКУЩЕЙ сети
+        # (или суперадмина). Чужую сеть не трогаем — переключись на её сеть.
+        tenant = getattr(connection, 'tenant', None)
+        if (tenant is not None and getattr(tenant, 'pk', None)
+                and not user.is_superuser
+                and not user.companies.filter(pk=tenant.pk).exists()):
+            return Response(
+                {'error': 'Этот сотрудник не из текущей сети. Переключитесь на его сеть, чтобы изменить доступы.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         profile = _get_or_create_staff_profile(user)
 
