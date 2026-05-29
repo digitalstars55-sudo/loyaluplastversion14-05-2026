@@ -2345,6 +2345,42 @@ def _assistant_context_text(ctx: dict) -> str:
     return 'Текущая сводка по сети владельца (используй эти числа в ответах): ' + '; '.join(parts) + '.'
 
 
+# Действия-кнопки под ответом Лояльчика. `screen` — из закрытого набора, который
+# мобилка умеет открыть (см. navBridge.ts). Порядок правил = приоритет.
+_ASSISTANT_ACTION_RULES = [
+    (('отзыв', 'ответить на отзыв', 'негатив', 'жалоб'), 'reviews', 'Открыть отзывы'),
+    (('рассылк', 'broadcast', 'кампани'), 'campaigns', 'Открыть рассылки'),
+    (('код дня', 'коды дня', 'ежедневн'), 'daily-codes', 'Коды дня'),
+    (('сотрудник', 'персонал', 'роль', 'права доступ', 'пригласить'), 'staff', 'Сотрудники'),
+    (('рожден', 'день рождения'), 'guests', 'Гости (ДР)'),
+    (('rfm', 'rf-сегмент', 'сегмент', 'аналитик', 'отчёт', 'отчет'), 'analytics', 'Аналитика'),
+    (('квест', 'задани'), 'quests', 'Квесты'),
+    (('акци', 'промо', 'скидк'), 'promotions', 'Акции'),
+    (('меню', 'каталог', 'товар', 'блюд'), 'catalog', 'Каталог'),
+    (('порог',), 'rf-thresholds', 'Пороги RF'),
+    (('автоответ', 'авто-ответ', 'шаблон ответ'), 'auto-reply', 'Автоответы'),
+    (('гост', 'клиент', 'посетител'), 'guests', 'Гости'),
+    (('поддержк', 'саппорт', 'техподдержк'), 'chat', 'Чат с поддержкой'),
+]
+
+
+def _assistant_actions(question: str, answer: str) -> list:
+    """Подбирает до 2 кнопок-действий по ключевым словам (вопрос важнее ответа)."""
+    q = (question or '').lower()
+    a = (answer or '').lower()
+    actions, seen = [], set()
+    for source in (q, a):  # сначала по вопросу (намерение), потом по ответу
+        for keywords, screen, label in _ASSISTANT_ACTION_RULES:
+            if screen in seen:
+                continue
+            if any(kw in source for kw in keywords):
+                actions.append({'label': label, 'screen': screen})
+                seen.add(screen)
+                if len(actions) >= 2:
+                    return actions
+    return actions
+
+
 class AssistantAskAPIView(APIView):
     """
     POST /api/v1/assistant/ask/
@@ -2401,7 +2437,7 @@ class AssistantAskAPIView(APIView):
             answer = (resp.content[0].text or '').strip()
             if not answer:
                 answer = 'Хм, не смог сформулировать ответ. Попробуй переформулировать вопрос 🚀'
-            return Response({'answer': answer})
+            return Response({'answer': answer, 'actions': _assistant_actions(question, answer)})
         except Exception as e:
             logger.warning('AssistantAsk failed: %s', e)
             return Response(
