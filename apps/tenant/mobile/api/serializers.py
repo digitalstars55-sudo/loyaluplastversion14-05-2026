@@ -162,6 +162,11 @@ class ReviewMessageSerializer(serializers.ModelSerializer):
             url = a['url']
             if url and req is not None and url.startswith('/'):
                 url = req.build_absolute_uri(url)
+            # RN Image (iOS ATS) НЕ грузит http:// — за nginx build_absolute_uri
+            # отдаёт http (нет X-Forwarded-Proto). Принудительно https: media
+            # отдаётся по https на всех тенант-доменах (тап в браузере и так открывал).
+            if url and url.startswith('http://'):
+                url = 'https://' + url[len('http://'):]
             out.append({'type': a['type'], 'url': url, 'purged': a['purged']})
         return out
 

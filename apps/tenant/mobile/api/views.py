@@ -1345,8 +1345,9 @@ class StaffListAPIView(APIView):
         User = get_user_model()
         tenant = getattr(connection, 'tenant', None)
         qs = User.objects.filter(role__in=('superadmin', 'network_admin', 'client'))
-        if tenant is not None and getattr(tenant, 'pk', None):
-            # superadmin или явно привязанные к этой компании
+        # Суперадмин (владелец) видит ВСЕХ — как в вебе /admin/users/user/.
+        # Остальные (управляющий) — суперадминов + сотрудников этой сети.
+        if not request.user.is_superuser and tenant is not None and getattr(tenant, 'pk', None):
             qs = qs.filter(Q(role='superadmin') | Q(companies=tenant)).distinct()
         qs = qs.order_by('pk')
         # RBAC: какие роли актор может назначать/создавать (строго ниже своей).
