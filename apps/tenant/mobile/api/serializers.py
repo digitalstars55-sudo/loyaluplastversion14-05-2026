@@ -51,6 +51,7 @@ class ReviewListSerializer(serializers.ModelSerializer):
     text          = serializers.SerializerMethodField()
     rating        = serializers.SerializerMethodField()
     source        = serializers.SerializerMethodField()
+    sentiment     = serializers.SerializerMethodField()
     has_draft       = serializers.SerializerMethodField()
     draft_text      = serializers.SerializerMethodField()
     draft_created_at = serializers.SerializerMethodField()
@@ -119,6 +120,14 @@ class ReviewListSerializer(serializers.ModelSerializer):
         if obj.messages.filter(source=TestimonialMessage.Source.APP).exists():
             return 'APP'
         return 'VK_MESSAGE'
+
+    def get_sentiment(self, obj) -> str:
+        # Backend хранит 'WAITING' (default до AI-анализа), мобайл-тип ждёт 'PENDING'.
+        # Маппим здесь, чтобы мобилка не падала на sentimentMeta(undefined).bg.
+        # Тенанты с непроанализированными отзывами (свежие, либо AI-кредиты исчерпаны)
+        # отдавали 'WAITING' и мобайл крашился на entry в экран Отзывов.
+        v = obj.sentiment or ''
+        return 'PENDING' if v == 'WAITING' else v
 
     def get_has_draft(self, obj) -> bool:
         # AI-черновики реализованы: показываем флаг если есть актуальный (не отвергнутый) черновик
