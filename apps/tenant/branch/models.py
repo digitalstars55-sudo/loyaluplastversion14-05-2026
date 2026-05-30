@@ -943,6 +943,10 @@ class TestimonialConversation(TimeStampedModel):
         'Последнее напоминание', null=True, blank=True,
         help_text='Когда последний раз отправляли push-напоминание о неотвеченном черновике. Не чаще 1 раза в сутки.',
     )
+    last_polled_vk_msg_id = models.BigIntegerField(
+        'Курсор VK-поллинга', default=0,
+        help_text='Наибольший vk_message_id, который мы уже пытались утянуть в этом треде. На следующем тике берём только сообщения с id > этого значения, чтобы не терять старые при наплыве рассылок.',
+    )
 
     def __str__(self):
         # Имя гостя: client → vk_guest (имя из ВК) → VK id (если имени нет).

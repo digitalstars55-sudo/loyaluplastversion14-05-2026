@@ -60,14 +60,95 @@ def _vk_call(method: str, token: str, **params) -> dict:
 
 # ── Per-branch polling ────────────────────────────────────────────────────────
 
+# Лимит первичного догона при ПЕРВОЙ встрече треда (last_polled_vk_msg_id=0):
+# тянем последние FIRST_SEEN_BACKFILL сообщений, чтобы не сосать всю историю на 10к+
+# сообщений (рассылки за годы) при первом poll'е активного треда.
+FIRST_SEEN_BACKFILL = 50
+
+# Сколько страниц по 200 максимум за один тик на ОДИН conv. Защита от рекурсии
+# при битых cursor'ах и от лавинного догона: 5*200=1000 сообщений за тик хватит.
+MAX_PAGES_PER_CONV = 5
+
+
+def _save_vk_message(group_id: int, msg: dict, handle_incoming, handle_admin_reply) -> int | None:
+    """
+    Сохраняем одно VK-сообщение через подходящий handler. Возвращает saved.pk или None.
+    handlers переданы через параметры, чтобы не импортить лениво каждый раз.
+    """
+    text = (msg.get('text') or '').strip()
+    attachments = msg.get('attachments') or []
+    # Пропускаем только если нет НИ текста, НИ вложений (фото-только — оставляем).
+    if not text and not attachments:
+        return None
+
+    from_id = msg.get('from_id', 0)
+    # Определяем исходящее (ответ менеджера) НАДЁЖНО — не только по from_id<0.
+    # VK помечает сообщения сообщества полем out=1; админ, ответивший от себя
+    # или через сервисный аккаунт («Service A»), может иметь положительный
+    # from_id, но out=1 и/или admin_author_id (LU-08).
+    is_outgoing = (
+        msg.get('out') == 1
+        or from_id < 0
+        or bool(msg.get('admin_author_id'))
+    )
+    if is_outgoing:
+        # LU-35: ОТФИЛЬТРОВАТЬ РАССЫЛКИ. Рассылки идут через messages.send
+        # как outgoing (out=1), но БЕЗ admin_author_id. Реальный ответ
+        # менеджера всегда имеет admin_author_id (id конкретного админа).
+        # Иначе UI диалога заполняется десятками промо-рассылок («Пицца в подарок!»),
+        # из-за чего реальная история (вопрос гостя — ответ менеджера) теряется.
+        # Применяется и в регулярном poll'е, и в backfill.
+        if not msg.get('admin_author_id'):
+            return None
+    if is_outgoing:
+        saved = handle_admin_reply(
+            group_id=group_id,
+            peer_id=msg.get('peer_id') or msg.get('from_id') or 0,
+            message_id=msg['id'],
+            text=text,
+            vk_date=msg.get('date'),
+            attachments=attachments,
+        )
+    else:
+        saved = handle_incoming(
+            group_id=group_id,
+            from_id=from_id,
+            message_id=msg['id'],
+            text=text,
+            vk_date=msg.get('date'),
+            attachments=attachments,
+        )
+    return getattr(saved, 'pk', None) if saved is not None else None
+
+
 def poll_branch_messages(branch_id: int) -> dict:
     """
-    Fetch recent unread conversations from VK group for the given branch
-    and save new messages to TestimonialConversation/TestimonialMessage.
+    Fetch new conversations from VK group for the given branch and save new
+    messages to TestimonialConversation/TestimonialMessage.
+
+    Курсор-стратегия (LU-35, 2026-05-31): на каждом conv держим
+    `TestimonialConversation.last_polled_vk_msg_id` — наибольший
+    vk_message_id, который мы уже видели в этом треде. На каждом тике:
+
+      1) Сравниваем VK `last_message.id` из getConversations(count=50)
+         с локальным cursor — пропускаем conv'ы где ничего нового.
+      2) Для тех где есть новое — getHistory(start_message_id=cursor+1,
+         count=200, rev=1) ASC — забираем только новые. Если вернулось
+         200 — рекурсивно следующий батч (cap MAX_PAGES_PER_CONV).
+      3) Обновляем cursor = max(saved msg id).
+
+    Так не теряем ответы менеджера/сообщения гостя, даже если между
+    тиками на conv упало 50 рассылок (LU-08 deep-fix). Не перегружает
+    сервер: 0 API-запросов когда нет нового, ровно столько сколько
+    реально появилось — иначе.
 
     Returns: {'new_messages': int, 'errors': list[str]}
     """
-    from apps.tenant.branch.api.services import handle_vk_incoming_message
+    from apps.tenant.branch.api.services import (
+        handle_vk_incoming_message,
+        handle_vk_admin_reply_from_poll,
+    )
+    from apps.tenant.branch.models import TestimonialConversation
     from apps.tenant.senler.models import SenlerConfig
 
     try:
@@ -84,10 +165,8 @@ def poll_branch_messages(branch_id: int) -> dict:
     new_count = 0
 
     try:
-        # Get recent conversations (up to 50). filter='all' — иначе VK возвращает
-        # только conv с непрочитанными входящими и мы пропускаем outgoing-ответы
-        # менеджера (LU-08). Поскольку для каждого conv мы делаем дедуп по
-        # vk_message_id, повторная обработка уже сохранённых сообщений безопасна.
+        # getConversations с filter='all' — иначе VK возвращает только conv с
+        # непрочитанными входящими и мы пропускаем outgoing-ответы менеджера (LU-08).
         convs_resp = _vk_call(
             'messages.getConversations',
             token,
@@ -109,64 +188,108 @@ def poll_branch_messages(branch_id: int) -> dict:
             # Skip group chats and service chats, only 1-on-1 DMs
             continue
 
-        try:
-            # Fetch last 5 messages from this conversation.
-            # mark_as_read=0 keeps messages unread in VK so the guest
-            # doesn't see them disappear from unread before we actually reply.
-            hist = _vk_call(
-                'messages.getHistory',
-                token,
-                peer_id=peer_id,
-                group_id=group_id,
-                count=5,
-                rev=0,          # newest first
-                mark_as_read=0,
-            )
-        except RuntimeError as e:
-            errors.append(f'peer {peer_id}: {e}')
+        vk_last_id = int((item.get('last_message') or {}).get('id') or 0)
+        vk_sender_id = str(peer_id)
+
+        # Local cursor. Если conv не существует — first encounter, cursor=0,
+        # дальше ограничим первый догон до FIRST_SEEN_BACKFILL последних сообщений.
+        # У старых гостей может быть несколько conv (legacy с branch=X +
+        # новый с branch=None). Берём максимум cursor'а по всем conv одного
+        # vk_sender_id — иначе при наличии «свежего» branch=None conv мы
+        # будем повторно тащить старые сообщения для legacy branch=X conv'а.
+        local_convs = list(
+            TestimonialConversation.objects
+            .filter(vk_sender_id=vk_sender_id)
+            .order_by('-last_message_at')
+        )
+        last_polled = max(
+            (int(c.last_polled_vk_msg_id or 0) for c in local_convs),
+            default=0,
+        )
+        first_seen = (last_polled == 0)
+
+        # Если в VK нет ничего новее cursor'а — пропускаем (0 API-запросов).
+        if vk_last_id and vk_last_id <= last_polled:
             continue
 
-        for msg in hist.get('items', []):
-            text = (msg.get('text') or '').strip()
-            attachments = msg.get('attachments') or []
-            # Пропускаем только если нет НИ текста, НИ вложений (фото-только — оставляем).
-            if not text and not attachments:
-                continue
+        fetched_max = last_polled
+        pages = 0
+        offset = 0
+        # VK не разрешает rev=1 одновременно с start_message_id (error 100),
+        # поэтому используем offset-paging: rev=0 (newest first), батчи по 200,
+        # двигаем offset пока не наткнёмся на сообщение с id <= last_polled
+        # (всё за этой границей уже сохранено).
+        while pages < MAX_PAGES_PER_CONV:
+            pages += 1
+            params = {
+                'peer_id':  peer_id,
+                'group_id': group_id,
+                'count':    200,
+                'offset':   offset,
+                'rev':      0,  # newest first (default)
+                'mark_as_read': 0,
+            }
+            try:
+                hist = _vk_call('messages.getHistory', token, **params)
+            except RuntimeError as e:
+                errors.append(f'peer {peer_id}: {e}')
+                break
 
-            from_id = msg.get('from_id', 0)
-            # Определяем исходящее (ответ менеджера) НАДЁЖНО — не только по from_id<0.
-            # VK помечает сообщения сообщества полем out=1; админ, ответивший от себя
-            # или через сервисный аккаунт («Service A»), может иметь положительный
-            # from_id, но out=1 и/или admin_author_id. Раньше ловили только from_id<0,
-            # поэтому «Service A»-ответы уходили как гостевые и отзыв висел «Ожидает». LU-08.
-            is_outgoing = (
-                msg.get('out') == 1
-                or from_id < 0
-                or bool(msg.get('admin_author_id'))
-            )
-            if is_outgoing:
-                # Ответ со стороны сообщества (менеджер / сервисный аккаунт).
-                # Сохраняем как ADMIN_REPLY и помечаем conv отвеченным.
-                from apps.tenant.branch.api.services import handle_vk_admin_reply_from_poll
-                saved = handle_vk_admin_reply_from_poll(
-                    group_id=group_id,
-                    peer_id=peer_id,
-                    message_id=msg['id'],
-                    text=text,
-                    vk_date=msg.get('date'),
-                    attachments=attachments,
+            page_items = hist.get('items', [])
+            if not page_items:
+                break
+
+            # First-seen: первая встреча треда. Ограничим первую (и единственную)
+            # страницу до FIRST_SEEN_BACKFILL ПОСЛЕДНИХ сообщений (page_items —
+            # newest first, поэтому первые N штук — самые свежие). НЕ идём дальше
+            # — иначе на сервер вылетит вся история рассылок за годы.
+            if first_seen and pages == 1 and len(page_items) > FIRST_SEEN_BACKFILL:
+                page_items = page_items[:FIRST_SEEN_BACKFILL]
+
+            page_max = max((int(m.get('id') or 0) for m in page_items), default=0)
+            reached_cursor = False
+            for msg in page_items:
+                msg_id = int(msg.get('id') or 0)
+                if msg_id <= last_polled:
+                    # Эта и следующие (offset-paging идёт DESC) уже сохранены.
+                    reached_cursor = True
+                    break
+                saved_pk = _save_vk_message(
+                    group_id, msg, handle_vk_incoming_message, handle_vk_admin_reply_from_poll,
                 )
-            else:
-                saved = handle_vk_incoming_message(
-                    group_id=group_id,
-                    from_id=from_id,
-                    message_id=msg['id'],
-                    text=text,
-                    vk_date=msg.get('date'),
-                    attachments=attachments,
-                )
-            if saved is not None:
-                new_count += 1
+                if saved_pk:
+                    new_count += 1
+
+            fetched_max = max(fetched_max, page_max)
+
+            # Условия остановки:
+            #   1) встретили cursor (все более старые уже у нас)
+            #   2) first-seen — берём только одну страницу (FIRST_SEEN_BACKFILL хватит)
+            #   3) страница не полная — больше нет ничего
+            if reached_cursor:
+                break
+            if first_seen:
+                # Дополнительно: для first-seen, если в первой странице оказалось
+                # больше FIRST_SEEN_BACKFILL, мы УЖЕ сохранили всё с id > 0 (т.к.
+                # last_polled=0), что может быть избыточно. Альтернатива — заранее
+                # обрезать page_items[:FIRST_SEEN_BACKFILL]. Делаем именно так,
+                # чтобы при первом контакте не тащить всю рассылочную историю.
+                # (Это применяется на следующем теле цикла — для текущего сохранили
+                # всё, но больше страниц не запрашиваем.)
+                break
+            if len(page_items) < 200:
+                break
+            offset += 200
+
+        # Обновляем cursor у всех conv'ов одного vk_sender_id (может быть и legacy
+        # branch=X, и новый branch=None — оба должны двигать курсор синхронно,
+        # чтобы при следующем тике мы не перетягивали те же сообщения).
+        if fetched_max > last_polled:
+            # Conv мог быть создан внутри handle_vk_incoming_message только что —
+            # поэтому фильтруем по vk_sender_id, а не по списку из начала цикла.
+            TestimonialConversation.objects.filter(
+                vk_sender_id=vk_sender_id,
+            ).update(last_polled_vk_msg_id=fetched_max)
 
     return {'new_messages': new_count, 'errors': errors}
 
