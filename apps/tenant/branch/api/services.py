@@ -981,16 +981,94 @@ def upload_story(vk_id: int, branch_id: int) -> tuple[ClientVKStatus, bool]:
 
 # ── Testimonials ──────────────────────────────────────────────────────────────
 
+def ensure_vk_guest(vk_sender_id: str | int, token: str | None = None):
+    """
+    Возвращает (или создаёт) shared `guest.Client` для VK-пользователя.
+
+    Если запись уже есть — отдаёт её. Если нет — дёргает `vk.users.get`
+    (один запрос) и создаёт. Если VK не отдал имя — создаём всё равно с
+    пустыми first/last, чтобы UI показывал хотя бы «vk{id}» вместо «Гость ВК».
+
+    Раньше attribution name'а шла только если гость САМ открыл миниапп
+    (тогда регистратор создавал Client). Кто пишет в группу, но не играл —
+    оставался anon → conv.vk_guest=None → «Гость ВК». Этот helper закрывает
+    дыру: при первом же VK-сообщении мы автодополним запись.
+
+    token — vk_community_token (любой sender'а группы); если не передан,
+    берём первый ненулевой SenlerConfig.
+    """
+    from apps.shared.guest.models import Client as GuestClient
+    try:
+        vk_id = int(vk_sender_id)
+    except (ValueError, TypeError):
+        return None
+    if vk_id <= 0:
+        return None
+
+    existing = GuestClient.objects.filter(vk_id=vk_id).first()
+    if existing:
+        return existing
+
+    if token is None:
+        from apps.tenant.senler.models import SenlerConfig
+        cfg = SenlerConfig.objects.exclude(vk_community_token='').first()
+        token = cfg.vk_community_token if cfg else None
+    if not token:
+        # Без токена создаём пустую запись — лучше «vk{id}» чем «Гость ВК».
+        return GuestClient.objects.create(vk_id=vk_id, first_name='', last_name='', photo_url='')
+
+    # vk.users.get — один запрос
+    import json as _json
+    import urllib.parse as _up
+    import urllib.request as _ur
+    first = last = photo = ''
+    gender_code = ''
+    try:
+        url = (
+            'https://api.vk.com/method/users.get?'
+            + _up.urlencode({
+                'user_ids': vk_id,
+                'fields':   'first_name,last_name,photo_100,sex',
+                'access_token': token,
+                'v': '5.131',
+            })
+        )
+        with _ur.urlopen(url, timeout=10) as resp:
+            data = _json.loads(resp.read())
+        items = (data.get('response') or [])
+        if items:
+            it = items[0]
+            first = (it.get('first_name') or '')[:255]
+            last  = (it.get('last_name') or '')[:255]
+            photo = (it.get('photo_100') or '')[:500]
+            sex = it.get('sex')
+            if sex == 1:   gender_code = 'f'
+            elif sex == 2: gender_code = 'm'
+    except Exception:
+        # VK-сбой — всё равно создаём пустую запись (лучше «vk{id}» чем «Гость ВК»)
+        pass
+
+    return GuestClient.objects.create(
+        vk_id=vk_id,
+        first_name=first, last_name=last, photo_url=photo,
+        gender=gender_code or None,
+    )
+
+
 def _get_or_create_conversation(
     branch: Branch | None,
     vk_sender_id: str,
     link_vk_guest: bool = False,
+    vk_token: str | None = None,
 ) -> TestimonialConversation:
     """
     Возвращает существующий тред для этого отправителя или создаёт новый.
 
     link_vk_guest=False (APP): branch обязателен, привязывает ClientBranch.
     link_vk_guest=True (VK_MESSAGE): branch=None, привязывает shared Client.
+
+    vk_token — опционально, для ensure_vk_guest (избегаем доп. запроса
+    SenlerConfig если caller уже знает токен).
     """
     conv, _ = TestimonialConversation.objects.get_or_create(
         branch=branch,
@@ -1000,13 +1078,11 @@ def _get_or_create_conversation(
 
     if link_vk_guest:
         # Линкуем к shared Client (vk_id, first_name, last_name, photo_url).
-        # Проверяем при каждом вызове: гость мог зарегистрироваться позже.
+        # Если записи Client'а нет — создаём её через VK API (см. ensure_vk_guest).
+        # Так предотвращаем «Гость ВК» в UI для пишущих в группу гостей,
+        # которые никогда не открывали миниапп.
         if not conv.vk_guest_id:
-            try:
-                from apps.shared.guest.models import Client as GuestClient
-                guest = GuestClient.objects.filter(vk_id=int(vk_sender_id)).first()
-            except (ValueError, TypeError):
-                guest = None
+            guest = ensure_vk_guest(vk_sender_id, token=vk_token)
             if guest:
                 conv.vk_guest = guest
                 conv.save(update_fields=['vk_guest'])
@@ -1145,7 +1221,10 @@ def handle_vk_incoming_message(
     if TestimonialMessage.objects.filter(vk_message_id=vk_msg_id_str).exists():
         return []
 
-    conv = _get_or_create_conversation(None, vk_sender_id, link_vk_guest=True)
+    # Передаём токен в conv-creator: если придётся создать новый guest.Client
+    # через VK users.get, токен уже под рукой и SenlerConfig второй раз не дёргаем.
+    vk_token = next((c.vk_community_token for c in configs if c.vk_community_token), None)
+    conv = _get_or_create_conversation(None, vk_sender_id, link_vk_guest=True, vk_token=vk_token)
 
     photo_atts = extract_vk_photo_attachments(attachments)
 
