@@ -1096,14 +1096,17 @@ def ensure_vk_guest(vk_sender_id: str | int, token: str | None = None):
 
     if not token:
         # Нет токена — создаём с реальным vk_id (не пустым именем!)
-        return GuestClient.objects.create(
-            vk_id=vk_id, first_name=f'vk{vk_id}', last_name='', photo_url='',
-        )
+        fields = dict(first_name=f'vk{vk_id}', last_name='', photo_url='', gender=None)
+    else:
+        users = _vk_fetch_users([vk_id], token)
+        it = users.get(vk_id) or {}
+        fields = _vk_user_to_guest_fields(it, vk_id)
 
-    users = _vk_fetch_users([vk_id], token)
-    it = users.get(vk_id) or {}
-    fields = _vk_user_to_guest_fields(it, vk_id)
-    return GuestClient.objects.create(vk_id=vk_id, **fields)
+    # get_or_create — атомарно безопасно от race condition. Celery worker
+    # с concurrency=2 может одновременно обработать 2 сообщения от одного
+    # нового гостя → IntegrityError на vk_id UNIQUE. get_or_create ловит.
+    obj, _created = GuestClient.objects.get_or_create(vk_id=vk_id, defaults=fields)
+    return obj
 
 
 def _get_or_create_conversation(
@@ -1150,6 +1153,15 @@ def _get_or_create_conversation(
             if cb:
                 conv.client = cb
                 conv.save(update_fields=['client'])
+        # ДОПОЛНИТЕЛЬНО: даже для APP-conv (link_vk_guest=False) — если
+        # ClientBranch не нашёлся (гость не зарегистрирован в этой точке),
+        # всё равно привязываем shared vk_guest, чтобы UI показывал имя.
+        # Иначе APP-conv с client=None становился анонимом.
+        if not conv.client_id and not conv.vk_guest_id:
+            guest = ensure_vk_guest(vk_sender_id, token=vk_token)
+            if guest:
+                conv.vk_guest = guest
+                conv.save(update_fields=['vk_guest'])
 
     return conv
 
