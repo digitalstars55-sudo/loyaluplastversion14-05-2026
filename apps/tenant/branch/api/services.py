@@ -981,21 +981,101 @@ def upload_story(vk_id: int, branch_id: int) -> tuple[ClientVKStatus, bool]:
 
 # ── Testimonials ──────────────────────────────────────────────────────────────
 
+# ── VK users.get helpers (используются и в ensure_vk_guest, и в backfill команде).
+# Один источник правды для маппинга VK-ответа в поля guest.Client.
+
+# Все нужные нам fields сразу — чтобы НЕ делать второго запроса (раньше backfill
+# делал двухэтапный заход: сначала базовые поля, потом ещё раз с screen_name/
+# deactivated для пустых. Это плохо — два запроса вместо одного, и легко забыть).
+VK_USERS_GET_FIELDS = 'first_name,last_name,photo_100,sex,screen_name,deactivated'
+
+
+def _vk_user_to_guest_fields(it: dict, vk_id: int) -> dict:
+    """
+    Маппит ответ VK users.get → kwargs для guest.Client(...).
+
+    ПРАВИЛО: только реальные данные из VK API. НИКАКИХ выдуманных имён.
+      - first/last из VK → используем как есть
+      - иначе screen_name → "@nickname"
+      - иначе deactivated → "Удалённый профиль" / "Заблокирован VK" (реальный статус VK)
+      - иначе → "vk{id}" (реальный VK ID)
+
+    Это гарантирует что в БД НИКОГДА не будет пустого имени и НИКОГДА не будет
+    выдуманного — только то, что отдал VK (или его реальный ID).
+    """
+    f = (it.get('first_name') or '').strip()[:255]
+    l = (it.get('last_name') or '').strip()[:255]
+    photo = (it.get('photo_100') or '')[:500]
+    sn = (it.get('screen_name') or '').strip()
+    deact = it.get('deactivated')  # 'deleted' | 'banned' | None
+    sex = it.get('sex')
+
+    if f or l:
+        first, last = f, l
+    elif sn:
+        first, last = f'@{sn}'[:255], ''
+    elif deact == 'deleted':
+        first, last = 'Удалённый профиль', ''
+    elif deact == 'banned':
+        first, last = 'Заблокирован VK', ''
+    else:
+        first, last = f'vk{vk_id}', ''
+
+    gender = 'f' if sex == 1 else ('m' if sex == 2 else None)
+    return dict(first_name=first, last_name=last, photo_url=photo, gender=gender)
+
+
+def _vk_fetch_users(vk_ids: list[int], token: str) -> dict[int, dict]:
+    """
+    vk.users.get батчем (до 1000 id за раз). Возвращает {vk_id: api_item}.
+    Не падает на сетевых ошибках — возвращает что успело прийти.
+    """
+    import json as _json
+    import urllib.parse as _up
+    import urllib.request as _ur
+
+    result: dict[int, dict] = {}
+    BATCH = 1000
+    for i in range(0, len(vk_ids), BATCH):
+        batch = vk_ids[i:i + BATCH]
+        try:
+            url = (
+                'https://api.vk.com/method/users.get?'
+                + _up.urlencode({
+                    'user_ids': ','.join(map(str, batch)),
+                    'fields':   VK_USERS_GET_FIELDS,
+                    'access_token': token,
+                    'v': '5.131',
+                })
+            )
+            with _ur.urlopen(url, timeout=20) as resp:
+                data = _json.loads(resp.read())
+            if 'error' in data:
+                continue
+            for it in (data.get('response') or []):
+                try:
+                    result[int(it.get('id', 0))] = it
+                except (TypeError, ValueError):
+                    continue
+        except Exception:
+            continue
+    return result
+
+
 def ensure_vk_guest(vk_sender_id: str | int, token: str | None = None):
     """
     Возвращает (или создаёт) shared `guest.Client` для VK-пользователя.
 
     Если запись уже есть — отдаёт её. Если нет — дёргает `vk.users.get`
-    (один запрос) и создаёт. Если VK не отдал имя — создаём всё равно с
-    пустыми first/last, чтобы UI показывал хотя бы «vk{id}» вместо «Гость ВК».
+    (один запрос со всеми extended fields сразу) и создаёт через
+    _vk_user_to_guest_fields (гарантирует осмысленный first_name —
+    реальные данные либо vk{id}).
 
-    Раньше attribution name'а шла только если гость САМ открыл миниапп
-    (тогда регистратор создавал Client). Кто пишет в группу, но не играл —
-    оставался anon → conv.vk_guest=None → «Гость ВК». Этот helper закрывает
-    дыру: при первом же VK-сообщении мы автодополним запись.
+    Раньше: если гость не открывал миниапп, мы не создавали guest.Client →
+    conv anon → «Гость ВК». Этот helper закрывает дыру.
 
-    token — vk_community_token (любой sender'а группы); если не передан,
-    берём первый ненулевой SenlerConfig.
+    token — vk_community_token; если не передан, берём первый ненулевой
+    SenlerConfig.
     """
     from apps.shared.guest.models import Client as GuestClient
     try:
@@ -1013,46 +1093,17 @@ def ensure_vk_guest(vk_sender_id: str | int, token: str | None = None):
         from apps.tenant.senler.models import SenlerConfig
         cfg = SenlerConfig.objects.exclude(vk_community_token='').first()
         token = cfg.vk_community_token if cfg else None
+
     if not token:
-        # Без токена создаём пустую запись — лучше «vk{id}» чем «Гость ВК».
-        return GuestClient.objects.create(vk_id=vk_id, first_name='', last_name='', photo_url='')
-
-    # vk.users.get — один запрос
-    import json as _json
-    import urllib.parse as _up
-    import urllib.request as _ur
-    first = last = photo = ''
-    gender_code = ''
-    try:
-        url = (
-            'https://api.vk.com/method/users.get?'
-            + _up.urlencode({
-                'user_ids': vk_id,
-                'fields':   'first_name,last_name,photo_100,sex',
-                'access_token': token,
-                'v': '5.131',
-            })
+        # Нет токена — создаём с реальным vk_id (не пустым именем!)
+        return GuestClient.objects.create(
+            vk_id=vk_id, first_name=f'vk{vk_id}', last_name='', photo_url='',
         )
-        with _ur.urlopen(url, timeout=10) as resp:
-            data = _json.loads(resp.read())
-        items = (data.get('response') or [])
-        if items:
-            it = items[0]
-            first = (it.get('first_name') or '')[:255]
-            last  = (it.get('last_name') or '')[:255]
-            photo = (it.get('photo_100') or '')[:500]
-            sex = it.get('sex')
-            if sex == 1:   gender_code = 'f'
-            elif sex == 2: gender_code = 'm'
-    except Exception:
-        # VK-сбой — всё равно создаём пустую запись (лучше «vk{id}» чем «Гость ВК»)
-        pass
 
-    return GuestClient.objects.create(
-        vk_id=vk_id,
-        first_name=first, last_name=last, photo_url=photo,
-        gender=gender_code or None,
-    )
+    users = _vk_fetch_users([vk_id], token)
+    it = users.get(vk_id) or {}
+    fields = _vk_user_to_guest_fields(it, vk_id)
+    return GuestClient.objects.create(vk_id=vk_id, **fields)
 
 
 def _get_or_create_conversation(
