@@ -34,6 +34,12 @@ def user_allowed_branches(user, schema_name: str) -> set[int] | None:
       set()      — нет доступа (тенант не в companies или явное "[]")
       set(ids)   — ограничен этим списком
 
+    Источники (в порядке приоритета):
+      1) User.branch_access[schema] (JSON, public schema) — из superadmin UI.
+      2) StaffProfile.branch_access (M2M в tenant schema) — fallback, задаётся
+         через мобильный StaffScreen (Ещё → Сотрудники).
+      3) Без ограничений (None) — backward-compat.
+
     Использование в queryset:
         allowed = user_allowed_branches(request.user, schema_name)
         if allowed is None:
@@ -49,22 +55,36 @@ def user_allowed_branches(user, schema_name: str) -> set[int] | None:
     if not user.companies.filter(schema_name=schema_name).exists():
         return set()  # нет доступа к тенанту вообще
 
+    # 1) User.branch_access (JSON, public schema) — приоритет.
     access = getattr(user, 'branch_access', None) or {}
-    if not isinstance(access, dict):
-        return None  # битый формат → fallback на «без ограничений»
+    if isinstance(access, dict):
+        val = access.get(schema_name)
+        if val == 'all':
+            return None
+        if isinstance(val, list):
+            try:
+                return {int(x) for x in val}
+            except (ValueError, TypeError):
+                return set()
+        # val is None — переходим на fallback
 
-    val = access.get(schema_name)
-    if val is None:
-        # Ключа нет — backward-compat: считаем что нет ограничений
-        return None
-    if val == 'all':
-        return None
-    if isinstance(val, list):
-        try:
-            return {int(x) for x in val}
-        except (ValueError, TypeError):
-            return set()
-    return None  # неизвестный формат → fallback
+    # 2) Fallback: StaffProfile.branch_access (M2M в tenant schema).
+    # Так RBAC, выставленный владельцем через мобильный StaffScreen
+    # («Сотрудники»), тоже применяется без дублирования настройки.
+    try:
+        from django_tenants.utils import schema_context
+        with schema_context(schema_name):
+            from apps.tenant.branch.models import StaffProfile
+            sp = StaffProfile.objects.filter(user=user).first()
+            if sp:
+                ids = set(sp.branch_access.values_list('pk', flat=True))
+                if ids:
+                    return ids
+    except Exception:
+        pass
+
+    # 3) Никаких ограничений
+    return None
 
 
 def filter_branches_qs(qs, user, schema_name: str):
