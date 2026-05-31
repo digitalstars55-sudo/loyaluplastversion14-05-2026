@@ -260,3 +260,71 @@ class NotificationListAPIView(APIView):
             qs.update(read_at=timezone.now())
 
         return Response({'ok': True})
+
+
+class PushPrefsAPIView(APIView):
+    """
+    GET /api/v1/me/push-prefs/  — текущие настройки + доступные тенанты/типы для UI.
+    PATCH /api/v1/me/push-prefs/  body: {tenants?: {...}, types?: {...}}
+
+    Формат push_prefs (хранится в User.push_prefs JSONField):
+      {
+        "tenants": {"asap_orel": true, "shavuha_ot_leo": false, "*": true},
+        "types":   {"review_new": true, "draft_ready": false}
+      }
+
+    Дефолт (пустой prefs) = все пуши включены.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _available_tenants(self, user) -> list[dict]:
+        """SU видит ВСЕ тенанты; обычный юзер — только те, что в companies."""
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            from apps.shared.clients.models import Company
+            if user.is_superuser:
+                qs = Company.objects.exclude(schema_name='public').order_by('name')
+            else:
+                qs = user.companies.exclude(schema_name='public').order_by('name')
+            return [{'schema_name': c.schema_name, 'name': c.name} for c in qs]
+
+    def _available_types(self) -> list[dict]:
+        from apps.shared.users.push import PUSH_TYPES
+        return [{'code': code, 'label': label, 'description': desc} for code, label, desc in PUSH_TYPES]
+
+    def get(self, request):
+        prefs = request.user.push_prefs or {}
+        return Response({
+            'tenants':           prefs.get('tenants') or {},
+            'types':             prefs.get('types') or {},
+            'available_tenants': self._available_tenants(request.user),
+            'available_types':   self._available_types(),
+        })
+
+    def patch(self, request):
+        user = request.user
+        data = request.data or {}
+        prefs = dict(user.push_prefs or {})
+
+        if 'tenants' in data:
+            t = data.get('tenants') or {}
+            if not isinstance(t, dict):
+                return Response({'detail': 'tenants must be an object'}, status=status.HTTP_400_BAD_REQUEST)
+            # Нормализуем значения в bool; пустые ключи отбрасываем
+            prefs['tenants'] = {
+                str(k): bool(v) for k, v in t.items() if isinstance(k, str) and k
+            }
+
+        if 'types' in data:
+            t = data.get('types') or {}
+            if not isinstance(t, dict):
+                return Response({'detail': 'types must be an object'}, status=status.HTTP_400_BAD_REQUEST)
+            from apps.shared.users.push import PUSH_TYPE_CODES
+            prefs['types'] = {
+                str(k): bool(v) for k, v in t.items()
+                if isinstance(k, str) and k in PUSH_TYPE_CODES
+            }
+
+        user.push_prefs = prefs
+        user.save(update_fields=['push_prefs'])
+        return self.get(request)

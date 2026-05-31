@@ -14,6 +14,53 @@ logger = logging.getLogger(__name__)
 EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
 
 
+# Список типов push'ей, которые умеет слать бек. Используется на мобайле для
+# отрисовки экрана «Настройки уведомлений». Добавляем новый тип — добавляй сюда.
+PUSH_TYPES: list[tuple[str, str, str]] = [
+    ('review_new',      'Новый отзыв',         'Гость оставил новый отзыв (APP или ВК).'),
+    ('draft_ready',     'AI-черновик готов',   'Анализатор подготовил черновик ответа.'),
+    ('chat_message',    'Чат поддержки',       'Сообщение от менеджера в саппорт-чате.'),
+    ('daily_code',      'Коды дня',            'Утренняя сводка кодов дня.'),
+    ('guest_birthday',  'ДР гостя',            'У гостя сегодня день рождения.'),
+    ('broadcast_done',  'Рассылка отправлена', 'ВК-рассылка завершена.'),
+    ('report_ready',    'Отчёт готов',         'Аналитический отчёт сгенерирован.'),
+]
+PUSH_TYPE_CODES = [t[0] for t in PUSH_TYPES]
+
+
+def is_push_allowed(user, schema_name: str, push_type: str) -> bool:
+    """
+    Проверяет настройки пользователя: разрешён ли push указанного типа с указанного тенанта.
+
+    Логика:
+      - prefs.types[push_type] (если ключ есть) > True (default)
+      - prefs.tenants[schema_name] (если ключ есть) > prefs.tenants["*"] (если есть) > True
+
+    Все ОБА должны быть True. Пустой/отсутствующий push_prefs = всё включено.
+
+    SU и обычные юзеры обрабатываются ОДИНАКОВО: prefs управляются самим юзером.
+    """
+    prefs = getattr(user, 'push_prefs', None) or {}
+    if not isinstance(prefs, dict):
+        return True
+
+    types = prefs.get('types') or {}
+    if push_type in types and types[push_type] is False:
+        return False
+
+    tenants = prefs.get('tenants') or {}
+    if schema_name in tenants:
+        return bool(tenants[schema_name])
+    if '*' in tenants:
+        return bool(tenants['*'])
+    return True
+
+
+def filter_users_by_prefs(users, schema_name: str, push_type: str) -> list:
+    """Удобный helper для фильтрации списка User'ов по их push-prefs."""
+    return [u for u in users if is_push_allowed(u, schema_name, push_type)]
+
+
 def send_expo_push(
     tokens: List[str],
     title: str,

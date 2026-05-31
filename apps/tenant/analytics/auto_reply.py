@@ -166,25 +166,24 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
         return None
 
 
-def push_draft_ready(schema_name: str, tenant_name: str, conversation_id: int) -> dict:
+def _resolve_push_recipients(schema_name: str, push_type: str) -> tuple[list, list[str]]:
     """
-    Отправить push 'draft_ready' всем админам тенанта.
-    Должен вызываться ПОСЛЕ генерации черновика.
+    Возвращает (admin_users, tokens) с учётом:
+      - SU всегда получает push с любого тенанта
+      - network_admin/superadmin role — только если companies содержит этот тенант
+      - per-user push_prefs фильтр: типы + тенанты (см. is_push_allowed)
+
+    PushToken и User лежат в public schema — оборачиваем в schema_context.
     """
     from django_tenants.utils import schema_context
     from django.db.models import Q
 
-    # PushToken и User лежат в public schema
     with schema_context('public'):
         from apps.shared.users.models import PushToken
+        from apps.shared.users.push import filter_users_by_prefs
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
-        # SU всегда получает push с любого тенанта — без привязки к companies
-        # (раньше И-связка с companies__schema_name давала пуш SU только
-        # с тенантов, явно включённых ему в companies M2M; обычно SU там пусто,
-        # и юзер видел push только с одного тенанта где случайно был в companies).
-        # network_admin/superadmin role — только с явно привязанных тенантов.
         admin_users = list(User.objects.filter(
             Q(is_superuser=True)
             | (
@@ -192,10 +191,23 @@ def push_draft_ready(schema_name: str, tenant_name: str, conversation_id: int) -
                 & Q(companies__schema_name=schema_name)
             ),
         ).distinct())
+
+        # Per-user prefs: исключаем тех, кто отключил этот тенант или тип
+        admin_users = filter_users_by_prefs(admin_users, schema_name, push_type)
+
         tokens = list(
             PushToken.objects.filter(user__in=admin_users)
             .values_list('token', flat=True)
         )
+    return admin_users, tokens
+
+
+def push_draft_ready(schema_name: str, tenant_name: str, conversation_id: int) -> dict:
+    """
+    Отправить push 'draft_ready' всем админам тенанта.
+    Должен вызываться ПОСЛЕ генерации черновика.
+    """
+    admin_users, tokens = _resolve_push_recipients(schema_name, 'draft_ready')
 
     title = 'Готов AI-черновик'
     body = f'{tenant_name}: новый отзыв ждёт ответа. Черновик готов.'
@@ -221,30 +233,7 @@ def push_chat_message(
     Отправить push 'chat_message' админам тенанта.
     Вызывается из inbound-reply (CheckUp → LoyalUP) когда менеджер ответил.
     """
-    from django_tenants.utils import schema_context
-    from django.db.models import Q
-
-    with schema_context('public'):
-        from apps.shared.users.models import PushToken
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-
-        # SU всегда получает push с любого тенанта — без привязки к companies
-        # (раньше И-связка с companies__schema_name давала пуш SU только
-        # с тенантов, явно включённых ему в companies M2M; обычно SU там пусто,
-        # и юзер видел push только с одного тенанта где случайно был в companies).
-        # network_admin/superadmin role — только с явно привязанных тенантов.
-        admin_users = list(User.objects.filter(
-            Q(is_superuser=True)
-            | (
-                (Q(role='network_admin') | Q(role='superadmin'))
-                & Q(companies__schema_name=schema_name)
-            ),
-        ).distinct())
-        tokens = list(
-            PushToken.objects.filter(user__in=admin_users)
-            .values_list('token', flat=True)
-        )
+    admin_users, tokens = _resolve_push_recipients(schema_name, 'chat_message')
 
     body_text = (preview if preview else 'Новое сообщение в саппорт-чате')[:200]
     title = manager_name or 'Менеджер'
@@ -269,30 +258,7 @@ def push_review_new(
     Вызывается ТОЛЬКО при создании ПЕРВОГО сообщения в треде (новый отзыв).
     `source` — APP / VK_MESSAGE — для display и data routing на клиенте.
     """
-    from django_tenants.utils import schema_context
-    from django.db.models import Q
-
-    with schema_context('public'):
-        from apps.shared.users.models import PushToken
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-
-        # SU всегда получает push с любого тенанта — без привязки к companies
-        # (раньше И-связка с companies__schema_name давала пуш SU только
-        # с тенантов, явно включённых ему в companies M2M; обычно SU там пусто,
-        # и юзер видел push только с одного тенанта где случайно был в companies).
-        # network_admin/superadmin role — только с явно привязанных тенантов.
-        admin_users = list(User.objects.filter(
-            Q(is_superuser=True)
-            | (
-                (Q(role='network_admin') | Q(role='superadmin'))
-                & Q(companies__schema_name=schema_name)
-            ),
-        ).distinct())
-        tokens = list(
-            PushToken.objects.filter(user__in=admin_users)
-            .values_list('token', flat=True)
-        )
+    admin_users, tokens = _resolve_push_recipients(schema_name, 'review_new')
 
     label = 'из приложения' if source == 'APP' else 'из ВКонтакте'
     title = 'Новый отзыв'
@@ -313,30 +279,7 @@ def push_daily_codes(schema_name: str, tenant_name: str, body: str) -> dict:
     Отправить push 'daily_codes' админам тенанта — утренняя сводка кодов дня.
     Вызывается из beat-таски push_daily_codes_task в 08:00 MSK.
     """
-    from django_tenants.utils import schema_context
-    from django.db.models import Q
-
-    with schema_context('public'):
-        from apps.shared.users.models import PushToken
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-
-        # SU всегда получает push с любого тенанта — без привязки к companies
-        # (раньше И-связка с companies__schema_name давала пуш SU только
-        # с тенантов, явно включённых ему в companies M2M; обычно SU там пусто,
-        # и юзер видел push только с одного тенанта где случайно был в companies).
-        # network_admin/superadmin role — только с явно привязанных тенантов.
-        admin_users = list(User.objects.filter(
-            Q(is_superuser=True)
-            | (
-                (Q(role='network_admin') | Q(role='superadmin'))
-                & Q(companies__schema_name=schema_name)
-            ),
-        ).distinct())
-        tokens = list(
-            PushToken.objects.filter(user__in=admin_users)
-            .values_list('token', flat=True)
-        )
+    admin_users, tokens = _resolve_push_recipients(schema_name, 'daily_code')
 
     title = 'Коды дня обновлены'
     data = {'type': 'daily_codes'}

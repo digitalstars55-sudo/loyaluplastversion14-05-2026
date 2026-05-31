@@ -43,6 +43,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             'email', 'phone', 'city', 'birthday', 'birthday_set_at',
             'avatar_url', 'branch_ids',
             'tenant_domain', 'tenant_name', 'companies',
+            'push_prefs',
         ]
         read_only_fields = fields
 

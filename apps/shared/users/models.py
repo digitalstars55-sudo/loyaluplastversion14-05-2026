@@ -42,6 +42,19 @@ class User(AbstractUser):
     # Фиксируется при первой установке ДР — после этого менять может только админ.
     birthday_set_at = models.DateTimeField('ДР зафиксирован', null=True, blank=True)
 
+    # Push-настройки: с каких тенантов и о каких типах присылать пуши.
+    # Формат:
+    #   {
+    #     "tenants": {"asap_orel": true, "shavuha_ot_leo": false, "*": true},
+    #     "types":   {"review_new": true, "draft_ready": false, ...}
+    #   }
+    # Где "*" в tenants — дефолт для тенантов не указанных явно. Если ключа нет —
+    # подразумевается True (включено). Пустой dict {} = все пуши включены.
+    push_prefs = models.JSONField(
+        'Настройки push', default=dict, blank=True,
+        help_text='Какие пуши и с каких тенантов получать. Подробнее см. модель.',
+    )
+
     @property
     def is_superadmin(self):
         return self.role == self.Role.SUPERADMIN
