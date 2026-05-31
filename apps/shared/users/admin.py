@@ -63,7 +63,9 @@ class UserPublicAdmin(BaseUserAdmin):
             return format_html('<i>Сначала сохраните пользователя</i>')
         if obj.is_superuser:
             return format_html('<span style="color:#666">SU видит ВСЕ точки во всех тенантах — branch_access игнорируется.</span>')
-        url = reverse('admin:users_user_branch_access', args=[obj.pk])
+        # PublicAdminSite зарегистрирован как namespace 'public_admin' (см. admin_sites.py),
+        # поэтому reverse через self.admin_site.name (а не хардкод 'admin').
+        url = reverse(f'{self.admin_site.name}:users_user_branch_access', args=[obj.pk])
         access = obj.branch_access or {}
         summary = ', '.join(
             f'{s}: {"все" if v == "all" else f"{len(v)} точек" if isinstance(v, list) else "?"}'
@@ -142,7 +144,9 @@ class UserPublicAdmin(BaseUserAdmin):
             user.branch_access = new_access
             user.save(update_fields=['branch_access'])
             messages.success(request, f'Сохранены доступы к точкам для {user.username}.')
-            return HttpResponseRedirect(reverse('admin:users_user_change', args=[user_id]))
+            return HttpResponseRedirect(
+                reverse(f'{self.admin_site.name}:users_user_change', args=[user_id])
+            )
 
         ctx = {
             **self.admin_site.each_context(request),
