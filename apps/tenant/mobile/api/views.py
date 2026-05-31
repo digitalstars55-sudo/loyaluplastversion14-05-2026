@@ -1731,6 +1731,106 @@ class StaffInviteAPIView(APIView):
         return Response(body, status=status.HTTP_201_CREATED)
 
 
+class StaffLinkExistingAPIView(APIView):
+    """
+    POST /api/v1/staff/link-existing/  body: {username, role?, branch_ids?}
+
+    Связывает СУЩЕСТВУЮЩЕГО юзера (по точному username) с ТЕКУЩЕЙ сетью.
+    Сценарий: владелец сети нанял сотрудника, который уже работает в его
+    другой сети — не нужно создавать новый аккаунт с новым паролем, можно
+    переиспользовать существующий.
+
+    - Username знать обязательно — защита от утечки списка чужих юзеров
+      (мы не отдаём поиск по подстроке, только точное совпадение).
+    - role/branch_ids — опционально; если не переданы, ставим viewer + все точки.
+    - Если юзер уже в этой сети — 409 (не дублировать).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from django.contrib.auth import get_user_model
+        from django.db import connection, transaction
+        from apps.tenant.branch.models import Branch, StaffProfile
+        User = get_user_model()
+        d = request.data or {}
+
+        username = (d.get('username') or '').strip()
+        if not username:
+            return Response({'error': 'username обязателен'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response(
+                {'error': f'Пользователь "{username}" не найден. Проверь логин точно (с регистром).'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if user.is_superuser:
+            return Response(
+                {'error': 'Нельзя добавлять суперпользователя как сотрудника сети.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        tenant = getattr(connection, 'tenant', None)
+        if tenant is None or not getattr(tenant, 'pk', None):
+            return Response({'error': 'Нет контекста тенанта'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if user.companies.filter(pk=tenant.pk).exists():
+            return Response(
+                {'error': 'Этот сотрудник уже добавлен в текущую сеть.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        # RBAC: проверяем что можем управлять РОЛЬЮ этого юзера (нельзя добавить
+        # себе network_admin как viewer того кто выше).
+        mob_role = (d.get('role') or _BACKEND_ROLE_TO_MOBILE.get(user.role) or 'viewer').lower()
+        if mob_role not in ('manager', 'viewer'):
+            mob_role = 'viewer'
+        if not _can_manage_role(request.user, mob_role):
+            return Response(
+                {'error': 'Недостаточно прав для добавления сотрудника с этой ролью.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # branch_ids — опционально, для current tenant
+        raw_branch_ids = d.get('branch_ids') or []
+        if not isinstance(raw_branch_ids, list):
+            return Response({'error': 'branch_ids должен быть списком'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            branch_ids = [int(x) for x in raw_branch_ids]
+        except (TypeError, ValueError):
+            return Response({'error': 'branch_ids должен содержать числа'}, status=status.HTTP_400_BAD_REQUEST)
+        valid_branch_ids = list(
+            Branch.objects.filter(pk__in=branch_ids).values_list('pk', flat=True)
+        )
+
+        with transaction.atomic():
+            user.companies.add(tenant)
+            # is_active не трогаем — может быть выключен в другой сети, но активен в этой
+            if not user.is_active:
+                user.is_active = True
+                user.save(update_fields=['is_active'])
+
+            # StaffProfile создаётся per-tenant (он в tenant schema). В этой сети
+            # его ещё нет → создаём с дефолтами роли.
+            profile = _get_or_create_staff_profile(user)
+            if valid_branch_ids:
+                profile.branch_access.set(valid_branch_ids)
+            profile.save()
+
+        from apps.tenant.branch.audit import log_audit
+        log_audit(
+            request.user, 'STAFF_LINK_EXISTING',
+            target_type='staff', target_id=user.pk,
+            target_label=(user.get_full_name() or user.username)[:255],
+            details=f'username={username}, role={mob_role}, branches={valid_branch_ids}',
+        )
+        body = _serialize_staff(user)
+        body['linked_from_existing'] = True  # мобайл показывает Toast «добавлен в сеть»
+        return Response(body, status=status.HTTP_201_CREATED)
+
+
 # ════════════════════════════════════════════════════════════════════
 # Catalog: ProductCategory CRUD
 # ════════════════════════════════════════════════════════════════════

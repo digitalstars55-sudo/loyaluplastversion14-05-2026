@@ -25,6 +25,7 @@ from .views import (
     StaffListAPIView,
     StaffDetailAPIView,
     StaffInviteAPIView,
+    StaffLinkExistingAPIView,
     ProductCategoryListCreateAPIView, ProductCategoryDetailAPIView,
     ProductListCreateAPIView, ProductDetailAPIView,
     QuestListCreateAPIView, QuestDetailAPIView,
@@ -141,6 +142,11 @@ urlpatterns = [
         'staff/invite/',
         StaffInviteAPIView.as_view(),
         name='staff-invite',
+    ),
+    path(
+        'staff/link-existing/',
+        StaffLinkExistingAPIView.as_view(),
+        name='staff-link-existing',
     ),
 
     # Catalog: categories CRUD
