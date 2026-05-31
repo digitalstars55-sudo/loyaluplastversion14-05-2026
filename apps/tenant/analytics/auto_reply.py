@@ -180,9 +180,17 @@ def push_draft_ready(schema_name: str, tenant_name: str, conversation_id: int) -
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
+        # SU всегда получает push с любого тенанта — без привязки к companies
+        # (раньше И-связка с companies__schema_name давала пуш SU только
+        # с тенантов, явно включённых ему в companies M2M; обычно SU там пусто,
+        # и юзер видел push только с одного тенанта где случайно был в companies).
+        # network_admin/superadmin role — только с явно привязанных тенантов.
         admin_users = list(User.objects.filter(
-            Q(role='network_admin') | Q(role='superadmin') | Q(is_superuser=True),
-            companies__schema_name=schema_name,
+            Q(is_superuser=True)
+            | (
+                (Q(role='network_admin') | Q(role='superadmin'))
+                & Q(companies__schema_name=schema_name)
+            ),
         ).distinct())
         tokens = list(
             PushToken.objects.filter(user__in=admin_users)
@@ -221,9 +229,17 @@ def push_chat_message(
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
+        # SU всегда получает push с любого тенанта — без привязки к companies
+        # (раньше И-связка с companies__schema_name давала пуш SU только
+        # с тенантов, явно включённых ему в companies M2M; обычно SU там пусто,
+        # и юзер видел push только с одного тенанта где случайно был в companies).
+        # network_admin/superadmin role — только с явно привязанных тенантов.
         admin_users = list(User.objects.filter(
-            Q(role='network_admin') | Q(role='superadmin') | Q(is_superuser=True),
-            companies__schema_name=schema_name,
+            Q(is_superuser=True)
+            | (
+                (Q(role='network_admin') | Q(role='superadmin'))
+                & Q(companies__schema_name=schema_name)
+            ),
         ).distinct())
         tokens = list(
             PushToken.objects.filter(user__in=admin_users)
@@ -261,9 +277,17 @@ def push_review_new(
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
+        # SU всегда получает push с любого тенанта — без привязки к companies
+        # (раньше И-связка с companies__schema_name давала пуш SU только
+        # с тенантов, явно включённых ему в companies M2M; обычно SU там пусто,
+        # и юзер видел push только с одного тенанта где случайно был в companies).
+        # network_admin/superadmin role — только с явно привязанных тенантов.
         admin_users = list(User.objects.filter(
-            Q(role='network_admin') | Q(role='superadmin') | Q(is_superuser=True),
-            companies__schema_name=schema_name,
+            Q(is_superuser=True)
+            | (
+                (Q(role='network_admin') | Q(role='superadmin'))
+                & Q(companies__schema_name=schema_name)
+            ),
         ).distinct())
         tokens = list(
             PushToken.objects.filter(user__in=admin_users)
@@ -297,9 +321,17 @@ def push_daily_codes(schema_name: str, tenant_name: str, body: str) -> dict:
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
+        # SU всегда получает push с любого тенанта — без привязки к companies
+        # (раньше И-связка с companies__schema_name давала пуш SU только
+        # с тенантов, явно включённых ему в companies M2M; обычно SU там пусто,
+        # и юзер видел push только с одного тенанта где случайно был в companies).
+        # network_admin/superadmin role — только с явно привязанных тенантов.
         admin_users = list(User.objects.filter(
-            Q(role='network_admin') | Q(role='superadmin') | Q(is_superuser=True),
-            companies__schema_name=schema_name,
+            Q(is_superuser=True)
+            | (
+                (Q(role='network_admin') | Q(role='superadmin'))
+                & Q(companies__schema_name=schema_name)
+            ),
         ).distinct())
         tokens = list(
             PushToken.objects.filter(user__in=admin_users)
