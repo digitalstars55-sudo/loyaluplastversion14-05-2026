@@ -51,6 +51,7 @@ class ReviewListSerializer(serializers.ModelSerializer):
     text          = serializers.SerializerMethodField()
     rating        = serializers.SerializerMethodField()
     source        = serializers.SerializerMethodField()
+    sources       = serializers.SerializerMethodField()
     sentiment     = serializers.SerializerMethodField()
     has_draft       = serializers.SerializerMethodField()
     draft_text      = serializers.SerializerMethodField()
@@ -61,6 +62,7 @@ class ReviewListSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'source',
+            'sources',
             'sentiment',
             'ai_comment',
             'branch_id',
@@ -115,11 +117,43 @@ class ReviewListSerializer(serializers.ModelSerializer):
         msg = self._last_message(obj)
         return msg.rating if msg and msg.rating else None
 
+    def _all_sources(self, obj) -> list[str]:
+        """
+        Все publi-источники сообщений (APP/VK_MESSAGE) этого треда + всех
+        родственных тредов с тем же vk_sender_id (cross-conv unified thread).
+        ADMIN_REPLY НЕ включаем — это ответ менеджера, не источник отзыва.
+        """
+        # Кэш на инстансе (вызывается из get_source И get_sources)
+        cached = getattr(obj, '_sources_cache', None)
+        if cached is not None:
+            return cached
+
+        qs = TestimonialMessage.objects.filter(conversation_id=obj.pk)
+        if obj.vk_sender_id:
+            # Подтягиваем все треды с тем же vk_sender_id (legacy branch=X +
+            # новый branch=None + APP-conv того же гостя). Так бейдж в карточке
+            # покажет реальный набор источников.
+            qs = TestimonialMessage.objects.filter(
+                conversation__vk_sender_id=obj.vk_sender_id,
+            )
+        srcs = set(qs.values_list('source', flat=True))
+        srcs.discard(TestimonialMessage.Source.ADMIN_REPLY)
+        # Стабильный порядок: APP перед VK_MESSAGE
+        order = {'APP': 0, 'VK_MESSAGE': 1}
+        result = sorted(srcs, key=lambda s: order.get(s, 99))
+        obj._sources_cache = result
+        return result
+
     def get_source(self, obj) -> str:
-        # APP если в треде есть APP-сообщения, иначе VK_MESSAGE
-        if obj.messages.filter(source=TestimonialMessage.Source.APP).exists():
+        """Главный источник для обратной совместимости: APP приоритетнее."""
+        srcs = self._all_sources(obj)
+        if 'APP' in srcs:
             return 'APP'
         return 'VK_MESSAGE'
+
+    def get_sources(self, obj) -> list[str]:
+        """Все источники: ['APP'] / ['VK_MESSAGE'] / ['APP', 'VK_MESSAGE']."""
+        return self._all_sources(obj) or [self.get_source(obj)]
 
     def get_sentiment(self, obj) -> str:
         # Backend хранит 'WAITING' (default до AI-анализа), мобайл-тип ждёт 'PENDING'.

@@ -135,18 +135,27 @@ class MobileReviewReplyAPIView(APIView):
 
         conv = get_object_or_404(TestimonialConversation, pk=review_id)
 
+        delivered_to_vk = False
+        vk_error: str | None = None
         if conv.vk_sender_id:
-            # VK-диалог → отправляем в ВК. Раньше ответ только сохранялся
-            # локально и гость его НЕ получал (Леся Хромова: «ответ не улетел»).
+            # APP- ИЛИ VK-conv: оба имеют vk_sender_id, оба можно ответить
+            # через сообщество (для APP-гостя это значит, что менеджер
+            # пишет ему в ЛС от имени группы).
+            # Если гость заблокировал сообщения от группы — VK вернёт error,
+            # тогда сохраняем локально с warning (а не 502, чтобы UI показал
+            # ответ менеджера в треде — гость хотя бы увидит при следующем
+            # заходе через миниапп).
             from apps.tenant.branch.api.services import send_vk_reply
             try:
                 msg = send_vk_reply(conv, text)
+                delivered_to_vk = True
             except Exception as e:
-                return Response(
-                    {'detail': f'Не удалось отправить ответ в ВКонтакте: {e}'},
-                    status=status.HTTP_502_BAD_GATEWAY,
-                )
-        else:
+                vk_error = str(e)
+                msg = None
+
+        if not delivered_to_vk:
+            # Fallback: локальное сохранение (как для conv без vk_sender_id
+            # ИЛИ когда VK reply упал — гость недоступен через ВК).
             with transaction.atomic():
                 msg = TestimonialMessage.objects.create(
                     conversation=conv,
@@ -165,7 +174,13 @@ class MobileReviewReplyAPIView(APIView):
             target_label=str(conv)[:255],
             details=text[:500],
         )
-        return Response(ReviewMessageSerializer(msg).data, status=status.HTTP_201_CREATED)
+        # Возвращаем msg + флаг доставки в ВК, чтобы мобайл показал warning
+        # «гость не получит уведомление в ВК» если delivered_to_vk=False.
+        data = ReviewMessageSerializer(msg).data
+        data['delivered_to_vk'] = delivered_to_vk
+        if vk_error and not delivered_to_vk:
+            data['vk_error'] = vk_error
+        return Response(data, status=status.HTTP_201_CREATED)
 
 
 class MobileReviewResolveAPIView(APIView):
