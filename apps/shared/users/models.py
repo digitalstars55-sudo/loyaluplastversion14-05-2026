@@ -42,6 +42,23 @@ class User(AbstractUser):
     # Фиксируется при первой установке ДР — после этого менять может только админ.
     birthday_set_at = models.DateTimeField('ДР зафиксирован', null=True, blank=True)
 
+    # Per-branch доступ внутри тенанта. Формат:
+    #   {"asap_orel": "all", "asap_bryansk": [7, 12]}
+    # Ключ — schema_name; значение:
+    #   "all"   → доступ ко ВСЕМ точкам этого тенанта (поведение «как раньше»)
+    #   [id..] → доступ только к этим branch_id (тенант-локальный id)
+    # Ключ ОТСУТСТВУЕТ для тенанта = доступ ТОЛЬКО если companies содержит тенант
+    #   (в этом случае работает дефолт "all" — для backward-compat).
+    # Пустой dict {} = дефолт "all" во всех companies (бывшее поведение, никаких ограничений).
+    # SU (is_superuser=True) ВСЕГДА видит всё, branch_access игнорируется.
+    branch_access = models.JSONField(
+        'Доступ к точкам', default=dict, blank=True,
+        help_text=(
+            'Ограничения per-tenant. JSON: {"schema_name": "all"|[branch_id,...]}. '
+            'Если ключа нет — доступ ко всем точкам этого тенанта (по умолчанию).'
+        ),
+    )
+
     # Push-настройки: с каких тенантов и о каких типах присылать пуши.
     # Формат:
     #   {

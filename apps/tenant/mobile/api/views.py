@@ -40,7 +40,14 @@ class MobileBranchListAPIView(generics.ListAPIView):
     serializer_class = BranchSerializer
 
     def get_queryset(self):
-        return Branch.objects.select_related('config').filter(is_active=True).order_by('name')
+        from apps.shared.users.access import user_allowed_branches, current_schema_name
+        qs = Branch.objects.select_related('config').filter(is_active=True).order_by('name')
+        allowed = user_allowed_branches(self.request.user, current_schema_name())
+        if allowed is None:
+            return qs
+        if not allowed:
+            return qs.none()
+        return qs.filter(pk__in=allowed)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -58,11 +65,24 @@ class MobileReviewListAPIView(generics.ListAPIView):
     serializer_class = ReviewListSerializer
 
     def get_queryset(self):
+        from apps.shared.users.access import user_allowed_branches, current_schema_name
         qs = TestimonialConversation.objects.select_related(
             'branch', 'client__client', 'vk_guest',
         ).prefetch_related('messages').order_by('-last_message_at', '-id')
 
-        # Фильтр по точкам
+        # RBAC: ограничиваем выдачу по точкам, к которым у user'а доступ.
+        # NULL branch (VK-conv без точки) — показываем только если есть ХОТЯ БЫ
+        # одна разрешённая точка (RBAC-юзер с branch=None conv видит всех гостей,
+        # т.к. VK-сообщения общие по сети, а не по точке).
+        allowed = user_allowed_branches(self.request.user, current_schema_name())
+        if allowed is not None:
+            if not allowed:
+                qs = qs.none()
+            else:
+                from django.db.models import Q
+                qs = qs.filter(Q(branch_id__in=allowed) | Q(branch__isnull=True))
+
+        # Фильтр по точкам (выбор пользователем в UI). Пересекаем с RBAC.
         branch_ids_raw = self.request.query_params.get('branch_ids')
         if branch_ids_raw:
             try:
@@ -92,6 +112,22 @@ class MobileReviewListAPIView(generics.ListAPIView):
         return Response({'reviews': ser.data})
 
 
+def _check_conv_access(request, conv) -> bool:
+    """
+    Доступ к conv по RBAC: SU видит всё; обычный — если conv.branch разрешён
+    (или branch=None VK-conv в тенанте где user имеет хоть одну разрешённую точку).
+    """
+    from apps.shared.users.access import user_allowed_branches, current_schema_name
+    allowed = user_allowed_branches(request.user, current_schema_name())
+    if allowed is None:
+        return True
+    if not allowed:
+        return False
+    if conv.branch_id is None:
+        return True  # общий VK-conv видят все RBAC-юзеры тенанта
+    return conv.branch_id in allowed
+
+
 class MobileReviewMessagesAPIView(generics.ListAPIView):
     """GET /api/v1/mobile/reviews/{id}/messages/"""
     permission_classes = [IsAuthenticated]
@@ -100,11 +136,15 @@ class MobileReviewMessagesAPIView(generics.ListAPIView):
     def get_queryset(self):
         review_id = self.kwargs['review_id']
         conv = TestimonialConversation.objects.filter(pk=review_id).first()
+        if conv is None:
+            return TestimonialMessage.objects.none()
+        if not _check_conv_access(self.request, conv):
+            return TestimonialMessage.objects.none()
         # Если это VK-гость — объединяем сообщения ВСЕХ его тредов по vk_sender_id.
         # Исторически диалог мог разъехаться (legacy branch=X + новый branch=None):
         # сообщения гостя в одном треде, ответы менеджера в другом. Показываем
         # полный диалог, чтобы в мобилке были видны и сообщения, и ответы.
-        if conv and conv.vk_sender_id:
+        if conv.vk_sender_id:
             return TestimonialMessage.objects.filter(
                 conversation__vk_sender_id=conv.vk_sender_id,
             ).order_by('created_at')
@@ -134,6 +174,8 @@ class MobileReviewReplyAPIView(APIView):
         text = ser.validated_data['text'].strip()
 
         conv = get_object_or_404(TestimonialConversation, pk=review_id)
+        if not _check_conv_access(request, conv):
+            return Response({'detail': 'Нет доступа к этому отзыву'}, status=status.HTTP_403_FORBIDDEN)
 
         delivered_to_vk = False
         vk_error: str | None = None
@@ -195,6 +237,8 @@ class MobileReviewResolveAPIView(APIView):
 
     def post(self, request, review_id: int):
         conv = get_object_or_404(TestimonialConversation, pk=review_id)
+        if not _check_conv_access(request, conv):
+            return Response({'detail': 'Нет доступа к этому отзыву'}, status=status.HTTP_403_FORBIDDEN)
         # Защита: для VK-негатива без ответа не разрешаем закрывать без reply
         is_vk = not conv.messages.filter(source=TestimonialMessage.Source.APP).exists()
         if is_vk and conv.sentiment in ('NEGATIVE', 'PARTIALLY_NEGATIVE') and not conv.is_replied:

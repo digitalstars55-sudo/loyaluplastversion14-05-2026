@@ -35,6 +35,7 @@ def _safe_push_review_new(*, conv, source: str) -> None:
             tenant_name=getattr(tenant, "name", tenant.schema_name),
             conversation_id=conv.pk,
             source=source,
+            branch_id=conv.branch_id,
         )
     except Exception:
         log.exception("_safe_push_review_new failed conv=%s source=%s", conv.pk, source)

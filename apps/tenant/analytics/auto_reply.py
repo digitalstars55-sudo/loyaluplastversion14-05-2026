@@ -166,12 +166,18 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
         return None
 
 
-def _resolve_push_recipients(schema_name: str, push_type: str) -> tuple[list, list[str]]:
+def _resolve_push_recipients(
+    schema_name: str,
+    push_type: str,
+    branch_id: int | None = None,
+) -> tuple[list, list[str]]:
     """
     Возвращает (admin_users, tokens) с учётом:
       - SU всегда получает push с любого тенанта
       - network_admin/superadmin role — только если companies содержит этот тенант
       - per-user push_prefs фильтр: типы + тенанты (см. is_push_allowed)
+      - per-user branch_access фильтр: если push привязан к branch_id, исключаем
+        тех, у кого нет доступа к этой точке (NULL/общетенантный push — всем)
 
     PushToken и User лежат в public schema — оборачиваем в schema_context.
     """
@@ -181,6 +187,7 @@ def _resolve_push_recipients(schema_name: str, push_type: str) -> tuple[list, li
     with schema_context('public'):
         from apps.shared.users.models import PushToken
         from apps.shared.users.push import filter_users_by_prefs
+        from apps.shared.users.access import user_allowed_branches
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
@@ -194,6 +201,14 @@ def _resolve_push_recipients(schema_name: str, push_type: str) -> tuple[list, li
 
         # Per-user prefs: исключаем тех, кто отключил этот тенант или тип
         admin_users = filter_users_by_prefs(admin_users, schema_name, push_type)
+
+        # Per-user branch_access: если push привязан к конкретной точке,
+        # исключаем тех, у кого нет к ней доступа.
+        if branch_id is not None:
+            def _has_branch(u):
+                allowed = user_allowed_branches(u, schema_name)
+                return allowed is None or branch_id in allowed
+            admin_users = [u for u in admin_users if _has_branch(u)]
 
         tokens = list(
             PushToken.objects.filter(user__in=admin_users)
@@ -252,13 +267,15 @@ def push_review_new(
     tenant_name: str,
     conversation_id: int,
     source: str = 'APP',
+    branch_id: int | None = None,
 ) -> dict:
     """
     Отправить push 'review_new' админам тенанта.
     Вызывается ТОЛЬКО при создании ПЕРВОГО сообщения в треде (новый отзыв).
     `source` — APP / VK_MESSAGE — для display и data routing на клиенте.
+    `branch_id` — если передан, push идёт только тем у кого есть RBAC-доступ.
     """
-    admin_users, tokens = _resolve_push_recipients(schema_name, 'review_new')
+    admin_users, tokens = _resolve_push_recipients(schema_name, 'review_new', branch_id=branch_id)
 
     label = 'из приложения' if source == 'APP' else 'из ВКонтакте'
     title = 'Новый отзыв'

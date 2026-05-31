@@ -1,0 +1,148 @@
+{% extends "admin/base_site.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<style>
+  .ba-tenant-card {
+    border: 1px solid #d0d0d0;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+    background: #fff;
+  }
+  .ba-tenant-name {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .ba-schema {
+    color: #888;
+    font-weight: 400;
+    font-size: 12px;
+    margin-left: 8px;
+  }
+  .ba-master-row {
+    background: #eef6ff;
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .ba-branch-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+    padding-left: 8px;
+  }
+  .ba-branch-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+  }
+  .ba-disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  .ba-no-branches {
+    color: #999;
+    font-style: italic;
+    padding: 8px;
+  }
+  .ba-help {
+    background: #fffbe6;
+    border: 1px solid #f0d780;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 13px;
+  }
+</style>
+
+<h1>{{ title }}</h1>
+
+<div class="ba-help">
+  💡 Для каждой компании ниже можно выдать доступ <b>ко всем точкам</b> (master-чекбокс)
+  или ограничить <b>конкретными точками</b>. Если пользователь снимет вообще все галки
+  у компании — он не увидит ни одной точки в этом тенанте.
+  <br><br>
+  Для <b>суперпользователей</b> (is_superuser) эти настройки игнорируются — они видят
+  всё всегда.
+</div>
+
+<form method="post">
+  {% csrf_token %}
+
+  {% for tenant in tenants %}
+    <div class="ba-tenant-card">
+      <div class="ba-tenant-name">
+        {{ tenant.name }}
+        <span class="ba-schema">{{ tenant.schema }}</span>
+      </div>
+
+      <label class="ba-master-row">
+        <input type="checkbox" name="all_{{ tenant.schema }}" value="1"
+               id="all_{{ tenant.schema }}"
+               {% if tenant.all_on %}checked{% endif %}
+               onchange="toggleAll('{{ tenant.schema }}')">
+        <span><b>Все точки</b> в этой компании (включая будущие)</span>
+      </label>
+
+      {% if tenant.branches %}
+        <div class="ba-branch-list" id="list_{{ tenant.schema }}">
+          {% for br in tenant.branches %}
+            <label class="ba-branch-row">
+              <input type="checkbox"
+                     name="br_{{ tenant.schema }}_{{ br.id }}"
+                     value="1"
+                     {% if tenant.all_on or br.id in tenant.allowed_set %}checked{% endif %}>
+              <span>{{ br.name }}</span>
+              <span style="color:#aaa; font-size:11px;">#{{ br.id }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="ba-no-branches">— В этой компании нет активных точек</div>
+      {% endif %}
+    </div>
+  {% empty %}
+    <div class="ba-help" style="background:#fee; border-color:#fbb;">
+      У пользователя <b>{{ user_obj.username }}</b> нет компаний в поле <code>companies</code>.
+      Сначала добавьте компании на странице пользователя, потом возвращайтесь сюда.
+    </div>
+  {% endfor %}
+
+  <div style="margin-top: 20px;">
+    <button type="submit" class="button default" style="font-size:14px; padding:8px 16px;">
+      💾 Сохранить доступы
+    </button>
+    <a href="{% url 'admin:users_user_change' user_obj.pk %}"
+       style="margin-left:10px;">↩ Отмена</a>
+  </div>
+</form>
+
+<script>
+function toggleAll(schema) {
+  const master = document.getElementById('all_' + schema);
+  const list   = document.getElementById('list_' + schema);
+  if (!list) return;
+  const checks = list.querySelectorAll('input[type=checkbox]');
+  if (master.checked) {
+    // «Все точки» включает все детальные галки и блокирует их
+    checks.forEach(c => { c.checked = true; });
+    list.classList.add('ba-disabled');
+  } else {
+    list.classList.remove('ba-disabled');
+  }
+}
+// Инициализация: если master чекнут — заблокировать детали
+document.querySelectorAll('[id^="all_"]').forEach(m => {
+  if (m.checked) toggleAll(m.id.replace('all_', ''));
+});
+</script>
+
+{% endblock %}
