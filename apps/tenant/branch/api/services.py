@@ -1365,20 +1365,44 @@ def handle_vk_incoming_message(
         except Exception:
             pass
 
-    conv.has_unread = True
-    conv.is_replied = False
-    conv.last_message_at = timezone.now()
-    conv.save(update_fields=['has_unread', 'is_replied', 'last_message_at'])
+    # ── ИСТОРИЧЕСКОЕ vs СВЕЖЕЕ сообщение (LU-35 v2 — защита от спама) ──────────
+    # Когда reconcile/poll догоняет СТАРЫЕ сообщения (5 мес назад и т.п.), НЕЛЬЗЯ:
+    #   - слать пуш (юзер получит сотни уведомлений за всю историю);
+    #   - поднимать диалог наверх (last_message_at=now);
+    #   - помечать непрочитанным (флуд бейджа);
+    #   - жечь AI-кредиты на классификацию старья.
+    # Историческим считаем сообщение старше HISTORICAL_THRESHOLD от текущего момента.
+    HISTORICAL_THRESHOLD = timedelta(hours=6)
+    msg_dt = None
+    if vk_date and vk_date > 0:
+        import datetime as _dt2
+        try:
+            msg_dt = _dt2.datetime.fromtimestamp(int(vk_date), tz=_dt2.timezone.utc)
+        except Exception:
+            msg_dt = None
+    effective_dt = msg_dt or timezone.now()
+    is_historical = bool(msg_dt and (timezone.now() - msg_dt) > HISTORICAL_THRESHOLD)
 
-    # AI-классификация только если есть текст. Фото-только сообщение нечего
-    # анализировать тональностью (vision не используем) — оставляем как есть.
-    if text:
-        from apps.tenant.analytics.ai_service import analyze_and_save
-        analyze_and_save(conv.id, text, TestimonialMessage.Source.VK_MESSAGE)
+    # last_message_at — ВСЕГДА монотонный максимум (никогда не now() и не назад).
+    if conv.last_message_at is None or effective_dt > conv.last_message_at:
+        conv.last_message_at = effective_dt
 
-    # Push only on FIRST message in the thread (= new VK-originated review).
-    if TestimonialMessage.objects.filter(conversation=conv).count() == 1:
-        _safe_push_review_new(conv=conv, source='VK_MESSAGE')
+    if is_historical:
+        # Тихий импорт: статусы пересчитываем по факту, но не форсим unread.
+        conv.save(update_fields=['last_message_at'])
+    else:
+        conv.has_unread = True
+        conv.is_replied = False
+        conv.save(update_fields=['has_unread', 'is_replied', 'last_message_at'])
+
+        # AI-классификация и пуш — ТОЛЬКО для свежих сообщений.
+        if text:
+            from apps.tenant.analytics.ai_service import analyze_and_save
+            analyze_and_save(conv.id, text, TestimonialMessage.Source.VK_MESSAGE)
+
+        # Push only on FIRST message in the thread (= new VK-originated review).
+        if TestimonialMessage.objects.filter(conversation=conv).count() == 1:
+            _safe_push_review_new(conv=conv, source='VK_MESSAGE')
 
     return [msg]
 
@@ -1488,11 +1512,29 @@ def handle_vk_admin_reply_from_poll(
         except (TypeError, ValueError):
             continue
 
+    # last_message_at — монотонный максимум по реальной дате сообщения,
+    # НЕ now() (иначе исторический ответ менеджера поднимает диалог наверх).
+    import datetime as _dt3
+    reply_dt = None
+    if vk_date and vk_date > 0:
+        try:
+            reply_dt = _dt3.datetime.fromtimestamp(int(vk_date), tz=_dt3.timezone.utc)
+        except Exception:
+            reply_dt = None
+    effective_dt = reply_dt or timezone.now()
+
     if not later_guest_exists:
         conv.is_replied = True
         conv.has_unread = False
-        conv.last_message_at = timezone.now()
+        if conv.last_message_at is None or effective_dt > conv.last_message_at:
+            conv.last_message_at = effective_dt
         conv.save(update_fields=['is_replied', 'has_unread', 'last_message_at'])
+    else:
+        # Гость написал после этого ответа — статус не трогаем, но дату двигаем
+        # вперёд только если этот ответ реально новее (монотонно).
+        if conv.last_message_at is None or effective_dt > conv.last_message_at:
+            conv.last_message_at = effective_dt
+            conv.save(update_fields=['last_message_at'])
 
     return msg
 
