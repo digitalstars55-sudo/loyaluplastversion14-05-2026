@@ -348,6 +348,19 @@ def handle_vk_callback(data: dict) -> None:
         # Сообщение «с контентом» = есть текст ИЛИ есть вложения (фото-только тоже).
         has_content = bool(text or attachments)
         if from_id and from_id > 0 and message_id and has_content:
+            # LU-40+/LU-42: Callback не несёт историю — лёгким getHistory находим
+            # предыдущее исходящее (промо/опрос) и показываем как контекст «↳ …».
+            _rt_text, _rt_date = '', None
+            try:
+                from apps.tenant.branch.tasks import (
+                    _vk_call, _last_outgoing_before, _context_from,
+                )
+                _hist = _vk_call('messages.getHistory', config.vk_community_token,
+                                 group_id=group_id, user_id=from_id, count=10, rev=0)
+                _rt_text, _rt_date = _context_from(_last_outgoing_before(
+                    _hist.get('items', []), message_id, message.get('date')))
+            except Exception:
+                _rt_text, _rt_date = '', None
             handle_vk_incoming_message(
                 group_id=group_id,
                 from_id=from_id,
@@ -355,6 +368,8 @@ def handle_vk_callback(data: dict) -> None:
                 text=text,
                 vk_date=message.get('date'),
                 attachments=attachments,
+                reply_to_text=_rt_text,
+                reply_to_date=_rt_date,
             )
         elif from_id and from_id < 0 and peer_id and peer_id > 0 and message_id and has_content:
             # Некоторые сообщества доставляют исходящие (ответ менеджера) тоже

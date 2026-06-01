@@ -109,6 +109,29 @@ def _context_from(prev_msg: dict | None) -> tuple[str, int | None]:
     return txt, prev_msg.get('date')
 
 
+CONTEXT_MAX_AGE_SEC = 3 * 86400  # макс. возраст предыдущего исходящего для контекста
+
+
+def _last_outgoing_before(items, msg_id, ref_date):
+    """История newest-first. Вернуть НОВЕЙШЕЕ исходящее (промо/опрос/ответ
+    менеджера) старше msg_id, если оно не старше CONTEXT_MAX_AGE_SEC от ref_date.
+    Пропускаем собственные более ранние сообщения гостя. Контекст «на что
+    отвечает гость» (LU-40+/LU-42)."""
+    try:
+        mid = int(msg_id)
+    except (TypeError, ValueError):
+        return None
+    for m in items:
+        if int(m.get('id') or 0) >= mid:
+            continue
+        if not _is_outgoing(m):
+            continue
+        if ref_date and m.get('date') and (ref_date - m['date']) > CONTEXT_MAX_AGE_SEC:
+            return None
+        return m
+    return None
+
+
 def _save_vk_message(group_id, msg, handle_incoming, handle_admin_reply, prev_msg=None) -> int | None:
     """
     Сохраняем одно VK-сообщение через подходящий handler. Возвращает saved.pk или None.
@@ -209,9 +232,10 @@ def _sync_one_conversation(
                 # offset-paging DESC: эта и все следующие уже в БД
                 reached_cursor = True
                 break
-            # items идут от новых к старым → предыдущее (более старое) сообщение
-            # в треде = следующий элемент списка. Для контекста «на что ответил».
-            prev_msg = items[i + 1] if i + 1 < len(items) else None
+            # «На что ответил гость»: последнее ИСХОДЯЩЕЕ (промо/опрос/ответ
+            # менеджера) перед сообщением, в пределах окна — пропуская его же
+            # более ранние сообщения. LU-40+/LU-42.
+            prev_msg = _last_outgoing_before(items, mid, msg.get('date'))
             if _save_vk_message(group_id, msg, handle_incoming, handle_admin_reply, prev_msg=prev_msg):
                 new_count += 1
 
