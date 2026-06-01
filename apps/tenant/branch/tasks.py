@@ -72,7 +72,12 @@ MAX_PAGES_FULL = 40
 
 # Сколько страниц getConversations (по 200) максимум за тик. 2000 диалогов
 # хватает любому текущему тенанту; защита от runaway-цикла.
-MAX_CONV_PAGES = 12
+MAX_CONV_PAGES = 4
+
+# Окно свежести backstop-поллинга (LU-42): poll поднимает только
+# неотвеченные диалоги с сообщением не старше этого срока. Древний
+# неотвеченный бэклог не всплывает (real-time даёт Callback).
+POLL_RECENT_WINDOW_SEC = 30 * 86400
 
 
 def _is_outgoing(msg: dict) -> bool:
@@ -150,6 +155,7 @@ def _save_vk_message(group_id, msg, handle_incoming, handle_admin_reply, prev_ms
 def _sync_one_conversation(
     *, peer_id, vk_sender_id, last_polled, token, group_id,
     max_pages, handle_incoming, handle_admin_reply, errors,
+    first_seen_pages=None,
 ):
     """
     Догоняет историю ОДНОГО диалога. Пагинация getHistory от новых к старым
@@ -171,7 +177,13 @@ def _sync_one_conversation(
     fetched_max = last_polled
     offset = 0
     complete = False
-    for _page in range(max_pages):
+    # LU-42: в инкрементальном poll НЕ выкачиваем всю историю first-seen (cursor=0)
+    # диалога — у гостя могут быть тысячи старых рассылок, poll зацикливается
+    # (re-fetch верхних страниц каждый цикл, курсор не двигается → SoftTimeLimit,
+    # воркеры голодают). Берём first_seen_pages верхних страниц и форсим курсор.
+    # reconcile (deep backfill) first_seen_pages не передаёт → пагинирует полностью.
+    _capped = bool(first_seen_pages) and last_polled == 0
+    for _page in range(first_seen_pages if _capped else max_pages):
         try:
             hist = _vk_call(
                 'messages.getHistory', token,
@@ -211,6 +223,8 @@ def _sync_one_conversation(
             break
         offset += 200
 
+    if _capped:
+        complete = True  # курсор → fetched_max, не зацикливаемся на старье (LU-42)
     new_cursor = fetched_max if complete else last_polled
     return new_count, new_cursor, complete
 
@@ -255,14 +269,20 @@ def poll_branch_messages(branch_id: int) -> dict:
     errors: list[str] = []
     new_count = 0
     conv_offset = 0
+    import time as _time
+    _now_ts = int(_time.time())  # LU-42 recency gate
 
     for _conv_page in range(MAX_CONV_PAGES):
         try:
-            # filter='all' — иначе VK возвращает только conv с непрочитанными
-            # входящими, и мы пропускаем outgoing-ответы менеджера (LU-08).
+            # filter='unanswered' — только диалоги, где ГОСТЬ написал последним
+            # и ответа нет. Рассылки и отвеченные (исходящее последним) сюда НЕ
+            # попадают → poll больше не перебирает тысячи всплывших рассылкой
+            # диалогов (это убивало его по SoftTimeLimit, LU-42). Ответы
+            # менеджера ловит Callback message_reply (раньше был filter='all'
+            # ради LU-08, но теперь real-time Callback здоров и покрывает это).
             convs_resp = _vk_call(
                 'messages.getConversations', token,
-                group_id=group_id, filter='all', count=200, offset=conv_offset,
+                group_id=group_id, filter='unanswered', count=200, offset=conv_offset,
             )
         except RuntimeError as e:
             errors.append(str(e))
@@ -281,6 +301,13 @@ def poll_branch_messages(branch_id: int) -> dict:
             vk_last_id = int((item.get('last_message') or {}).get('id') or 0)
             vk_sender_id = str(peer_id)
 
+            # Backstop поднимает только СВЕЖИЕ неотвеченные (real-time даёт
+            # Callback). Древний неотвеченный бэклог НЕ всплывает (LU-42) —
+            # дешёвый date-гейт ДО запроса курсора/getHistory.
+            _md = int((item.get('last_message') or {}).get('date') or 0)
+            if _md and _md < _now_ts - POLL_RECENT_WINDOW_SEC:
+                continue
+
             # Курсор = max last_polled по всем conv этого vk_sender_id (могут быть
             # legacy branch=X + новый branch=None — двигаем синхронно).
             last_polled = max(
@@ -298,7 +325,7 @@ def poll_branch_messages(branch_id: int) -> dict:
                 token=token, group_id=group_id, max_pages=MAX_PAGES_INCREMENTAL,
                 handle_incoming=handle_vk_incoming_message,
                 handle_admin_reply=handle_vk_admin_reply_from_poll,
-                errors=errors,
+                errors=errors, first_seen_pages=2,
             )
             new_count += n
             if new_cursor > last_polled:
