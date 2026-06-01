@@ -188,7 +188,12 @@ class ReviewMessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TestimonialMessage
-        fields = ['id', 'source', 'text', 'rating', 'created_at', 'admin_name', 'attachments']
+        fields = [
+            'id', 'source', 'text', 'rating', 'created_at', 'admin_name', 'attachments',
+            # LU-40: контекст «на что ответил гость» (текст+дата предыдущего
+            # сообщения — обычно авто-опрос «Понравилось?»). Пустые если нет.
+            'reply_to_text', 'reply_to_date',
+        ]
         read_only_fields = fields
 
     def get_admin_name(self, obj):

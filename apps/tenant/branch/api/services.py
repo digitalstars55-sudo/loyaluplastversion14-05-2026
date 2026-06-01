@@ -1262,12 +1262,19 @@ def handle_vk_incoming_message(
     text: str,
     vk_date: int | None = None,
     attachments: list | None = None,
+    reply_to_text: str = '',
+    reply_to_date: int | None = None,
 ) -> list[TestimonialMessage]:
     """
     Создаёт сообщение типа VK_MESSAGE в одном треде, привязанном к группе.
     Если у группы несколько точек — выбирает ту, где у отправителя уже есть тред,
     иначе первую.  Это предотвращает дублирование отзывов по точкам.
     Возвращает пустой список если сообщение уже было обработано или конфиг не найден.
+
+    reply_to_text / reply_to_date (LU-40) — контекст: текст+время сообщения,
+    шедшего ПЕРЕД этим в треде (обычно авто-опрос «Понравилось?» или промо,
+    которые мы не сохраняем как отдельные сообщения, но показываем как цитату,
+    чтобы было видно НА ЧТО ответил гость).
     """
     from django.utils import timezone
     from apps.tenant.senler.models import SenlerConfig
@@ -1281,8 +1288,22 @@ def handle_vk_incoming_message(
     vk_sender_id = str(from_id)
     vk_msg_id_str = str(message_id)
 
-    # Global dedup: skip if this VK message was already processed
-    if TestimonialMessage.objects.filter(vk_message_id=vk_msg_id_str).exists():
+    # Global dedup: skip if this VK message was already processed.
+    # НО: если сообщение уже есть, а контекст (reply_to_text) ещё не заполнен —
+    # дозаполняем его (reconcile добавляет контекст к историческим сообщениям).
+    existing = TestimonialMessage.objects.filter(vk_message_id=vk_msg_id_str).first()
+    if existing is not None:
+        if reply_to_text and not existing.reply_to_text:
+            import datetime as _dt
+            _rdt = None
+            if reply_to_date and reply_to_date > 0:
+                try:
+                    _rdt = _dt.datetime.fromtimestamp(int(reply_to_date), tz=_dt.timezone.utc)
+                except Exception:
+                    _rdt = None
+            existing.reply_to_text = (reply_to_text or '')[:2000]
+            existing.reply_to_date = _rdt
+            existing.save(update_fields=['reply_to_text', 'reply_to_date'])
         return []
 
     # Передаём токен в conv-creator: если придётся создать новый guest.Client
@@ -1312,12 +1333,23 @@ def handle_vk_incoming_message(
         ).exists():
             return []
 
+    # Контекст «на что ответ»: время предыдущего сообщения → tz-aware datetime.
+    _reply_dt = None
+    if reply_to_date and reply_to_date > 0:
+        import datetime as _dt
+        try:
+            _reply_dt = _dt.datetime.fromtimestamp(int(reply_to_date), tz=_dt.timezone.utc)
+        except Exception:
+            _reply_dt = None
+
     msg = TestimonialMessage.objects.create(
         conversation=conv,
         source=TestimonialMessage.Source.VK_MESSAGE,
         text=text,
         vk_message_id=vk_msg_id_str,
         attachments=photo_atts,
+        reply_to_text=(reply_to_text or '')[:2000],
+        reply_to_date=_reply_dt,
     )
     if photo_atts:
         _enqueue_attachment_download(msg.pk)

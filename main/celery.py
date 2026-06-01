@@ -92,6 +92,13 @@ app.conf.beat_schedule = {
         'task': 'apps.tenant.analytics.tasks.send_draft_reminders_task',
         'schedule': 1800.0,  # 30 minutes
     },
+    # SELF-HEAL: полная реконсиляция VK-историй раз в неделю (вс 05:00 MSK).
+    # Страховочная сетка «не пропускаем ничего»: ловит orphaned-сообщения,
+    # битые курсоры, гэпы которые мог пропустить онлайн-poll/Callback (LU-35 v2).
+    'reconcile-vk-messages-weekly': {
+        'task': 'apps.tenant.branch.tasks.reconcile_all_vk_messages_task',
+        'schedule': crontab(hour=5, minute=0, day_of_week=0),
+    },
 }
 
 app.conf.timezone = 'Europe/Moscow'
