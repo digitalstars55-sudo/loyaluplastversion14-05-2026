@@ -93,12 +93,29 @@ def reclassify_waiting_reviews_task() -> dict:
 
     for tenant in TenantModel.objects.exclude(schema_name='public'):
         with schema_context(tenant.schema_name):
-            ids = list(
-                TestimonialConversation.objects
-                .filter(sentiment=TestimonialConversation.Sentiment.WAITING)
-                .values_list('id', flat=True)
+            from django.utils import timezone as _tz
+            from datetime import timedelta as _td
+            _cutoff = _tz.now() - _td(hours=6)
+            _waiting = TestimonialConversation.objects.filter(
+                sentiment=TestimonialConversation.Sentiment.WAITING
             )
-            for conv_id in ids:
+            # LU-42: classify ONLY convs with a recent guest message. Historical
+            # WAITING (dug up by reconcile/backfill -- sentiment defaults to WAITING)
+            # must NOT be reprocessed: that re-flags has_unread, bumps
+            # last_message_at and fires review_new/draft pushes for years-old msgs.
+            _recent_ids = list(
+                _waiting.filter(
+                    messages__source__in=['VK_MESSAGE', 'APP'],
+                    messages__created_at__gte=_cutoff,
+                ).distinct().values_list('id', flat=True)
+            )
+            # Stale historical WAITING -> NEUTRAL so it leaves the queue silently.
+            _n_stale = _waiting.exclude(id__in=_recent_ids).update(
+                sentiment=TestimonialConversation.Sentiment.NEUTRAL
+            )
+            if _n_stale:
+                logger.info('reclassify: %s stale WAITING->NEUTRAL in %s', _n_stale, tenant.schema_name)
+            for conv_id in _recent_ids:
                 process_ai_review_task.delay(conv_id, tenant.schema_name)
                 dispatched += 1
 

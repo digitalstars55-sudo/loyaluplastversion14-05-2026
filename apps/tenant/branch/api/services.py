@@ -1125,11 +1125,20 @@ def _get_or_create_conversation(
     vk_token — опционально, для ensure_vk_guest (избегаем доп. запроса
     SenlerConfig если caller уже знает токен).
     """
-    conv, _ = TestimonialConversation.objects.get_or_create(
-        branch=branch,
-        vk_sender_id=vk_sender_id,
-        defaults={'has_unread': True},
+    # LU-42: НЕ get_or_create — у одного (branch, vk_sender_id) при гонке
+    # poll+Callback во время флуда мог появиться 2-й conv, и .get() падал
+    # MultipleObjectsReturned, роняя весь poll_all_vk_messages_task. Берём
+    # самый старый, создаём только если нет ни одного.
+    conv = (
+        TestimonialConversation.objects
+        .filter(branch=branch, vk_sender_id=vk_sender_id)
+        .order_by('created_at', 'id')
+        .first()
     )
+    if conv is None:
+        conv = TestimonialConversation.objects.create(
+            branch=branch, vk_sender_id=vk_sender_id, has_unread=True,
+        )
 
     if link_vk_guest:
         # Линкуем к shared Client (vk_id, first_name, last_name, photo_url).
@@ -1388,8 +1397,10 @@ def handle_vk_incoming_message(
         conv.last_message_at = effective_dt
 
     if is_historical:
-        # Тихий импорт: статусы пересчитываем по факту, но не форсим unread.
-        conv.save(update_fields=['last_message_at'])
+        # Тихий импорт: историческое не висит непрочитанным (иначе re-import
+        # старья при реактивации рассылкой даёт тысячи ложных unread — LU-42).
+        conv.has_unread = False
+        conv.save(update_fields=['last_message_at', 'has_unread'])
     else:
         conv.has_unread = True
         conv.is_replied = False
@@ -1443,6 +1454,18 @@ def handle_vk_admin_reply_from_poll(
     #   2) Прошлый poll уже подобрал это сообщение.
     if TestimonialMessage.objects.filter(vk_message_id=vk_msg_id_str).exists():
         return None
+
+    # LU-42: рассылки иногда приходят в poll как outgoing С admin_author_id
+    # (фильтр в _save_vk_message их не отсекает) и оседают как ADMIN_REPLY --
+    # поднимают старые диалоги наверх и ломают is_replied. Если vk_message_id
+    # принадлежит BroadcastRecipient -- это рассылка, а не ответ менеджера.
+    try:
+        from apps.tenant.senler.models import BroadcastRecipient
+        if BroadcastRecipient.objects.filter(vk_message_id=vk_msg_id_str).exists():
+            return None
+    except Exception:
+        pass
+
 
     # Conv создаётся в handle_vk_incoming_message при первом вхождении гостя.
     # Если conv нет — значит гость нам ничего не писал, и ответ менеджера
