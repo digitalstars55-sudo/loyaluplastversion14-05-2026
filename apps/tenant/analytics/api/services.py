@@ -455,6 +455,45 @@ def get_stories_referrals(
     return qs.values('client_id').distinct().count()
 
 
+# ── Metric: Story gift mechanics (игра через сториз) ─────────────────────────
+
+def get_story_gift_receivers(
+    branch_ids: list[int] | None, start_date: date, end_date: date
+) -> int:
+    """
+    «Получили подарок через сториз»: уникальные гости, сохранившие подарок из
+    сториз в «Мои подарки» в периоде (StoryGiftEntry.received_at в диапазоне).
+    Дедуп по guest.Client.
+    """
+    from apps.tenant.inventory.models import StoryGiftEntry
+
+    qs = StoryGiftEntry.objects.filter(
+        received_at__date__gte=start_date,
+        received_at__date__lte=end_date,
+    )
+    qs = _branch_filter(qs, branch_ids, 'client_branch__branch__in')
+    return qs.values('client_branch__client_id').distinct().count()
+
+
+def get_story_gift_activators(
+    branch_ids: list[int] | None, start_date: date, end_date: date
+) -> int:
+    """
+    «Активировали подарок через сториз»: уникальные гости, реально активировавшие
+    подарок из сториз в кафе в периоде (StoryGiftEntry.activated_at в диапазоне).
+    activated_at ставится только после ввода кода дня — домашняя попытка не считается.
+    Дедуп по guest.Client.
+    """
+    from apps.tenant.inventory.models import StoryGiftEntry
+
+    qs = StoryGiftEntry.objects.filter(
+        activated_at__date__gte=start_date,
+        activated_at__date__lte=end_date,
+    )
+    qs = _branch_filter(qs, branch_ids, 'client_branch__branch__in')
+    return qs.values('client_branch__client_id').distinct().count()
+
+
 # ── Metric: Delivery activators ──────────────────────────────────────────────
 
 def get_delivery_activators_count(
@@ -604,6 +643,8 @@ def get_general_stats(
         )),
         'vk_stories_publishers':     get_vk_stories_publishers(branch_ids, start_date, end_date),
         'stories_referrals':         get_stories_referrals(branch_ids, start_date, end_date),
+        'story_gift_receivers':      get_story_gift_receivers(branch_ids, start_date, end_date),
+        'story_gift_activators':     get_story_gift_activators(branch_ids, start_date, end_date),
         'pos_guests':                pos,
         'scan_index':                scan_index,
     }
