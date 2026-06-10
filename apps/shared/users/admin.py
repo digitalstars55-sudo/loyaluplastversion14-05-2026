@@ -4,6 +4,7 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import render, get_object_or_404
 from django.urls import path, reverse
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from apps.shared.config.admin_sites import public_admin
 from .models import User
@@ -42,11 +43,13 @@ class UserPublicAdmin(BaseUserAdmin):
 
     @admin.display(description='Доступ к точкам')
     def branch_access_link(self, obj):
+        # mark_safe (не format_html): статическая разметка без плейсхолдеров —
+        # на Django 6 format_html() без args/kwargs кидает TypeError → 500 списка.
         if obj.is_superuser:
-            return format_html('<span style="color:#999">все (SU)</span>')
+            return mark_safe('<span style="color:#999">все (SU)</span>')
         access = obj.branch_access or {}
         if not access:
-            return format_html('<span style="color:#999">все (по компаниям)</span>')
+            return mark_safe('<span style="color:#999">все (по компаниям)</span>')
         parts = []
         for schema, val in access.items():
             if val == 'all':
@@ -55,14 +58,14 @@ class UserPublicAdmin(BaseUserAdmin):
                 parts.append(f'<b>{schema}</b>: {len(val)}')
             else:
                 parts.append(f'<b>{schema}</b>: ?')
-        return format_html(', '.join(parts))
+        return mark_safe(', '.join(parts))
 
     @admin.display(description='Точки (визуальный редактор)')
     def branch_access_summary(self, obj):
         if not obj.pk:
-            return format_html('<i>Сначала сохраните пользователя</i>')
+            return mark_safe('<i>Сначала сохраните пользователя</i>')
         if obj.is_superuser:
-            return format_html('<span style="color:#666">SU видит ВСЕ точки во всех тенантах — branch_access игнорируется.</span>')
+            return mark_safe('<span style="color:#666">SU видит ВСЕ точки во всех тенантах — branch_access игнорируется.</span>')
         # PublicAdminSite зарегистрирован как namespace 'public_admin' (см. admin_sites.py),
         # поэтому reverse через self.admin_site.name (а не хардкод 'admin').
         url = reverse(f'{self.admin_site.name}:users_user_branch_access', args=[obj.pk])
