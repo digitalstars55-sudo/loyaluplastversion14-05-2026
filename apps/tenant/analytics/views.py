@@ -395,6 +395,8 @@ _METRIC_LABELS = {
     'gift_activators':           'Активировали подарок',
     'birthday_celebrants':       'Пришли на день рождения',
     'vk_stories_publishers':     'Опубликовали истории в ВК',
+    'story_gift_receivers':      'Получили подарок через сториз',
+    'story_gift_activators':     'Активировали подарок через сториз',
 }
 
 

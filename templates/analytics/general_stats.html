@@ -211,25 +211,29 @@
     </div>
 
     <div class="col-sm-6 col-md-4 col-xl-3">
-      <div class="mc-card card acc-teal position-relative">
-        <div class="tip-btn">?</div>
-        <div class="card-body">
-          <div class="mc-label">📱 Получили подарок через сториз</div>
-          <div class="mc-val c-teal">{{ stats.story_gift_receivers }}</div>
-          <div class="tip-box">Сколько уникальных внешних пользователей, пришедших по сториз, сыграли в игру, выбрали подарок и сохранили его в раздел «Мои подарки» за выбранный период. Это «тёплый» интерес внешней аудитории — подарок ещё не активирован, только сохранён. Если человек сохранил подарок в нескольких кафе — считается один раз.</div>
+      <a href="{% url 'analytics-stats-detail' %}?metric=story_gift_receivers&{{ period_qs }}{% if bp %}&branches={{ bp }}{% endif %}" class="mc-link">
+        <div class="mc-card card acc-teal position-relative">
+          <div class="tip-btn">?</div>
+          <div class="card-body">
+            <div class="mc-label">📱 Получили подарок через сториз</div>
+            <div class="mc-val c-teal">{{ stats.story_gift_receivers }}</div>
+            <div class="tip-box">Сколько уникальных внешних пользователей, пришедших по сториз, сыграли в игру, выбрали подарок и сохранили его в раздел «Мои подарки» за выбранный период. Это «тёплый» интерес внешней аудитории — подарок ещё не активирован, только сохранён. Если человек сохранил подарок в нескольких кафе — считается один раз. Нажмите, чтобы посмотреть список гостей.</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
 
     <div class="col-sm-6 col-md-4 col-xl-3">
-      <div class="mc-card card acc-teal position-relative">
-        <div class="tip-btn">?</div>
-        <div class="card-body">
-          <div class="mc-label">🎁 Активировали подарок через сториз</div>
-          <div class="mc-val c-teal">{{ stats.story_gift_activators }}</div>
-          <div class="tip-box">Сколько уникальных внешних пользователей реально дошли до кафе, ввели код дня у персонала и активировали подарок из сториз за период. Код дня знает только персонал на месте — значит эти люди точно были в заведении физически. Это реальная конверсия сториз в визиты. Если человек активировал в нескольких кафе — считается один раз.</div>
+      <a href="{% url 'analytics-stats-detail' %}?metric=story_gift_activators&{{ period_qs }}{% if bp %}&branches={{ bp }}{% endif %}" class="mc-link">
+        <div class="mc-card card acc-teal position-relative">
+          <div class="tip-btn">?</div>
+          <div class="card-body">
+            <div class="mc-label">🎁 Активировали подарок через сториз</div>
+            <div class="mc-val c-teal">{{ stats.story_gift_activators }}</div>
+            <div class="tip-box">Сколько уникальных внешних пользователей реально дошли до кафе, ввели код дня у персонала и активировали подарок из сториз за период. Код дня знает только персонал на месте — значит эти люди точно были в заведении физически. Это реальная конверсия сториз в визиты. Если человек активировал в нескольких кафе — считается один раз. Нажмите, чтобы посмотреть список гостей.</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
 
     <div class="col-sm-6 col-md-4 col-xl-3">

@@ -2310,6 +2310,28 @@ def get_stat_clients(
             qs = qs.filter(client_branch__branch__in=branch_ids)
         return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_branch_id')))
 
+    if metric == 'story_gift_receivers':
+        from apps.tenant.inventory.models import StoryGiftEntry
+
+        qs = StoryGiftEntry.objects.filter(
+            received_at__date__gte=start_date,
+            received_at__date__lte=end_date,
+        )
+        if branch_ids:
+            qs = qs.filter(client_branch__branch__in=branch_ids)
+        return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_branch_id')))
+
+    if metric == 'story_gift_activators':
+        from apps.tenant.inventory.models import StoryGiftEntry
+
+        qs = StoryGiftEntry.objects.filter(
+            activated_at__date__gte=start_date,
+            activated_at__date__lte=end_date,
+        )
+        if branch_ids:
+            qs = qs.filter(client_branch__branch__in=branch_ids)
+        return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_branch_id')))
+
     if metric == 'coin_purchasers':
         qs = CoinTransaction.objects.filter(
             type=TransactionType.EXPENSE,
