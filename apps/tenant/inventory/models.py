@@ -279,3 +279,195 @@ class InventoryItem(TimeStampedModel):
                 name='inventory_expires_idx',
             ),
         ]
+
+
+# ── StoryGiftEntry ────────────────────────────────────────────────────────────
+
+class StoryStatus(models.TextChoices):
+    """Технические статусы подарка из сториз (ТЗ §4)."""
+    AVAILABLE_TO_PLAY  = 'available_to_play',          'Доступна игра'
+    GAME_PLAYED        = 'story_game_played',          'Игра через сториз пройдена'
+    GIFT_SELECTED      = 'story_gift_selected',        'Подарок выбран'
+    WAITING_CAFE_VISIT = 'waiting_cafe_visit',         'Ожидает визита в кафе'
+    ACTIVATED          = 'gift_activated_story',       'Подарок активирован через сториз'
+    EXPIRED            = 'expired_after_activation',   'Истекло время активации'
+    USED               = 'used',                       'Использован (выдан сотрудником)'
+
+
+class StoryGiftEntry(TimeStampedModel):
+    """
+    Подарок, выигранный внешним пользователем в игре ИЗ СТОРИЗ.
+
+    Отдельная сущность от InventoryItem — у неё свой жизненный цикл с
+    блокировкой активации до визита в кафе. Существующий инвентарь НЕ
+    затрагивается. Один экземпляр на client_branch (= один на VK ID на
+    точку) — это и есть лимит «одна игра через сториз на VK ID на кафе».
+
+    Жизненный цикл (ТЗ §4):
+      available_to_play → story_game_played   (сыграл story-игру)
+                        → story_gift_selected (нажал «Забрать» и выбрал подарок)
+                        → waiting_cafe_visit   (подарок сохранён в «Мои подарки» — метрика «Получили»)
+                        → gift_activated_story (в кафе ввёл код дня и подтвердил — метрика «Активировали»)
+                        → expired_after_activation (вышло время после активации)
+                        → used                 (сотрудник подтвердил выдачу)
+
+    Атрибуция «из чьей сторис» — через client_branch.invited_by.
+    Фактическая активация (activated_at) ставится ТОЛЬКО после ввода кода дня
+    в кафе. Домашнее «Активировать» activated_at НЕ заполняет (ТЗ §9).
+    """
+
+    client_branch = models.OneToOneField(
+        'branch.ClientBranch',
+        on_delete=models.CASCADE,
+        related_name='story_gift',
+        verbose_name='Гость',
+    )
+
+    # ── Игра ────────────────────────────────────────────────────────────────
+    played_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Сыграл story-игру',
+    )
+
+    # ── Выбор подарка ───────────────────────────────────────────────────────
+    product = models.ForeignKey(
+        'catalog.Product',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='story_gift_claims',
+        verbose_name='Выбранный подарок',
+        help_text='Из набора подарков для сториз (is_story_prize=True).',
+    )
+    selected_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Подарок выбран',
+    )
+    received_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Сохранён в «Мои подарки»',
+        help_text='Момент фиксации метрики «Получили подарок через сториз».',
+    )
+
+    # ── Снимок условий на момент получения ──────────────────────────────────
+    duration = models.PositiveIntegerField(
+        default=40,
+        verbose_name='Длительность после активации (мин)',
+        help_text='Сколько минут действует подарок после активации в кафе.',
+    )
+    min_order_amount = models.PositiveIntegerField(
+        default=0,
+        verbose_name='Мин. сумма заказа, ₽',
+        help_text='Снимок минимальной суммы заказа на момент получения.',
+    )
+
+    # ── Фактическая активация в кафе ────────────────────────────────────────
+    activated_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Активирован в кафе',
+        help_text='Заполняется ТОЛЬКО после ввода кода дня в кафе. Метрика «Активировали через сториз».',
+    )
+    expires_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Истекает',
+        help_text='activated_at + duration. Ставится автоматически при активации.',
+    )
+    used_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Выдан сотрудником',
+    )
+
+    # ── Источник/кампания (на будущее, для аналитики) ───────────────────────
+    campaign_key = models.CharField(
+        max_length=64, blank=True, default='',
+        verbose_name='Ключ кампании/сториз',
+        help_text='Опционально: идентификатор кампании или сториз для аналитики.',
+    )
+
+    # ── Computed state ──────────────────────────────────────────────────────
+
+    @property
+    def status(self) -> str:
+        if self.used_at:
+            return StoryStatus.USED
+        if self.activated_at:
+            if self.expires_at and timezone.now() >= self.expires_at:
+                return StoryStatus.EXPIRED
+            return StoryStatus.ACTIVATED
+        if self.received_at:
+            return StoryStatus.WAITING_CAFE_VISIT
+        if self.selected_at:
+            return StoryStatus.GIFT_SELECTED
+        if self.played_at:
+            return StoryStatus.GAME_PLAYED
+        return StoryStatus.AVAILABLE_TO_PLAY
+
+    @property
+    def status_label(self) -> str:
+        return StoryStatus(self.status).label
+
+    @property
+    def is_valid(self) -> bool:
+        """True только когда подарок активирован и ещё действует."""
+        return self.status == StoryStatus.ACTIVATED
+
+    # ── Business methods ────────────────────────────────────────────────────
+
+    def mark_played(self) -> None:
+        """Фиксирует прохождение story-игры (идемпотентно)."""
+        if not self.played_at:
+            self.played_at = timezone.now()
+            self.save(update_fields=['played_at'])
+
+    def select_gift(self, product, *, min_order_amount: int = 0, duration: int = 40) -> bool:
+        """
+        Гость выбрал подарок из набора сториз → сохраняем в «Мои подарки».
+        Возвращает False, если подарок уже был выбран.
+        """
+        if self.selected_at:
+            return False
+        now = timezone.now()
+        self.product = product
+        self.min_order_amount = min_order_amount
+        self.duration = duration
+        self.selected_at = now
+        self.received_at = now
+        self.save(update_fields=['product', 'min_order_amount', 'duration', 'selected_at', 'received_at'])
+        return True
+
+    def activate(self) -> bool:
+        """
+        Фактическая активация в кафе (после проверки кода дня в сервисе).
+        Возвращает False, если ещё не получен или уже активирован.
+        """
+        if self.status != StoryStatus.WAITING_CAFE_VISIT:
+            return False
+        self.activated_at = timezone.now()
+        self.expires_at = (
+            self.activated_at + timedelta(minutes=self.duration)
+            if self.duration
+            else None
+        )
+        self.save(update_fields=['activated_at', 'expires_at'])
+        return True
+
+    def mark_used(self) -> bool:
+        """Сотрудник подтвердил выдачу. Возвращает False, если не активен."""
+        if self.status != StoryStatus.ACTIVATED:
+            return False
+        self.used_at = timezone.now()
+        self.save(update_fields=['used_at'])
+        return True
+
+    def __str__(self):
+        name = self.product.name if self.product else '(не выбран)'
+        return f'Story-подарок {name} — {self.client_branch}'
+
+    class Meta:
+        verbose_name = 'Подарок из сториз'
+        verbose_name_plural = 'Подарки из сториз'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['received_at'],  name='story_received_idx'),
+            models.Index(fields=['activated_at'], name='story_activated_idx'),
+            models.Index(fields=['expires_at'],   name='story_expires_idx'),
+        ]

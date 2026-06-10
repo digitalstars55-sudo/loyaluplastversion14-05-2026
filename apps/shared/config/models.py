@@ -98,6 +98,61 @@ class ClientConfig(models.Model):
         ),
     )
 
+    # --- Механика «игра через сториз» (внешние пользователи, сетевой уровень) ---
+    story_game_enabled = models.BooleanField(
+        default=False,
+        verbose_name='Игра через сториз включена',
+        help_text='Разрешить внешним пользователям, пришедшим по сториз, играть и получать подарок. По умолчанию выключено.',
+    )
+    story_min_order_amount = models.PositiveIntegerField(
+        default=600,
+        verbose_name='Мин. сумма заказа для подарка из сториз, ₽',
+        help_text='Минимальная сумма заказа для активации подарка из сториз. Подставляется в текст условий. 0 — без ограничения.',
+    )
+    story_activation_minutes = models.PositiveIntegerField(
+        default=40,
+        verbose_name='Время действия подарка из сториз после активации, мин',
+        help_text='Сколько минут действует подарок после активации в кафе. По умолчанию 40.',
+    )
+    story_require_cafe_visit = models.BooleanField(
+        default=True,
+        verbose_name='Требовать визит в кафе (код дня) перед активацией',
+        help_text=(
+            'По умолчанию включено. Подарок из сториз активируется ТОЛЬКО после ввода '
+            'кода дня в кафе — домашняя активация показывает инструкцию и не запускает '
+            'таймер. Выключать не рекомендуется.'
+        ),
+    )
+    story_cafe_address = models.CharField(
+        max_length=255, blank=True, default='',
+        verbose_name='Адрес кафе для подарка из сториз',
+        help_text='Куда направляем пользователя за подарком. Пусто — берётся адрес точки.',
+    )
+    story_activation_text = models.TextField(
+        blank=True, default='',
+        verbose_name='Текст инструкции перед активацией (сториз)',
+        help_text=(
+            'Что видит пользователь при попытке активировать подарок до визита в кафе. '
+            'Поддерживаются переменные: [адрес кафе], [сумма], [время], [название кафе], '
+            '[название подарка]. Пусто — стандартный текст по умолчанию.'
+        ),
+    )
+    story_saved_text = models.TextField(
+        blank=True, default='',
+        verbose_name='Текст уведомления после выбора подарка (сториз)',
+        help_text='Сообщение «подарок сохранён в Мои подарки». Пусто — стандартный текст по умолчанию.',
+    )
+    story_campaign_start = models.DateField(
+        null=True, blank=True,
+        verbose_name='Дата начала кампании сториз',
+        help_text='Опционально. До этой даты игра через сториз недоступна. Пусто — без ограничения.',
+    )
+    story_campaign_end = models.DateField(
+        null=True, blank=True,
+        verbose_name='Дата окончания кампании сториз',
+        help_text='Опционально. После этой даты игра через сториз недоступна. Пусто — без ограничения.',
+    )
+
     # --- Кассовая система ---
     pos_type = models.CharField(
         max_length=10,

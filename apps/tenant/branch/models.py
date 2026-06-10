@@ -147,6 +147,33 @@ class BranchConfig(TimeStampedModel):
         ),
     )
 
+    # ── Механика «игра через сториз» (override уровня точки) ─────────
+    story_game_enabled = models.BooleanField(
+        null=True, blank=True,
+        verbose_name='Игра через сториз (для этой точки)',
+        help_text='Пусто = использовать значение сети. Да/Нет = переопределить только для этой точки.',
+    )
+    story_min_order_amount = models.PositiveIntegerField(
+        null=True, blank=True,
+        verbose_name='Мин. сумма заказа из сториз, ₽ (для этой точки)',
+        help_text='Пусто = использовать значение сети.',
+    )
+    story_cafe_address = models.CharField(
+        max_length=255, blank=True, default='',
+        verbose_name='Адрес кафе для подарка из сториз (для этой точки)',
+        help_text='Пусто = адрес точки / значение сети.',
+    )
+    story_activation_text = models.TextField(
+        blank=True, default='',
+        verbose_name='Текст инструкции перед активацией, сториз (для этой точки)',
+        help_text='Перезаписывает текст инструкции только для этой точки. Пусто = текст сети.',
+    )
+    story_saved_text = models.TextField(
+        blank=True, default='',
+        verbose_name='Текст уведомления после выбора, сториз (для этой точки)',
+        help_text='Пусто = текст сети.',
+    )
+
     def __str__(self):
         return f'Настройки: {self.branch.name}'
 

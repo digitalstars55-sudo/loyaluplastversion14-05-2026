@@ -132,6 +132,24 @@ class ClientConfigAdmin(admin.ModelAdmin):
                 '«Применить окно ДР ко всем точкам сети».'
             ),
         }),
+        ('Игра через сториз (внешние пользователи)', {
+            'fields': (
+                'story_game_enabled',
+                'story_min_order_amount', 'story_activation_minutes',
+                'story_require_cafe_visit',
+                'story_cafe_address',
+                'story_activation_text', 'story_saved_text',
+                'story_campaign_start', 'story_campaign_end',
+            ),
+            'description': (
+                'Механика привлечения внешних пользователей через сториз. '
+                'Подарки для сториз настраиваются у товаров (флаг «Подарок для игры '
+                'через сториз») и подключаются к точкам. Активация подарка возможна '
+                'только после ввода кода дня в кафе. Точка может переопределить '
+                'часть полей в своих настройках.'
+            ),
+            'classes': ('collapse',),
+        }),
         ('Кассовая система', {
             'fields': ('pos_type',),
             'description': 'Выберите систему — нужные поля появятся автоматически.',

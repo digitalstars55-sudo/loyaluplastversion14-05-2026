@@ -68,6 +68,18 @@ class BranchConfigInline(admin.StackedInline):
                 'Каждая точка настраивается независимо.'
             ),
         }),
+        ('Игра через сториз (override уровня точки)', {
+            'fields': (
+                'story_game_enabled', 'story_min_order_amount',
+                'story_cafe_address', 'story_activation_text', 'story_saved_text',
+            ),
+            'classes': ('collapse',),
+            'description': (
+                'Перезаписывает сетевые настройки сториз ТОЛЬКО для этой точки. '
+                'Пустые поля = использовать значения сети. Набор подарков для '
+                'сториз задаётся флагом у товаров и подключением к этой точке.'
+            ),
+        }),
     )
 
 

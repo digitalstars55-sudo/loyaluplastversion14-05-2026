@@ -15,6 +15,7 @@ _BADGE = (
 )
 _SUPER_STYLE = _BADGE + 'background:#fff3cd;color:#856404;border:1px solid #ffe08a;'
 _BDAY_STYLE  = _BADGE + 'background:#fce4ec;color:#880e4f;border:1px solid #f8bbd0;'
+_STORY_STYLE = _BADGE + 'background:#e0f2f1;color:#004d40;border:1px solid #b2dfdb;'
 _PRICE_STYLE = _BADGE + 'background:#e3f2fd;color:#0d47a1;border:1px solid #bbdefb;'
 _FREE_STYLE  = _BADGE + 'background:#e8f5e9;color:#1b5e20;border:1px solid #c8e6c9;'
 _ARCHIVED_STYLE = _BADGE + 'background:#f3f4f6;color:#374151;border:1px solid #d1d5db;'
@@ -70,11 +71,12 @@ class ProductAdmin(admin.ModelAdmin):
         'price_badge', 'flags_badges', 'updated_at',
     )
     list_display_links = ('image_thumb', 'name')
-    list_filter = ('is_archived', 'branches', 'is_super_prize', 'is_birthday_prize')
+    list_filter = ('is_archived', 'branches', 'is_super_prize', 'is_birthday_prize', 'is_story_prize')
     search_fields = ('name', 'description')
     actions = [
         'mark_super_prize', 'unmark_super_prize',
         'mark_birthday_prize', 'unmark_birthday_prize',
+        'mark_story_prize', 'unmark_story_prize',
         'archive_products', 'unarchive_products',
     ]
     readonly_fields = ('image_preview', 'created_at', 'updated_at')
@@ -90,10 +92,12 @@ class ProductAdmin(admin.ModelAdmin):
             'fields': ('price',),
         }),
         ('Сценарии выдачи', {
-            'fields': ('is_super_prize', 'is_birthday_prize'),
+            'fields': ('is_super_prize', 'is_birthday_prize', 'is_story_prize'),
             'description': (
                 'Флаги не взаимоисключающие. '
-                'Товар без флагов доступен только для покупки за баллы.'
+                'Товар без флагов доступен только для покупки за баллы. '
+                '«Подарок для игры через сториз» — отдельный набор для внешних '
+                'пользователей, не смешивается с супер-призами основной игры.'
             ),
         }),
         ('Архив', {
@@ -156,6 +160,8 @@ class ProductAdmin(admin.ModelAdmin):
             badges.append(f'<span style="{_SUPER_STYLE}">🏆 Суперприз</span>')
         if obj.is_birthday_prize:
             badges.append(f'<span style="{_BDAY_STYLE}">🎂 День рождения</span>')
+        if obj.is_story_prize:
+            badges.append(f'<span style="{_STORY_STYLE}">📱 Сториз</span>')
         if badges:
             return mark_safe('&nbsp;'.join(badges))
         return mark_safe(
@@ -189,6 +195,14 @@ class ProductAdmin(admin.ModelAdmin):
     @admin.action(description='Убрать флаг «Подарок на ДР»')
     def unmark_birthday_prize(self, request, queryset):
         self.message_user(request, f'Флаг снят: {queryset.update(is_birthday_prize=False)}')
+
+    @admin.action(description='Добавить флаг «Подарок для сториз»')
+    def mark_story_prize(self, request, queryset):
+        self.message_user(request, f'Подарок для сториз: {queryset.update(is_story_prize=True)}')
+
+    @admin.action(description='Убрать флаг «Подарок для сториз»')
+    def unmark_story_prize(self, request, queryset):
+        self.message_user(request, f'Флаг снят: {queryset.update(is_story_prize=False)}')
 
     @admin.action(description='🗄️ Архивировать (скрыть от выдачи)')
     def archive_products(self, request, queryset):

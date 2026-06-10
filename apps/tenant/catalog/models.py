@@ -87,6 +87,15 @@ class Product(TimeStampedModel):
         verbose_name='Подарок на ДР',
         help_text='Доступен как поздравительный подарок в день рождения гостя.',
     )
+    is_story_prize = models.BooleanField(
+        default=False,
+        verbose_name='Подарок для игры через сториз',
+        help_text=(
+            'Входит в отдельный набор подарков для внешних пользователей, '
+            'пришедших по сториз. НЕ смешивается с супер-призами основной игры. '
+            'Пул для точки = подарки с этим флагом, подключённые к точке.'
+        ),
+    )
     is_archived = models.BooleanField(
         default=False,
         verbose_name='Архивирован',

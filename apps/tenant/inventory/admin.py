@@ -5,7 +5,11 @@ from django.utils.html import format_html, mark_safe
 
 from apps.shared.config.admin_sites import tenant_admin
 
-from .models import AcquisitionSource, InventoryItem, ItemStatus, SuperPrizeEntry, SuperPrizeTrigger
+from .models import (
+    AcquisitionSource, InventoryItem, ItemStatus,
+    StoryGiftEntry, StoryStatus,
+    SuperPrizeEntry, SuperPrizeTrigger,
+)
 
 # ── Style constants ───────────────────────────────────────────────────────────
 
@@ -432,3 +436,151 @@ class SuperPrizeEntryAdmin(admin.ModelAdmin):
             claimed_at=None,
         )
         self.message_user(request, f'Выбор сброшен: {count}')
+
+
+# ── StoryGiftEntry admin ──────────────────────────────────────────────────────
+
+_STORY_STATUS_STYLES = {
+    StoryStatus.AVAILABLE_TO_PLAY:  _BADGE + 'background:#f5f5f5;color:#616161;border:1px solid #e0e0e0;',
+    StoryStatus.GAME_PLAYED:        _BADGE + 'background:#e8eaf6;color:#283593;border:1px solid #9fa8da;',
+    StoryStatus.GIFT_SELECTED:      _BADGE + 'background:#e0f7fa;color:#006064;border:1px solid #80deea;',
+    StoryStatus.WAITING_CAFE_VISIT: _BADGE + 'background:#fff8e1;color:#f57f17;border:1px solid #ffe082;',
+    StoryStatus.ACTIVATED:          _BADGE + 'background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;',
+    StoryStatus.EXPIRED:            _BADGE + 'background:#fbe9e7;color:#bf360c;border:1px solid #ffab91;',
+    StoryStatus.USED:               _BADGE + 'background:#e3f2fd;color:#0d47a1;border:1px solid #90caf9;',
+}
+
+
+class StoryStatusFilter(admin.SimpleListFilter):
+    title = 'Статус'
+    parameter_name = 'story_status'
+
+    def lookups(self, request, model_admin):
+        return [(s.value, s.label) for s in StoryStatus]
+
+    def queryset(self, request, queryset):
+        v = self.value()
+        now = timezone.now()
+        if v == StoryStatus.AVAILABLE_TO_PLAY:
+            return queryset.filter(played_at__isnull=True)
+        if v == StoryStatus.GAME_PLAYED:
+            return queryset.filter(played_at__isnull=False, selected_at__isnull=True)
+        if v == StoryStatus.GIFT_SELECTED:
+            return queryset.filter(selected_at__isnull=False, received_at__isnull=True)
+        if v == StoryStatus.WAITING_CAFE_VISIT:
+            return queryset.filter(received_at__isnull=False, activated_at__isnull=True)
+        if v == StoryStatus.ACTIVATED:
+            return queryset.filter(
+                activated_at__isnull=False, used_at__isnull=True,
+            ).filter(models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now))
+        if v == StoryStatus.EXPIRED:
+            return queryset.filter(
+                activated_at__isnull=False, used_at__isnull=True, expires_at__lte=now,
+            )
+        if v == StoryStatus.USED:
+            return queryset.filter(used_at__isnull=False)
+        return queryset
+
+
+@admin.register(StoryGiftEntry, site=tenant_admin)
+class StoryGiftEntryAdmin(admin.ModelAdmin):
+    """Подарки, выигранные внешними пользователями в игре из сториз."""
+    list_display = (
+        'client_col', 'branch_col', 'invited_by_col',
+        'product_col', 'story_status_badge', 'received_at', 'activated_at',
+    )
+    list_display_links = ('client_col',)
+    list_filter = (StoryStatusFilter, 'client_branch__branch')
+    search_fields = (
+        'client_branch__client__first_name',
+        'client_branch__client__last_name',
+        'client_branch__client__vk_id',
+        'product__name',
+    )
+    list_select_related = (
+        'client_branch__client',
+        'client_branch__branch',
+        'client_branch__invited_by__client',
+        'product',
+    )
+    date_hierarchy = 'created_at'
+    readonly_fields = (
+        'story_status_display', 'played_at', 'selected_at', 'received_at',
+        'activated_at', 'expires_at', 'used_at', 'created_at', 'updated_at',
+    )
+
+    fieldsets = (
+        (None, {
+            'fields': ('client_branch', 'product', 'campaign_key'),
+        }),
+        ('Условия (снимок)', {
+            'fields': ('duration', 'min_order_amount'),
+        }),
+        ('Жизненный цикл', {
+            'fields': (
+                'story_status_display', 'played_at', 'selected_at', 'received_at',
+                'activated_at', 'expires_at', 'used_at',
+            ),
+            'description': (
+                'activated_at заполняется ТОЛЬКО при активации в кафе (после кода дня). '
+                'received_at → метрика «Получили через сториз», '
+                'activated_at → метрика «Активировали через сториз».'
+            ),
+        }),
+        ('Служебное', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related(
+            'client_branch__client',
+            'client_branch__branch',
+            'client_branch__invited_by__client',
+            'product',
+        )
+
+    @admin.display(description='Гость', ordering='client_branch__client__first_name')
+    def client_col(self, obj):
+        c = obj.client_branch.client
+        name = f'{c.first_name} {c.last_name}'.strip() or f'vk{c.vk_id}'
+        return format_html(
+            '<a href="https://vk.com/id{}" target="_blank" rel="noopener">{}</a>'
+            '<br><span style="font-size:11px;color:var(--body-quiet-color,#aaa);">vk{}</span>',
+            c.vk_id, name, c.vk_id,
+        )
+
+    @admin.display(description='Точка', ordering='client_branch__branch__name')
+    def branch_col(self, obj):
+        return obj.client_branch.branch.name
+
+    @admin.display(description='Из сториз кого')
+    def invited_by_col(self, obj):
+        inviter = obj.client_branch.invited_by
+        if not inviter:
+            return mark_safe('<span style="color:var(--body-quiet-color,#aaa);">—</span>')
+        c = inviter.client
+        name = f'{c.first_name} {c.last_name}'.strip() or f'vk{c.vk_id}'
+        return format_html(
+            '<a href="https://vk.com/id{}" target="_blank" rel="noopener">{}</a>',
+            c.vk_id, name,
+        )
+
+    @admin.display(description='Подарок', ordering='product__name')
+    def product_col(self, obj):
+        if obj.product:
+            return obj.product.name
+        return mark_safe('<span style="color:var(--body-quiet-color,#aaa);font-style:italic;">не выбран</span>')
+
+    @admin.display(description='Статус')
+    def story_status_badge(self, obj):
+        style = _STORY_STATUS_STYLES.get(obj.status, _PENDING_STYLE)
+        return format_html('<span style="{}">{}</span>', style, obj.status_label)
+
+    @admin.display(description='Статус')
+    def story_status_display(self, obj):
+        if not obj.pk:
+            return '—'
+        style = _STORY_STATUS_STYLES.get(obj.status, _PENDING_STYLE)
+        return format_html('<span style="{}">{}</span>', style, obj.status_label)
