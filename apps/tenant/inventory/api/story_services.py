@@ -264,7 +264,7 @@ def play_story_game(vk_id: int, branch_id: int) -> StoryGiftEntry:
         cb = (
             ClientBranch.objects
             .select_for_update()
-            .select_related('branch', 'branch__config')
+            .select_related('branch')
             .get(client__vk_id=vk_id, branch__branch_id=branch_id)
         )
     except ClientBranch.DoesNotExist:
@@ -318,7 +318,7 @@ def select_story_gift(vk_id: int, branch_id: int, product_id: int) -> StoryGiftE
         cb = (
             ClientBranch.objects
             .select_for_update()
-            .select_related('branch', 'branch__config')
+            .select_related('branch')
             .get(client__vk_id=vk_id, branch__branch_id=branch_id)
         )
     except ClientBranch.DoesNotExist:
@@ -391,7 +391,7 @@ def activate_story_gift(vk_id: int, branch_id: int, code: str | None = None) -> 
         cb = (
             ClientBranch.objects
             .select_for_update()
-            .select_related('branch', 'branch__config')
+            .select_related('branch')
             .get(client__vk_id=vk_id, branch__branch_id=branch_id)
         )
     except ClientBranch.DoesNotExist:
