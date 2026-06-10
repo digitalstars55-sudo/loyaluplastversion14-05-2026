@@ -109,11 +109,15 @@ def _get_client_branch(vk_id: int, branch_id: int) -> ClientBranch:
 
 
 def _network_config():
-    from apps.shared.config.models import ClientConfig
-    company = getattr(connection, 'tenant', None)
-    if company is None:
+    """ClientConfig текущего тенанта (или None). Защищено от FakeTenant в shell-контексте."""
+    try:
+        from apps.shared.config.models import ClientConfig
+        company = getattr(connection, 'tenant', None)
+        if company is None or not getattr(company, 'pk', None):
+            return None
+        return ClientConfig.objects.filter(company=company).first()
+    except Exception:
         return None
-    return ClientConfig.objects.filter(company=company).first()
 
 
 def _resolve_story_settings(cb: ClientBranch) -> dict:
