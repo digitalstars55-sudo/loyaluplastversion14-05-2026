@@ -29,7 +29,10 @@ class GameCooldownActive(Exception):
 
 
 class CodeRequired(Exception):
-    pass
+    """Attempt ≥ 3 needs a daily code. Carries the pre-determined animation
+    score so the frontend wheel can land on the right segment before the code."""
+    def __init__(self, score: int | None = None):
+        self.score = score
 
 
 class InvalidCode(Exception):
@@ -178,6 +181,11 @@ def start_game(vk_id: int, branch_id: int, code: str | None = None, delivery: bo
         })
         return {'session_token': token, 'score': 10}
 
+    # Приз детерминирован номером попытки — считаем заранее, чтобы фронт-колесо
+    # могло докрутиться до сектора ещё ДО ввода кода (празднование → «введи код,
+    # чтобы забрать»). Токен/начисление всё равно выдаются только после кода.
+    coins, score = _coin_reward_for(attempt_num)
+
     # Attempt 3+ → require daily code unless the guest came via delivery
     validated_code: str | None = None
     if attempt_num >= 3:
@@ -187,11 +195,10 @@ def start_game(vk_id: int, branch_id: int, code: str | None = None, delivery: bo
         is_delivery = delivery or has_active_delivery
         if not is_delivery:
             if not code:
-                raise CodeRequired
+                raise CodeRequired(score)
             _validate_game_code(client_branch.branch, code)
             validated_code = code.upper().strip()
 
-    coins, score = _coin_reward_for(attempt_num)
     token = signing.dumps({
         'cbid':  client_branch.pk,
         'count': attempt_count,

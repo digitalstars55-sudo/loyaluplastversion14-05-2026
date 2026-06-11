@@ -59,8 +59,9 @@ class GameStartView(APIView):
                 },
                 status=status.HTTP_409_CONFLICT,
             )
-        except CodeRequired:
-            return Response({'needs_code': True})
+        except CodeRequired as e:
+            # score позволяет фронт-колесу докрутиться до сектора ДО ввода кода
+            return Response({'needs_code': True, 'score': e.score})
         except InvalidCode:
             return Response(
                 {'detail': 'Неверный код дня.'},
