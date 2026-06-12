@@ -604,6 +604,63 @@ def get_scan_index(
     return round(scans / pos * 100, 1)
 
 
+# ── Сканирования по источникам (кафе vs доставка), за период ─────────────────
+
+def get_cafe_scan_count(branch_ids: list[int] | None, start_date: date, end_date: date) -> int:
+    """Сканы в кафе = игровые сессии НЕ по доставке (ClientAttempt.delivery=False) за период."""
+    from apps.tenant.game.models import ClientAttempt
+    qs = ClientAttempt.objects.filter(
+        delivery=False,
+        created_at__date__gte=start_date,
+        created_at__date__lte=end_date,
+    )
+    qs = _branch_filter(qs, branch_ids, 'client__branch__in')
+    return qs.count()
+
+
+def get_delivery_scan_count(branch_ids: list[int] | None, start_date: date, end_date: date) -> int:
+    """Сканы с доставки = активации кода доставки (Delivery.activated_at) за период."""
+    from apps.tenant.delivery.models import Delivery
+    qs = Delivery.objects.filter(
+        activated_at__date__gte=start_date,
+        activated_at__date__lte=end_date,
+    )
+    qs = _branch_filter(qs, branch_ids, 'branch__in')
+    return qs.count()
+
+
+# ── Подписки по источникам (community/newsletter × cafe/delivery/story), за период ──
+
+def get_community_subs_by_source(
+    branch_ids: list[int] | None, start_date: date, end_date: date, source: str
+) -> int:
+    """Уник. гости, подписавшиеся на сообщество через приложение из источника `source` за период."""
+    from apps.tenant.branch.models import ClientVKStatus
+    qs = ClientVKStatus.objects.filter(
+        community_via_app=True,
+        community_source=source,
+        community_joined_at__date__gte=start_date,
+        community_joined_at__date__lte=end_date,
+    )
+    qs = _branch_filter(qs, branch_ids, 'client__branch__in')
+    return qs.values('client__client_id').distinct().count()
+
+
+def get_newsletter_subs_by_source(
+    branch_ids: list[int] | None, start_date: date, end_date: date, source: str
+) -> int:
+    """Уник. гости, подписавшиеся на рассылку через приложение из источника `source` за период."""
+    from apps.tenant.branch.models import ClientVKStatus
+    qs = ClientVKStatus.objects.filter(
+        newsletter_via_app=True,
+        newsletter_source=source,
+        newsletter_joined_at__date__gte=start_date,
+        newsletter_joined_at__date__lte=end_date,
+    )
+    qs = _branch_filter(qs, branch_ids, 'client__branch__in')
+    return qs.values('client__client_id').distinct().count()
+
+
 # ── Main aggregate ────────────────────────────────────────────────────────────
 
 def get_general_stats(
@@ -625,8 +682,24 @@ def get_general_stats(
         pos        = get_pos_guests_count(branch_ids, start_date, end_date)
         scan_index = round(scans / pos * 100, 1) if pos else 0.0
 
+    # Сканы по источникам (#6)
+    cafe_scans     = get_cafe_scan_count(branch_ids, start_date, end_date)
+    delivery_scans = get_delivery_scan_count(branch_ids, start_date, end_date)
+
     return {
         'qr_scans':                  scans,
+        # #6 — сканирования по источникам
+        'cafe_scans':                cafe_scans,
+        'delivery_scans':            delivery_scans,
+        'total_scans':              cafe_scans + delivery_scans,
+        # #7 — подписки по источникам (сообщество)
+        'community_subs_cafe':       get_community_subs_by_source(branch_ids, start_date, end_date, 'cafe'),
+        'community_subs_delivery':   get_community_subs_by_source(branch_ids, start_date, end_date, 'delivery'),
+        'community_subs_story':      get_community_subs_by_source(branch_ids, start_date, end_date, 'story'),
+        # #7 — подписки по источникам (рассылка)
+        'newsletter_subs_cafe':      get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'cafe'),
+        'newsletter_subs_delivery':  get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'delivery'),
+        'newsletter_subs_story':     get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'story'),
         'total_vk_subscribers':      get_total_vk_subscribers(branch_ids),
         'new_group_with_gift':       get_new_group_with_first_gift(branch_ids, start_date, end_date),
         'repeat_game_players':       get_repeat_game_players(branch_ids, start_date, end_date),

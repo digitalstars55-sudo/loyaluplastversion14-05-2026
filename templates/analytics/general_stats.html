@@ -165,7 +165,8 @@
           <div class="card-body">
             <div class="mc-label">📬 Подписались в сообщество ВК</div>
             <div class="mc-val c-blue">{{ stats.new_community_subscribers }}</div>
-            <div class="tip-box">Сколько гостей подписались на группу ВК именно через наше приложение за выбранный период. Система при первом входе гостя в приложение проверяет через VK API — был ли он уже подписан на группу. Если был подписан заранее (например, подписался сам через ВК, до того как узнал о приложении) — он не считается. Считаются только те, кто подписался именно потому, что приложение его попросило.</div>
+            <div class="mc-sub">Всего: кафе + доставка + сториз</div>
+            <div class="tip-box">Суммарно по всем источникам (кафе+доставка+сториз). Сколько гостей подписались на группу ВК именно через наше приложение за выбранный период. Система при первом входе гостя в приложение проверяет через VK API — был ли он уже подписан на группу. Если был подписан заранее (например, подписался сам через ВК, до того как узнал о приложении) — он не считается. Считаются только те, кто подписался именно потому, что приложение его попросило.</div>
           </div>
         </div>
       </a>
@@ -178,10 +179,114 @@
           <div class="card-body">
             <div class="mc-label">📨 Подписались на рассылку ВК</div>
             <div class="mc-val c-blue">{{ stats.new_newsletter_subscribers }}</div>
-            <div class="tip-box">Аналогично предыдущей метрике, но про рассылку (разрешение на отправку сообщений от сообщества). Считаются только те, кто разрешил сообщения именно через наше приложение за выбранный период. Те, кто разрешал раньше сам — не считаются.</div>
+            <div class="mc-sub">Всего: кафе + доставка + сториз</div>
+            <div class="tip-box">Аналогично предыдущей метрике, но про рассылку (разрешение на отправку сообщений от сообщества). Считаются только те, кто разрешил сообщения именно через наше приложение за выбранный период. Те, кто разрешал раньше сам — не считаются. Это СУММАРНАЯ цифра по всем источникам (кафе, доставка, сториз).</div>
           </div>
         </div>
       </a>
+    </div>
+
+    <!-- #6 Сканирования по источникам -->
+    <div class="col-sm-6 col-md-4 col-xl-3">
+      <div class="mc-card card acc-green position-relative">
+        <div class="tip-btn">?</div>
+        <div class="card-body">
+          <div class="mc-label">🏪 Сканирования в кафе</div>
+          <div class="mc-val c-green">{{ stats.cafe_scans }}</div>
+          <div class="tip-box">Сколько игровых сессий начато в кафе (по QR-коду, не с доставки) за выбранный период. Каждая игра гостя на месте = одно кафе-сканирование.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-sm-6 col-md-4 col-xl-3">
+      <div class="mc-card card acc-orange position-relative">
+        <div class="tip-btn">?</div>
+        <div class="card-body">
+          <div class="mc-label">🚚 Сканирования с доставки</div>
+          <div class="mc-val c-orange">{{ stats.delivery_scans }}</div>
+          <div class="tip-box">Сколько кодов доставки активировано гостями за выбранный период. Это «сканирования» с канала доставки (гость ввёл код из заказа в приложении).</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-sm-6 col-md-4 col-xl-3">
+      <div class="mc-card card acc-purple position-relative">
+        <div class="tip-btn">?</div>
+        <div class="card-body">
+          <div class="mc-label">📊 Всего сканирований</div>
+          <div class="mc-val c-purple">{{ stats.total_scans }}</div>
+          <div class="mc-sub">Кафе + доставка</div>
+          <div class="tip-box">Общее количество сканирований за период: кафе ({{ stats.cafe_scans }}) + доставка ({{ stats.delivery_scans }}).</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- #7 Подписки в сообщество по источникам -->
+    <div class="col-sm-6 col-md-4 col-xl-3">
+      <div class="mc-card card acc-blue position-relative">
+        <div class="tip-btn">?</div>
+        <div class="card-body">
+          <div class="mc-label">📬🏪 В сообщество — кафе</div>
+          <div class="mc-val c-blue">{{ stats.community_subs_cafe }}</div>
+          <div class="tip-box">Гости, подписавшиеся на сообщество ВК через приложение, находясь в кафе (по QR), за выбранный период.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-sm-6 col-md-4 col-xl-3">
+      <div class="mc-card card acc-blue position-relative">
+        <div class="tip-btn">?</div>
+        <div class="card-body">
+          <div class="mc-label">📬🚚 В сообщество — доставка</div>
+          <div class="mc-val c-blue">{{ stats.community_subs_delivery }}</div>
+          <div class="tip-box">Гости, подписавшиеся на сообщество ВК через приложение, придя с доставки (активная доставка в момент подписки), за выбранный период.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-sm-6 col-md-4 col-xl-3">
+      <div class="mc-card card acc-teal position-relative">
+        <div class="tip-btn">?</div>
+        <div class="card-body">
+          <div class="mc-label">📬📖 В сообщество — сториз</div>
+          <div class="mc-val c-teal">{{ stats.community_subs_story }}</div>
+          <div class="tip-box">Гости, подписавшиеся на сообщество ВК через сториз-флоу (при получении story-подарка), за выбранный период.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- #7 Подписки на рассылку по источникам -->
+    <div class="col-sm-6 col-md-4 col-xl-3">
+      <div class="mc-card card acc-blue position-relative">
+        <div class="tip-btn">?</div>
+        <div class="card-body">
+          <div class="mc-label">📨🏪 На рассылку — кафе</div>
+          <div class="mc-val c-blue">{{ stats.newsletter_subs_cafe }}</div>
+          <div class="tip-box">Гости, разрешившие рассылку ВК через приложение, находясь в кафе (по QR), за выбранный период.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-sm-6 col-md-4 col-xl-3">
+      <div class="mc-card card acc-blue position-relative">
+        <div class="tip-btn">?</div>
+        <div class="card-body">
+          <div class="mc-label">📨🚚 На рассылку — доставка</div>
+          <div class="mc-val c-blue">{{ stats.newsletter_subs_delivery }}</div>
+          <div class="tip-box">Гости, разрешившие рассылку ВК через приложение, придя с доставки, за выбранный период.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-sm-6 col-md-4 col-xl-3">
+      <div class="mc-card card acc-teal position-relative">
+        <div class="tip-btn">?</div>
+        <div class="card-body">
+          <div class="mc-label">📨📖 На рассылку — сториз</div>
+          <div class="mc-val c-teal">{{ stats.newsletter_subs_story }}</div>
+          <div class="tip-box">Гости, разрешившие рассылку ВК через сториз-флоу, за выбранный период.</div>
+        </div>
+      </div>
     </div>
 
     <div class="col-sm-6 col-md-4 col-xl-3">
