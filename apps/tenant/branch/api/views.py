@@ -24,6 +24,7 @@ from .serializers import (
 from .services import (
     BranchInactive, BranchNotFound, ClientBlocked, ClientNotFound, VKAuthError,
     VKCallbackConfirmation, VKCallbackForbidden,
+    fresh_vk_subscription_status,
     get_branch_info, get_client_profile,
     get_employees, get_promotions, get_transactions,
     handle_vk_callback, register_or_get_client,
@@ -362,3 +363,24 @@ class VKAuthView(APIView):
             )
         resp_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
         return Response(ClientProfileResponseSerializer(profile).data, status=resp_status)
+
+
+class VKSubscriptionStatusView(APIView):
+    """
+    GET ?vk_id=&branch_id= — свежая проверка статуса подписки гостя через VK API
+    (community + newsletter). Используется story-гейтом, чтобы не показывать окно
+    подписки уже-подписанному и спрашивать только недостающий канал.
+    """
+
+    @extend_schema(parameters=[ClientGetRequestSerializer], responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT})
+    def get(self, request: Request) -> Response:
+        s = ClientGetRequestSerializer(data=request.query_params)
+        s.is_valid(raise_exception=True)
+        try:
+            data = fresh_vk_subscription_status(**s.validated_data)
+        except ClientNotFound:
+            return Response(
+                {'detail': 'Профиль гостя не найден.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(data)

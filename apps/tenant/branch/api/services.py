@@ -666,6 +666,78 @@ def _resync_vk_status_cached(profile: ClientBranch) -> None:
     ClientVKStatus.sync(profile, is_member=cur_member, is_subscriber=cur_subscriber)
 
 
+def fresh_vk_subscription_status(vk_id: int, branch_id: int) -> dict:
+    """
+    Свежая (БЕЗ кеша) проверка статуса подписки гостя через VK API сообщества:
+    community (groups.isMember) + newsletter (messages.isMessagesFromGroupAllowed).
+    Обновляет ClientVKStatus и возвращает {is_community_member, is_newsletter_subscriber}.
+
+    Назначение: story-гейт не показывает окно подписки уже-подписанному гостю и
+    спрашивает ТОЛЬКО недостающий канал (newsletter фронт тихо проверить не может).
+
+    Raises: ClientNotFound.
+    """
+    import json
+    import logging
+    import urllib.parse
+    import urllib.request
+    from apps.tenant.senler.models import SenlerConfig
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        profile = _profile_qs().get(client__vk_id=vk_id, branch__branch_id=branch_id)
+    except ClientBranch.DoesNotExist:
+        raise ClientNotFound
+
+    vk = getattr(profile, 'vk_status', None)
+    result = {
+        'is_community_member': bool(vk.is_community_member) if vk else False,
+        'is_newsletter_subscriber': bool(vk.is_newsletter_subscriber) if vk else False,
+    }
+
+    config = (
+        SenlerConfig.objects.filter(branch=profile.branch).first()
+        or SenlerConfig.objects.filter(is_active=True).order_by('branch_id').first()
+    )
+    if not config or not config.vk_community_token or not config.vk_group_id:
+        return result
+
+    token = config.vk_community_token
+    group_id = config.vk_group_id
+
+    def _vk_call(method, **params):
+        params['access_token'] = token
+        params['v'] = '5.131'
+        url = f'https://api.vk.com/method/{method}?' + urllib.parse.urlencode(params)
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read())
+        if 'error' in data:
+            raise RuntimeError(data['error'].get('error_msg', ''))
+        return data.get('response', {})
+
+    is_member = None
+    is_subscriber = None
+    try:
+        resp = _vk_call('groups.isMember', group_id=group_id, user_id=vk_id)
+        is_member = bool(resp) if isinstance(resp, int) else bool(resp.get('member', 0))
+    except Exception as e:
+        logger.info('fresh isMember vk_id=%s: %s', vk_id, e)
+    try:
+        resp = _vk_call('messages.isMessagesFromGroupAllowed', group_id=group_id, user_id=vk_id)
+        is_subscriber = bool(resp.get('is_allowed', 0))
+    except Exception as e:
+        logger.info('fresh isMessagesFromGroupAllowed vk_id=%s: %s', vk_id, e)
+
+    if is_member is None and is_subscriber is None:
+        return result  # обе проверки упали — отдаём текущее из БД
+
+    cur_member     = result['is_community_member']     if is_member is None     else is_member
+    cur_subscriber = result['is_newsletter_subscriber'] if is_subscriber is None else is_subscriber
+    ClientVKStatus.sync(profile, is_member=cur_member, is_subscriber=cur_subscriber)
+    return {'is_community_member': cur_member, 'is_newsletter_subscriber': cur_subscriber}
+
+
 def get_client_profile(vk_id: int, branch_id: int) -> ClientBranch:
     """
     Returns ClientBranch for the given (vk_id, branch_id) pair.
