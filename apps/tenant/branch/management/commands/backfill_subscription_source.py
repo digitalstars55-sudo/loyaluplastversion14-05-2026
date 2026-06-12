@@ -39,34 +39,46 @@ class Command(BaseCommand):
 
     def _backfill_schema(self, schema_name: str, dry: bool):
         from apps.tenant.branch.models import ClientVKStatus, SubscriptionSource
+        from datetime import timedelta
         from apps.tenant.delivery.models import Delivery
 
+        WINDOW = timedelta(days=1)
+
         def source_for(cb_id, joined_at):
-            # доставка активирована до даты подписки → delivery, иначе cafe
+            # Доставка активирована В ОКНЕ ±1 день от подписки (тот же визит, до ИЛИ после)
+            # → delivery; иначе cafe. Окно вместо строгого «до» — ловит типичный флоу:
+            # подписался при онбординге → потом ввёл код доставки.
             if joined_at and Delivery.objects.filter(
                 activated_by_id=cb_id,
-                activated_at__lte=joined_at,
+                activated_at__gte=joined_at - WINDOW,
+                activated_at__lte=joined_at + WINDOW,
             ).exists():
                 return SubscriptionSource.DELIVERY
             return SubscriptionSource.CAFE
 
         comm = 0
         news = 0
+        # Ре-атрибутируем ВСЕ via_app-подписки, КРОМЕ story (её ставит story-флоу).
+        # cafe/delivery/null пересчитываем заново (правим прежний строгий гард).
         qs = ClientVKStatus.objects.filter(
-            community_via_app=True, community_source__isnull=True,
-        ) | ClientVKStatus.objects.filter(
-            newsletter_via_app=True, newsletter_source__isnull=True,
-        )
+            community_via_app=True,
+        ).exclude(community_source=SubscriptionSource.STORY) | ClientVKStatus.objects.filter(
+            newsletter_via_app=True,
+        ).exclude(newsletter_source=SubscriptionSource.STORY)
         for vk in qs.distinct():
             fields = []
-            if vk.community_via_app is True and vk.community_source is None:
-                vk.community_source = source_for(vk.client_id, vk.community_joined_at)
-                fields.append('community_source')
-                comm += 1
-            if vk.newsletter_via_app is True and vk.newsletter_source is None:
-                vk.newsletter_source = source_for(vk.client_id, vk.newsletter_joined_at)
-                fields.append('newsletter_source')
-                news += 1
+            if vk.community_via_app is True and vk.community_source != SubscriptionSource.STORY:
+                new_src = source_for(vk.client_id, vk.community_joined_at)
+                if new_src != vk.community_source:
+                    vk.community_source = new_src
+                    fields.append('community_source')
+                    comm += 1
+            if vk.newsletter_via_app is True and vk.newsletter_source != SubscriptionSource.STORY:
+                new_src = source_for(vk.client_id, vk.newsletter_joined_at)
+                if new_src != vk.newsletter_source:
+                    vk.newsletter_source = new_src
+                    fields.append('newsletter_source')
+                    news += 1
             if fields and not dry:
                 vk.save(update_fields=fields)
 

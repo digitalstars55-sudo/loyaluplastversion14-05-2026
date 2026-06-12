@@ -140,4 +140,37 @@ def activate_delivery(*, short_code: str, vk_id: int, branch_id: int) -> Deliver
         raise DeliveryNotFound
 
     delivery.activate(client_branch)
+
+    # Ретро-атрибуция источника подписки: типичный доставочный флоу — гость
+    # подписался при онбординге, ПОТОМ ввёл код доставки. На момент подписки
+    # активной доставки ещё не было → источник проставился cafe. Здесь, при
+    # активации, перебиваем cafe→delivery, если подписка была в окне ±1 день.
+    _reattribute_subscription_to_delivery(client_branch, delivery.activated_at)
+
     return delivery
+
+
+def _reattribute_subscription_to_delivery(client_branch, activated_at) -> None:
+    """cafe→delivery для via_app-подписок гостя в окне ±1 день вокруг активации
+    доставки (тот же визит). Не трогает story и уже-delivery."""
+    from datetime import timedelta
+    from apps.tenant.branch.models import ClientVKStatus, SubscriptionSource
+
+    if not activated_at:
+        return
+    vk = ClientVKStatus.objects.filter(client=client_branch).first()
+    if not vk:
+        return
+    lo = activated_at - timedelta(days=1)
+    hi = activated_at + timedelta(days=1)
+    fields = []
+    if (vk.community_via_app and vk.community_source in (None, SubscriptionSource.CAFE)
+            and vk.community_joined_at and lo <= vk.community_joined_at <= hi):
+        vk.community_source = SubscriptionSource.DELIVERY
+        fields.append('community_source')
+    if (vk.newsletter_via_app and vk.newsletter_source in (None, SubscriptionSource.CAFE)
+            and vk.newsletter_joined_at and lo <= vk.newsletter_joined_at <= hi):
+        vk.newsletter_source = SubscriptionSource.DELIVERY
+        fields.append('newsletter_source')
+    if fields:
+        vk.save(update_fields=fields)
