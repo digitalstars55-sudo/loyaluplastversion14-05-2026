@@ -15,8 +15,10 @@ class SpectacularRedocView(_RedocView):
     schema = None
 
 from apps.shared.config.admin_sites import tenant_admin
+from main.views import health
 
 urlpatterns = [
+    path('api/v1/health/', health, name='health'),
     path('admin/', tenant_admin.urls),
     path('api/v1/', include('apps.tenant.branch.api.urls')),
     path('api/v1/', include('apps.tenant.catalog.api.urls')),
