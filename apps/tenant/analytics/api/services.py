@@ -2359,6 +2359,31 @@ def get_stat_clients(
             qs = qs.filter(client__branch__in=branch_ids)
         return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_id')))
 
+    # Подписки по источникам (cafe/delivery/story) — drilldown в список гостей
+    if metric in ('community_subs_cafe', 'community_subs_delivery', 'community_subs_story'):
+        src = metric.rsplit('_', 1)[1]
+        qs = ClientVKStatus.objects.filter(
+            community_via_app=True,
+            community_source=src,
+            community_joined_at__date__gte=start_date,
+            community_joined_at__date__lte=end_date,
+        )
+        if branch_ids:
+            qs = qs.filter(client__branch__in=branch_ids)
+        return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_id')))
+
+    if metric in ('newsletter_subs_cafe', 'newsletter_subs_delivery', 'newsletter_subs_story'):
+        src = metric.rsplit('_', 1)[1]
+        qs = ClientVKStatus.objects.filter(
+            newsletter_via_app=True,
+            newsletter_source=src,
+            newsletter_joined_at__date__gte=start_date,
+            newsletter_joined_at__date__lte=end_date,
+        )
+        if branch_ids:
+            qs = qs.filter(client__branch__in=branch_ids)
+        return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_id')))
+
     if metric == 'first_gift_receivers':
         from apps.tenant.inventory.models import InventoryItem
 

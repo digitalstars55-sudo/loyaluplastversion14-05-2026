@@ -223,70 +223,82 @@
 
     <!-- #7 Подписки в сообщество по источникам -->
     <div class="col-sm-6 col-md-4 col-xl-3">
-      <div class="mc-card card acc-blue position-relative">
-        <div class="tip-btn">?</div>
-        <div class="card-body">
-          <div class="mc-label">📬🏪 В сообщество — кафе</div>
-          <div class="mc-val c-blue">{{ stats.community_subs_cafe }}</div>
-          <div class="tip-box">Гости, подписавшиеся на сообщество ВК через приложение, находясь в кафе (по QR), за выбранный период.</div>
+      <a href="{% url 'analytics-stats-detail' %}?metric=community_subs_cafe&{{ period_qs }}{% if bp %}&branches={{ bp }}{% endif %}" class="mc-link">
+        <div class="mc-card card acc-blue position-relative">
+          <div class="tip-btn">?</div>
+          <div class="card-body">
+            <div class="mc-label">📬🏪 В сообщество — кафе</div>
+            <div class="mc-val c-blue">{{ stats.community_subs_cafe }}</div>
+            <div class="tip-box">Гости, подписавшиеся на сообщество ВК через приложение, находясь в кафе (по QR), за выбранный период.</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
 
     <div class="col-sm-6 col-md-4 col-xl-3">
-      <div class="mc-card card acc-blue position-relative">
-        <div class="tip-btn">?</div>
-        <div class="card-body">
-          <div class="mc-label">📬🚚 В сообщество — доставка</div>
-          <div class="mc-val c-blue">{{ stats.community_subs_delivery }}</div>
-          <div class="tip-box">Гости, подписавшиеся на сообщество ВК через приложение, придя с доставки (активная доставка в момент подписки), за выбранный период.</div>
+      <a href="{% url 'analytics-stats-detail' %}?metric=community_subs_delivery&{{ period_qs }}{% if bp %}&branches={{ bp }}{% endif %}" class="mc-link">
+        <div class="mc-card card acc-blue position-relative">
+          <div class="tip-btn">?</div>
+          <div class="card-body">
+            <div class="mc-label">📬🚚 В сообщество — доставка</div>
+            <div class="mc-val c-blue">{{ stats.community_subs_delivery }}</div>
+            <div class="tip-box">Гости, подписавшиеся на сообщество ВК через приложение, придя с доставки (доставка активна в окне ±1 день от подписки), за выбранный период.</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
 
     <div class="col-sm-6 col-md-4 col-xl-3">
-      <div class="mc-card card acc-teal position-relative">
-        <div class="tip-btn">?</div>
-        <div class="card-body">
-          <div class="mc-label">📬📖 В сообщество — сториз</div>
-          <div class="mc-val c-teal">{{ stats.community_subs_story }}</div>
-          <div class="tip-box">Гости, подписавшиеся на сообщество ВК через сториз-флоу (при получении story-подарка), за выбранный период.</div>
+      <a href="{% url 'analytics-stats-detail' %}?metric=community_subs_story&{{ period_qs }}{% if bp %}&branches={{ bp }}{% endif %}" class="mc-link">
+        <div class="mc-card card acc-teal position-relative">
+          <div class="tip-btn">?</div>
+          <div class="card-body">
+            <div class="mc-label">📬📖 В сообщество — сториз</div>
+            <div class="mc-val c-teal">{{ stats.community_subs_story }}</div>
+            <div class="tip-box">Гости, подписавшиеся на сообщество ВК через сториз-флоу (при получении story-подарка), за выбранный период.</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
 
     <!-- #7 Подписки на рассылку по источникам -->
     <div class="col-sm-6 col-md-4 col-xl-3">
-      <div class="mc-card card acc-blue position-relative">
-        <div class="tip-btn">?</div>
-        <div class="card-body">
-          <div class="mc-label">📨🏪 На рассылку — кафе</div>
-          <div class="mc-val c-blue">{{ stats.newsletter_subs_cafe }}</div>
-          <div class="tip-box">Гости, разрешившие рассылку ВК через приложение, находясь в кафе (по QR), за выбранный период.</div>
+      <a href="{% url 'analytics-stats-detail' %}?metric=newsletter_subs_cafe&{{ period_qs }}{% if bp %}&branches={{ bp }}{% endif %}" class="mc-link">
+        <div class="mc-card card acc-blue position-relative">
+          <div class="tip-btn">?</div>
+          <div class="card-body">
+            <div class="mc-label">📨🏪 На рассылку — кафе</div>
+            <div class="mc-val c-blue">{{ stats.newsletter_subs_cafe }}</div>
+            <div class="tip-box">Гости, разрешившие рассылку ВК через приложение, находясь в кафе (по QR), за выбранный период.</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
 
     <div class="col-sm-6 col-md-4 col-xl-3">
-      <div class="mc-card card acc-blue position-relative">
-        <div class="tip-btn">?</div>
-        <div class="card-body">
-          <div class="mc-label">📨🚚 На рассылку — доставка</div>
-          <div class="mc-val c-blue">{{ stats.newsletter_subs_delivery }}</div>
-          <div class="tip-box">Гости, разрешившие рассылку ВК через приложение, придя с доставки, за выбранный период.</div>
+      <a href="{% url 'analytics-stats-detail' %}?metric=newsletter_subs_delivery&{{ period_qs }}{% if bp %}&branches={{ bp }}{% endif %}" class="mc-link">
+        <div class="mc-card card acc-blue position-relative">
+          <div class="tip-btn">?</div>
+          <div class="card-body">
+            <div class="mc-label">📨🚚 На рассылку — доставка</div>
+            <div class="mc-val c-blue">{{ stats.newsletter_subs_delivery }}</div>
+            <div class="tip-box">Гости, разрешившие рассылку ВК через приложение, придя с доставки, за выбранный период.</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
 
     <div class="col-sm-6 col-md-4 col-xl-3">
-      <div class="mc-card card acc-teal position-relative">
-        <div class="tip-btn">?</div>
-        <div class="card-body">
-          <div class="mc-label">📨📖 На рассылку — сториз</div>
-          <div class="mc-val c-teal">{{ stats.newsletter_subs_story }}</div>
-          <div class="tip-box">Гости, разрешившие рассылку ВК через сториз-флоу, за выбранный период.</div>
+      <a href="{% url 'analytics-stats-detail' %}?metric=newsletter_subs_story&{{ period_qs }}{% if bp %}&branches={{ bp }}{% endif %}" class="mc-link">
+        <div class="mc-card card acc-teal position-relative">
+          <div class="tip-btn">?</div>
+          <div class="card-body">
+            <div class="mc-label">📨📖 На рассылку — сториз</div>
+            <div class="mc-val c-teal">{{ stats.newsletter_subs_story }}</div>
+            <div class="tip-box">Гости, разрешившие рассылку ВК через сториз-флоу, за выбранный период.</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
 
     <div class="col-sm-6 col-md-4 col-xl-3">
