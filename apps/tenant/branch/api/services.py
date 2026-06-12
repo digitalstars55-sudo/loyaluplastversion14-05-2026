@@ -940,9 +940,17 @@ def update_client_profile(
     # Attribution: user explicitly joined via app
     if community_via_app or newsletter_via_app:
         vk_status, _ = ClientVKStatus.objects.get_or_create(client=profile)
+        # Источник подписки: активная доставка → доставка, иначе кафе.
+        # (story проставляется отдельно в story-флоу через mark_subscribed(source='story').)
+        from apps.tenant.branch.models import SubscriptionSource
+        has_active_delivery = profile.activated_deliveries.filter(
+            expires_at__gt=timezone.now(),
+        ).exists()
+        source = SubscriptionSource.DELIVERY if has_active_delivery else SubscriptionSource.CAFE
         vk_status.mark_subscribed(
             community=bool(community_via_app),
             newsletter=bool(newsletter_via_app),
+            source=source,
         )
 
     return _profile_qs().get(pk=profile.pk)

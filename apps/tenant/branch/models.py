@@ -638,6 +638,13 @@ class CoinTransaction(models.Model):
 
 # ── ClientVKStatus ────────────────────────────────────────────────────────────
 
+class SubscriptionSource(models.TextChoices):
+    """Откуда гость подписался (для аналитики по источникам)."""
+    CAFE = 'cafe', 'Кафе'
+    DELIVERY = 'delivery', 'Доставка'
+    STORY = 'story', 'Сториз'
+
+
 class ClientVKStatus(models.Model):
     """
     VK-статус гостя: подписка на сообщество и рассылку.
@@ -681,6 +688,15 @@ class ClientVKStatus(models.Model):
         verbose_name='Через приложение (сообщество)',
         help_text='null — не подписан; false — до приложения; true — через приложение.',
     )
+    community_source = models.CharField(
+        max_length=16,
+        choices=SubscriptionSource.choices,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name='Источник подписки (сообщество)',
+        help_text='Откуда подписался: кафе / доставка / сториз. Заполняется при via_app-подписке.',
+    )
 
     # ── Рассылка ──────────────────────────────────────────────────────────────
 
@@ -699,6 +715,15 @@ class ClientVKStatus(models.Model):
         blank=True,
         verbose_name='Через приложение (рассылка)',
         help_text='null — не подписан; false — до приложения; true — через приложение.',
+    )
+    newsletter_source = models.CharField(
+        max_length=16,
+        choices=SubscriptionSource.choices,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name='Источник подписки (рассылка)',
+        help_text='Откуда подписался: кафе / доставка / сториз. Заполняется при via_app-подписке.',
     )
 
     # ── Сторис ────────────────────────────────────────────────────────────────
@@ -796,12 +821,16 @@ class ClientVKStatus(models.Model):
         *,
         community: bool = False,
         newsletter: bool = False,
+        source: str | None = None,
     ) -> None:
         """
         Фиксирует подписку, совершённую прямо в мини-приложении (via_app=True).
 
         Вызывается когда гость нажал «Подписаться» в онбординге приложения.
         Идемпотентен: повторный вызов для уже подписанного канала ничего не делает.
+
+        source — откуда подписался (cafe/delivery/story, см. SubscriptionSource).
+        Пишется один раз, вместе с via_app=True (не перебивает уже проставленный).
         """
         now = timezone.now()
         update_fields = []
@@ -818,6 +847,9 @@ class ClientVKStatus(models.Model):
             if self.community_via_app is None:
                 self.community_via_app = True
                 update_fields += ['community_via_app']
+            if source and self.community_source is None:
+                self.community_source = source
+                update_fields += ['community_source']
 
         if newsletter:
             if not self.is_newsletter_subscriber:
@@ -828,6 +860,9 @@ class ClientVKStatus(models.Model):
             if self.newsletter_via_app is None:
                 self.newsletter_via_app = True
                 update_fields += ['newsletter_via_app']
+            if source and self.newsletter_source is None:
+                self.newsletter_source = source
+                update_fields += ['newsletter_source']
 
         if update_fields:
             self.save(update_fields=update_fields)

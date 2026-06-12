@@ -304,7 +304,11 @@ def claim_game(session_token: str, employee_id: int | None = None, delivery: boo
             prize_preview = {'type': 'coin', 'reward': int(payload.get('ra', 1000))}
         raise VKSubscriptionRequired(is_member, is_subscriber, prize_preview)
 
-    ClientAttempt.objects.create(client=client_branch, served_by=served_by)
+    ClientAttempt.objects.create(
+        client=client_branch,
+        served_by=served_by,
+        delivery=bool(is_delivery_session),  # источник скана: кафе vs доставка
+    )
     _activate_game_cooldown(client_branch)
 
     # Гасим использованный delivery-код: ставим expires_at=now, чтобы он больше

@@ -31,6 +31,13 @@ class ClientAttempt(TimeStampedModel):
         verbose_name='Официант',
         help_text='Сотрудник (is_employee=True), которого гость выбрал после игры.',
     )
+    delivery = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name='Игра с доставки',
+        help_text='True — сессия начата гостем доставки (а не по QR в кафе). '
+                  'Источник сканирования для аналитики: кафе vs доставка.',
+    )
 
     # ── Validation ────────────────────────────────────────────────────────────
 
