@@ -2080,8 +2080,12 @@ def recalculate_rf_scores(
         # VK status flags are timeless (once subscribed = always subscribed).
         # Game/review/shop actions are restricted to since..today.
         qualifying_guest_ids = ClientBranch.objects.filter(
-            _Q(vk_status__community_via_app=True)
-            | _Q(vk_status__newsletter_via_app=True)
+            # ТЗ #11: подписчики ТОЛЬКО через сториз (source=story — ещё не были в кафе,
+            # не сканировали) НЕ попадают в RF/RFM. Подписка квалифицирует в RF, только
+            # если источник cafe/delivery (не story). Если story-гость затем пришёл в
+            # кафе/сыграл/оставил отзыв — он попадёт в RF по этим сигналам ниже.
+            (_Q(vk_status__community_via_app=True) & ~_Q(vk_status__community_source='story'))
+            | (_Q(vk_status__newsletter_via_app=True) & ~_Q(vk_status__newsletter_source='story'))
             | _Q(vk_status__is_story_uploaded=True)
             | Exists(ClientAttempt.objects.filter(
                 client=OuterRef('pk'),
