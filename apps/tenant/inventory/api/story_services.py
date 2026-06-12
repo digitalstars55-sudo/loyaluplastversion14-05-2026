@@ -346,6 +346,28 @@ def select_story_gift(vk_id: int, branch_id: int, product_id: int) -> StoryGiftE
         min_order_amount=settings['min_order_amount'],
         duration=settings['activation_minutes'],
     )
+
+    # Атрибуция подписки к источнику «сториз»: если гость подписался через приложение
+    # ради получения story-подарка (только что, при «Забрать»), проставим source=story,
+    # перебивая инференс cafe. Гард по свежести (10 мин) — чтобы не трогать старые кафе-подписки.
+    from datetime import timedelta
+    from django.utils import timezone
+    from apps.tenant.branch.models import ClientVKStatus, SubscriptionSource
+    vk = ClientVKStatus.objects.filter(client=cb).first()
+    if vk:
+        recent = timezone.now() - timedelta(minutes=10)
+        fields = []
+        if (vk.community_via_app and vk.community_source in (None, SubscriptionSource.CAFE)
+                and vk.community_joined_at and vk.community_joined_at >= recent):
+            vk.community_source = SubscriptionSource.STORY
+            fields.append('community_source')
+        if (vk.newsletter_via_app and vk.newsletter_source in (None, SubscriptionSource.CAFE)
+                and vk.newsletter_joined_at and vk.newsletter_joined_at >= recent):
+            vk.newsletter_source = SubscriptionSource.STORY
+            fields.append('newsletter_source')
+        if fields:
+            vk.save(update_fields=fields)
+
     return entry
 
 
