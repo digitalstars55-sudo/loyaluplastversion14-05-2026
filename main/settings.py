@@ -28,6 +28,11 @@ CSRF_TRUSTED_ORIGINS = [
     'https://*.vk.com'
 ]
 
+# Django стоит за TLS-терминирующим nginx (прод + белые прокси-«двери»). Доверяем
+# заголовку X-Forwarded-Proto (его проставляет nginx), чтобы request.is_secure()=True
+# и build_absolute_uri() отдавал https-URL для картинок (/media), а не http (mixed-content).
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 CORS_ALLOWED_ORIGINS = [
     'https://levelupapp.ru',
     'https://levonework.ru',
