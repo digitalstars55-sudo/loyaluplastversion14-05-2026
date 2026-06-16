@@ -34,6 +34,9 @@ urlpatterns = [
     path('api/v1/', include('apps.shared.users.api.urls')),
     path('api/v1/', include('apps.tenant.mobile.api.urls')),
 
+    # Сервис-API лояльности для ordering-BFF (server-to-server, ключ-аутентификация).
+    path('api/v1/', include('apps.tenant.loyalty.api.urls')),
+
     # API Docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),

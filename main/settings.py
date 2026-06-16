@@ -95,6 +95,7 @@ TENANT_APPS = [
     'apps.tenant.delivery.apps.DeliveryConfig',
     'apps.tenant.telegram.apps.TelegramConfig',
     'apps.tenant.mobile.apps.MobileConfig',
+    'apps.tenant.loyalty.apps.LoyaltyConfig',
 ]
 
 INSTALLED_APPS = list(SHARED_APPS) + [
@@ -243,6 +244,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 VK_SECRET = os.getenv('VK_SECRET')
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
+
+# Сервис-API лояльности для внешнего ordering-BFF (приложение заказа).
+# Ключ — только в окружении, не в гите. Без него loyalty-эндпоинты fail closed.
+LOYALTY_SERVICE_API_KEY = os.getenv('LOYALTY_SERVICE_API_KEY')
+# Кэшбэк начисления (% от суммы заказа). BFF может прислать явный points-override.
+LOYALTY_ACCRUAL_PERCENT = int(os.getenv('LOYALTY_ACCRUAL_PERCENT', 10))
 VK_MINI_APP_ID=os.getenv('VK_MINI_APP_ID', 53418653)
 VK_WEB_APP_ID=os.getenv('VK_WEB_APP_ID', 54473505)
 
