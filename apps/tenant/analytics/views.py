@@ -385,7 +385,7 @@ class ReviewsAnalyticsView(View):
 
 _METRIC_LABELS = {
     'qr_scans':                  'Отсканировали QR-код',
-    'total_vk_subscribers':      'Подписчики ВКонтакте',
+    'total_vk_subscribers':      'Гости в базе (группа + рассылка)',
     'new_group_with_gift':       'Новые в группе с первым подарком',
     'repeat_game_players':       'Вернулись и сыграли повторно',
     'coin_purchasers':           'Купили подарки за баллы',
