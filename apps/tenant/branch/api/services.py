@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.db import transaction
+from django.db import transaction, connection
 from django.utils import timezone
 from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce
@@ -595,6 +595,10 @@ def get_branch_info(branch_id: int, *, tenant=None) -> dict:
         'quest_show_message':  quest_show_message,
         'brand_color':           (config.brand_color if config and config.brand_color else '#d3a9e5'),
         'brand_color_secondary': (config.brand_color_secondary if config and getattr(config, 'brand_color_secondary', None) else '#d6de23'),
+        # Тема игрового колеса. Вычисляется по схеме (без поля в БД): тенанты
+        # Автосуши/Автопицца (asap*) → оранжево-зелёное колесо. Остальные → '' (дефолт,
+        # ничего не меняется). Фронт применяет тему только при 'autosushi'.
+        'wheel_theme':           ('autosushi' if (getattr(connection, 'schema_name', '') or '').startswith('asap') else ''),
     }
 
 

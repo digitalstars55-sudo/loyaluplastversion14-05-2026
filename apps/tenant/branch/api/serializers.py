@@ -27,6 +27,8 @@ class BranchInfoSerializer(serializers.Serializer):
     # ответа и второй (акцентный) цвет не доходит до фронта.
     brand_color           = serializers.CharField()
     brand_color_secondary = serializers.CharField()
+    # Тема игрового колеса ('autosushi' для asap*, '' для остальных). LU: брендирование игры.
+    wheel_theme           = serializers.CharField(allow_blank=True, required=False)
 
 
 # ── Client profile ────────────────────────────────────────────────────────────
