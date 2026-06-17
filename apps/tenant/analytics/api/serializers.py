@@ -125,6 +125,10 @@ class BranchSerializer(serializers.Serializer):
 
 class GeneralStatsSerializer(serializers.Serializer):
     qr_scans                  = serializers.IntegerField()
+    cafe_scans                = serializers.IntegerField(required=False)
+    delivery_scans            = serializers.IntegerField(required=False)
+    total_scans               = serializers.IntegerField(required=False)
+    game_reached              = serializers.IntegerField(required=False)
     total_vk_subscribers      = serializers.IntegerField()
     new_group_with_gift       = serializers.IntegerField()
     repeat_game_players       = serializers.IntegerField()

@@ -607,12 +607,18 @@ def get_scan_index(
 # ── Сканирования по источникам (кафе vs доставка), за период ─────────────────
 
 def get_cafe_scan_count(branch_ids: list[int] | None, start_date: date, end_date: date) -> int:
-    """Сканы в кафе = игровые сессии НЕ по доставке (ClientAttempt.delivery=False) за период."""
-    from apps.tenant.game.models import ClientAttempt
-    qs = ClientAttempt.objects.filter(
-        delivery=False,
-        created_at__date__gte=start_date,
-        created_at__date__lte=end_date,
+    """
+    Сканы QR в кафе = записи ClientBranchVisit за период.
+
+    Это РЕАЛЬНЫЙ факт сканирования QR-кода в заведении, независимо от того,
+    дошёл ли гость до игры. Одна запись = один скан (с анти-фантомным дедупом
+    6ч на гостя в record_visit). Доставка сюда НЕ попадает: визит пишется
+    только при source != 'delivery' (см. branch/api/services.record_visit).
+    """
+    from apps.tenant.branch.models import ClientBranchVisit
+    qs = ClientBranchVisit.objects.filter(
+        visited_at__date__gte=start_date,
+        visited_at__date__lte=end_date,
     )
     qs = _branch_filter(qs, branch_ids, 'client__branch__in')
     return qs.count()
@@ -627,6 +633,23 @@ def get_delivery_scan_count(branch_ids: list[int] | None, start_date: date, end_
     )
     qs = _branch_filter(qs, branch_ids, 'branch__in')
     return qs.count()
+
+
+def get_game_reached_count(branch_ids: list[int] | None, start_date: date, end_date: date) -> int:
+    """
+    «Дошли до игры» — уникальные гости, начавшие игру (ClientAttempt) за период.
+
+    Отдельный этап воронки ПОСЛЕ сканирования: отсканировали QR → дошли до игры →
+    получили подарок → активировали. Считаем людей (дедуп по guest.Client),
+    а не сессии, поэтому величина сопоставима с другими people-метриками.
+    """
+    from apps.tenant.game.models import ClientAttempt
+    qs = ClientAttempt.objects.filter(
+        created_at__date__gte=start_date,
+        created_at__date__lte=end_date,
+    )
+    qs = _branch_filter(qs, branch_ids, 'client__branch__in')
+    return qs.values('client__client_id').distinct().count()
 
 
 # ── Подписки по источникам (community/newsletter × cafe/delivery/story), за период ──
@@ -682,30 +705,48 @@ def get_general_stats(
         pos        = get_pos_guests_count(branch_ids, start_date, end_date)
         scan_index = round(scans / pos * 100, 1) if pos else 0.0
 
-    # Сканы по источникам (#6)
+    # Сканы по источникам (#6). Всего = кафе(ClientBranchVisit) + доставка.
+    # «Отсканировали QR-код» (карточка) = total_scans — единая цифра, считающая
+    # ВСЕ факты скана независимо от того, дошёл ли гость до игры.
     cafe_scans     = get_cafe_scan_count(branch_ids, start_date, end_date)
     delivery_scans = get_delivery_scan_count(branch_ids, start_date, end_date)
+    total_scans    = cafe_scans + delivery_scans
+
+    # #7 — подписки по источникам. «Другие» = всего − (кафе+доставка+сториз),
+    # чтобы разбивка всегда складывалась с общей цифрой.
+    new_community   = get_new_community_subscribers(branch_ids, start_date, end_date)
+    new_newsletter  = get_new_newsletter_subscribers(branch_ids, start_date, end_date)
+    community_cafe     = get_community_subs_by_source(branch_ids, start_date, end_date, 'cafe')
+    community_delivery = get_community_subs_by_source(branch_ids, start_date, end_date, 'delivery')
+    community_story    = get_community_subs_by_source(branch_ids, start_date, end_date, 'story')
+    newsletter_cafe     = get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'cafe')
+    newsletter_delivery = get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'delivery')
+    newsletter_story    = get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'story')
 
     return {
         'qr_scans':                  scans,
         # #6 — сканирования по источникам
         'cafe_scans':                cafe_scans,
         'delivery_scans':            delivery_scans,
-        'total_scans':              cafe_scans + delivery_scans,
+        'total_scans':               total_scans,
+        # этап воронки после скана
+        'game_reached':              get_game_reached_count(branch_ids, start_date, end_date),
         # #7 — подписки по источникам (сообщество)
-        'community_subs_cafe':       get_community_subs_by_source(branch_ids, start_date, end_date, 'cafe'),
-        'community_subs_delivery':   get_community_subs_by_source(branch_ids, start_date, end_date, 'delivery'),
-        'community_subs_story':      get_community_subs_by_source(branch_ids, start_date, end_date, 'story'),
+        'community_subs_cafe':       community_cafe,
+        'community_subs_delivery':   community_delivery,
+        'community_subs_story':      community_story,
+        'community_subs_other':      max(0, new_community - community_cafe - community_delivery - community_story),
         # #7 — подписки по источникам (рассылка)
-        'newsletter_subs_cafe':      get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'cafe'),
-        'newsletter_subs_delivery':  get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'delivery'),
-        'newsletter_subs_story':     get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'story'),
+        'newsletter_subs_cafe':      newsletter_cafe,
+        'newsletter_subs_delivery':  newsletter_delivery,
+        'newsletter_subs_story':     newsletter_story,
+        'newsletter_subs_other':     max(0, new_newsletter - newsletter_cafe - newsletter_delivery - newsletter_story),
         'total_vk_subscribers':      get_total_vk_subscribers(branch_ids),
         'new_group_with_gift':       get_new_group_with_first_gift(branch_ids, start_date, end_date),
         'repeat_game_players':       get_repeat_game_players(branch_ids, start_date, end_date),
         'coin_purchasers':           get_coin_purchasers(branch_ids, start_date, end_date),
-        'new_community_subscribers': get_new_community_subscribers(branch_ids, start_date, end_date),
-        'new_newsletter_subscribers': get_new_newsletter_subscribers(branch_ids, start_date, end_date),
+        'new_community_subscribers': new_community,
+        'new_newsletter_subscribers': new_newsletter,
         'first_gift_receivers':      get_first_gift_receivers(branch_ids, start_date, end_date),
         'gift_activators':           get_gift_activators(branch_ids, start_date, end_date),
         'birthday_greetings_sent':   get_birthday_greetings_sent(branch_ids, start_date, end_date),

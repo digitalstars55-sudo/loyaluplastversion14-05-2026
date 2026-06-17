@@ -242,9 +242,9 @@ class LoyaltyReportAPIView(APIView):
             'lost_users': eff.get('lost_to_r0', 0),
         }
 
-        # ── Источники: кафе vs доставка (непересекающиеся доли qr_scans) ──────
-        from_delivery = services.get_delivery_activators_count(branch_ids, start_date, end_date)
-        from_cafe = max(0, stats.get('qr_scans', 0) - from_delivery)
+        # ── Источники: кафе vs доставка (сходятся с total_scans) ─────────────
+        from_cafe = stats.get('cafe_scans', 0)
+        from_delivery = stats.get('delivery_scans', 0)
 
         return Response({
             'stats':          stats,

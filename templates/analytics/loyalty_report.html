@@ -274,10 +274,15 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
     <table class="R-tbl">
       <thead><tr><th>Метрика</th><th>Значение</th><th>Источник / Откуда цифра</th></tr></thead>
       <tbody>
-        <tr data-key="Отсканировали QR-код" data-val="{{ report.qr_scans }}">
+        <tr data-key="Отсканировали QR-код" data-val="{{ report.total_scans }}">
           <td class="R-metric">📱 Отсканировали QR-код</td>
-          <td class="R-value">{{ report.qr_scans }}</td>
-          <td class="R-src">Это <b>гости, которые реально открыли наше мини-приложение</b> — отсканировали QR в кафе или ввели код из доставки. Один гость не может быть посчитан чаще, чем раз в 6 часов. <span class="R-src-ex"><b>Пример:</b> 300 сканирований за март → 300.</span></td>
+          <td class="R-value">{{ report.total_scans }}</td>
+          <td class="R-src">Это <b>все факты сканирования QR-кода</b> за период — независимо от того, дошёл ли гость до игры. Равно сумме по источникам: кафе ({{ report.cafe_scans }}) + доставка ({{ report.delivery_scans }}), и совпадает со «Всего сканирований». Один гость не считается чаще, чем раз в 6 часов. <span class="R-src-ex"><b>Пример:</b> 300 сканирований за март → 300.</span></td>
+        </tr>
+        <tr data-key="Дошли до игры" data-val="{{ report.game_reached }}">
+          <td class="R-metric">🎮 Дошли до игры</td>
+          <td class="R-value">{{ report.game_reached }}</td>
+          <td class="R-src">Это <b>уникальные гости, которые после скана реально начали игру</b> за период. Следующий этап воронки: отсканировали QR → дошли до игры → получили подарок → активировали. Разница со сканами = потери на загрузке/авторизации. <span class="R-src-ex"><b>Пример:</b> из 300 сканов 210 дошли до игры → 210.</span></td>
         </tr>
         <tr data-key="Гостей в рассылке" data-val="{{ report.total_vk }}">
           <td class="R-metric">📬 Гостей в рассылке</td>
@@ -299,15 +304,15 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
           <td class="R-value">{{ report.coin_purchasers }}</td>
           <td class="R-src">Это уникальные гости, которые <b>обменяли накопленные баллы</b> на товар в магазине лояльности. Каждый — один раз, даже если купил 5 раз. <span class="R-src-ex"><b>Пример:</b> 30 гостей обменяли баллы → 30.</span></td>
         </tr>
-        <tr data-key="Подписались на сообщество" data-val="{{ report.new_community }}">
-          <td class="R-metric">📬 Подписались на сообщество ВК</td>
+        <tr data-key="Подписались в VK — всего" data-val="{{ report.new_community }}">
+          <td class="R-metric">📬 Подписались в VK — всего</td>
           <td class="R-value">{{ report.new_community }}</td>
-          <td class="R-src">Это <b>новые подписчики VK-группы</b>, пришедшие именно через приложение за период. Те, кто подписался раньше сам — не считаются. <span class="R-src-ex"><b>Пример:</b> 47 человек подписались в марте через QR → 47.</span></td>
+          <td class="R-src">Пользователи, которые подписались на сообщество VK <b>через наше приложение</b> за период. Входят все источники: кафе, доставка, сториз и другие. Подписавшиеся раньше сами — не считаются. <span class="R-src-ex"><b>Пример:</b> 47 человек подписались в марте → 47.</span></td>
         </tr>
-        <tr data-key="Подписались на рассылку" data-val="{{ report.new_newsletter }}">
-          <td class="R-metric">📨 Подписались на рассылку ВК</td>
+        <tr data-key="Подписались на рассылку — всего" data-val="{{ report.new_newsletter }}">
+          <td class="R-metric">📨 Подписались на рассылку — всего</td>
           <td class="R-value">{{ report.new_newsletter }}</td>
-          <td class="R-src">Это <b>новые подписчики на ЛС в VK</b> через Senler — кафе получило разрешение писать им. Только через приложение. <span class="R-src-ex"><b>Пример:</b> 80 разрешений за период → 80.</span></td>
+          <td class="R-src">Пользователи, которые подписались на рассылку VK <b>через наше приложение</b> за период. Входят все источники: кафе, доставка, сториз и другие. Разрешившие рассылку раньше сами — не считаются. <span class="R-src-ex"><b>Пример:</b> 80 разрешений за период → 80.</span></td>
         </tr>
         <tr data-key="Получили первый подарок" data-val="{{ report.first_gift_receivers }}">
           <td class="R-metric">🎁 Получили первый подарок</td>
@@ -376,15 +381,15 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
           <td class="R-value">{{ report.new_with_gift }}</td>
           <td class="R-src">Это <b>гости, впервые попавшие в базу</b> за период — раньше их в системе не было. Считаем тех, кто получил свой самый первый подарок именно в этот период. <span class="R-src-ex"><b>Пример:</b> 35 человек впервые подключились в марте → 35.</span></td>
         </tr>
-        <tr data-key="Подписались в группу" data-val="{{ report.new_community }}">
-          <td class="R-metric">Подписались в группу</td>
+        <tr data-key="Подписались в VK — всего" data-val="{{ report.new_community }}">
+          <td class="R-metric">Подписались в VK — всего</td>
           <td class="R-value">{{ report.new_community }}</td>
-          <td class="R-src">Это <b>новые подписчики на вашу VK-страницу</b> за период (VK API сообщает дату подписки). Может быть как из кафе по QR, так и из рекламы. <span class="R-src-ex"><b>Пример:</b> 47 подписок в группу за март → 47.</span></td>
+          <td class="R-src">Пользователи, которые подписались на сообщество VK <b>через наше приложение</b> за период (все источники: кафе, доставка, сториз и другие). Подписавшиеся раньше сами — не считаются. <span class="R-src-ex"><b>Пример:</b> 47 подписок за март → 47.</span></td>
         </tr>
-        <tr data-key="Подписались на рассылку" data-val="{{ report.new_newsletter }}">
-          <td class="R-metric">Подписались на рассылку</td>
+        <tr data-key="Подписались на рассылку — всего" data-val="{{ report.new_newsletter }}">
+          <td class="R-metric">Подписались на рассылку — всего</td>
           <td class="R-value">{{ report.new_newsletter }}</td>
-          <td class="R-src">Это <b>сколько гостей разрешили вам слать им ЛС в VK</b> через Senler. Без этого разрешения VK блокирует отправку. <span class="R-src-ex"><b>Пример:</b> 80 разрешений за период → 80.</span></td>
+          <td class="R-src">Пользователи, которые подписались на рассылку VK <b>через наше приложение</b> за период (все источники: кафе, доставка, сториз и другие). Без этого разрешения VK блокирует отправку. <span class="R-src-ex"><b>Пример:</b> 80 разрешений за период → 80.</span></td>
         </tr>
         <tr data-key="Получили первый подарок" data-val="{{ report.new_with_gift }}">
           <td class="R-metric">Получили первый подарок</td>
@@ -418,10 +423,10 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
           <td class="R-value">{{ report.pos_guests }}</td>
           <td class="R-src">Это <b>общее количество гостей в кассе</b> — берём из вашей кассовой системы (Dooglys или iiko). Каждый чек = один гость. <span class="R-src-ex"><b>Пример:</b> за март в POS прошло 1200 чеков → 1200.</span></td>
         </tr>
-        <tr data-key="Сканирования QR" data-val="{{ report.qr_scans }}">
-          <td class="R-metric">Сканирования QR</td>
+        <tr data-key="Уникальные гости со сканом" data-val="{{ report.qr_scans }}">
+          <td class="R-metric">Уникальные гости со сканом</td>
           <td class="R-value">{{ report.qr_scans }}</td>
-          <td class="R-src">Это <b>гости, реально открывшие наше мини-приложение</b>: отсканировали QR в кафе или ввели код из доставки. Каждое сканирование считаем один раз. <span class="R-src-ex"><b>Пример:</b> 300 сканирований за март → 300.</span></td>
+          <td class="R-src">Это <b>уникальные гости (по людям, не по сканам)</b>, реально открывшие наше мини-приложение за период. Поэтому ≤ «Всего сканирований». Используется для индекса оцифровки — доли гостей кассы, которых мы оцифровали. <span class="R-src-ex"><b>Пример:</b> 300 уникальных гостей → 300.</span></td>
         </tr>
         <tr data-key="Индекс сканирования" data-val="{{ report.scan_index }}%">
           <td class="R-metric">Индекс сканирования</td>

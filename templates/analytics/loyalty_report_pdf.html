@@ -118,13 +118,14 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
     <table class="tbl">
       <thead><tr><th>Метрика</th><th>Значение</th><th>Источник / Откуда цифра</th></tr></thead>
       <tbody>
-        <tr><td class="metric">📱 Отсканировали QR-код</td><td class="value">{{ report.qr_scans }}</td><td class="src"><b>Гости, открывшие мини-приложение</b> — QR в кафе или код доставки. 1 гость = не чаще раза в 6 часов. <span class="src-ex">300 сканов → 300.</span></td></tr>
+        <tr><td class="metric">📱 Отсканировали QR-код</td><td class="value">{{ report.total_scans }}</td><td class="src"><b>Все факты сканирования QR</b> за период, независимо от того, дошёл ли гость до игры. Кафе ({{ report.cafe_scans }}) + доставка ({{ report.delivery_scans }}) = «Всего сканирований». 1 гость = не чаще раза в 6 часов. <span class="src-ex">300 сканов → 300.</span></td></tr>
+        <tr><td class="metric">🎮 Дошли до игры</td><td class="value">{{ report.game_reached }}</td><td class="src"><b>Уникальные гости, начавшие игру</b> после скана за период. Этап воронки: скан → игра → подарок → активация.</td></tr>
         <tr><td class="metric">📬 Гостей в рассылке</td><td class="value">{{ report.total_vk }}</td><td class="src"><b>Вся ваша база</b> — все подписавшиеся через приложение за всё время. Не зависит от периода.</td></tr>
         <tr><td class="metric">🎁 Новые в группе/рассылке + первый подарок</td><td class="value">{{ report.new_with_gift }}</td><td class="src"><b>Конверсия первого контакта</b>: впервые выиграли суперприз И подписались через приложение в периоде.</td></tr>
         <tr><td class="metric">🔄 Вернулись и сыграли повторно</td><td class="value">{{ report.repeat_players }}</td><td class="src"><b>Повторные визиты</b>: играли в 2+ разных дня. Один день — не считается. <span class="src-ex">Пн и Чт → да. Только Пн → нет.</span></td></tr>
         <tr><td class="metric">💰 Купили подарки за баллы</td><td class="value">{{ report.coin_purchasers }}</td><td class="src"><b>Гости, обменявшие баллы</b> на товар. Каждый — один раз, даже если купил 5 раз.</td></tr>
-        <tr><td class="metric">📬 Подписались на сообщество ВК</td><td class="value">{{ report.new_community }}</td><td class="src"><b>Новые подписчики VK-группы</b> через приложение в период. Подписавшиеся раньше сами — не считаются.</td></tr>
-        <tr><td class="metric">📨 Подписались на рассылку ВК</td><td class="value">{{ report.new_newsletter }}</td><td class="src"><b>Гости, разрешившие ЛС в VK</b> через Senler. Только через приложение, в период.</td></tr>
+        <tr><td class="metric">📬 Подписались в VK — всего</td><td class="value">{{ report.new_community }}</td><td class="src"><b>Подписки на сообщество VK через наше приложение</b> за период — все источники (кафе, доставка, сториз, другие). Подписавшиеся раньше сами — не считаются.</td></tr>
+        <tr><td class="metric">📨 Подписались на рассылку — всего</td><td class="value">{{ report.new_newsletter }}</td><td class="src"><b>Подписки на рассылку VK через наше приложение</b> за период — все источники (кафе, доставка, сториз, другие).</td></tr>
         <tr><td class="metric">🎁 Получили первый подарок</td><td class="value">{{ report.first_gift_receivers }}</td><td class="src"><b>Самый первый подарок в жизни</b> — раньше у гостя инвентарь был пуст. Любой источник.</td></tr>
         <tr><td class="metric">✅ Активировали подарок</td><td class="value">{{ report.gift_activators }}</td><td class="src"><b>Гости, применившие подарок в кафе</b> — нажали «Активировать», показали персоналу. Один — один раз за период.</td></tr>
         <tr><td class="metric">🎂 Поздравлений с ДР отправлено</td><td class="value">{{ report.birthday_sent }}</td><td class="src"><b>Уникальные именинники с ДР-поздравлением</b>. До 3 сообщений (за 7д / 1д / в день) = один гость.</td></tr>
@@ -146,8 +147,8 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
       <thead><tr><th>Метрика</th><th>Значение</th><th>Источник / Откуда цифра</th></tr></thead>
       <tbody>
         <tr><td class="metric">Новые гости в базе</td><td class="value">{{ report.new_with_gift }}</td><td class="src"><b>Гости, впервые попавшие в базу</b> за период — раньше их не было в системе. <span class="src-ex">Пример: 35 человек подключились в марте.</span></td></tr>
-        <tr><td class="metric">Подписались в группу</td><td class="value">{{ report.new_community }}</td><td class="src"><b>Новые подписчики на VK-страницу</b> кафе за период. Может быть через QR, рекламу, поиск.</td></tr>
-        <tr><td class="metric">Подписались на рассылку</td><td class="value">{{ report.new_newsletter }}</td><td class="src"><b>Гости, разрешившие кафе писать им в ЛС</b> в VK через Senler. Без разрешения VK блокирует отправку.</td></tr>
+        <tr><td class="metric">Подписались в VK — всего</td><td class="value">{{ report.new_community }}</td><td class="src"><b>Подписки на сообщество VK через наше приложение</b> за период — все источники (кафе, доставка, сториз, другие).</td></tr>
+        <tr><td class="metric">Подписались на рассылку — всего</td><td class="value">{{ report.new_newsletter }}</td><td class="src"><b>Подписки на рассылку VK через наше приложение</b> за период — все источники (кафе, доставка, сториз, другие).</td></tr>
         <tr><td class="metric">Получили первый подарок</td><td class="value">{{ report.new_with_gift }}</td><td class="src"><b>Финальный шаг новичка</b>: пришёл в кафе и забрал стартовый подарок. Только после этого считается в базе.</td></tr>
       </tbody>
     </table>
@@ -164,7 +165,7 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
       <thead><tr><th>Метрика</th><th>Значение</th><th>Источник / Откуда цифра</th></tr></thead>
       <tbody>
         <tr><td class="metric">Гости POS</td><td class="value">{{ report.pos_guests }}</td><td class="src"><b>Общее количество гостей в кассе</b> — берём из вашей POS (Dooglys или iiko). Каждый чек = один гость.</td></tr>
-        <tr><td class="metric">Сканирования QR</td><td class="value">{{ report.qr_scans }}</td><td class="src"><b>Гости, реально открывшие мини-приложение</b>: отсканировали QR или ввели код из доставки.</td></tr>
+        <tr><td class="metric">Уникальные гости со сканом</td><td class="value">{{ report.qr_scans }}</td><td class="src"><b>Уникальные гости, реально открывшие мини-приложение</b> за период (по людям, не по сканам — поэтому ≤ числу «Всего сканирований»). Используется для индекса оцифровки.</td></tr>
         <tr><td class="metric">Индекс сканирования</td><td class="value">{{ report.scan_index }}%</td><td class="src"><b>Доля гостей с QR от всех в POS</b>. Чем выше — тем лучше работают официанты. <span class="src-ex">300 сканов / 1200 = 25%.</span></td></tr>
       </tbody>
     </table>

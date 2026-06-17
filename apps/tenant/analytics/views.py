@@ -823,14 +823,11 @@ class LoyaltyReportView(View):
         scan_index = stats.get('scan_index') or 0.0
         pos_guests = stats.get('pos_guests') or 0
 
-        # ── Sources: cafe vs delivery (непересекающиеся доли qr_scans) ──
-        # qr_scans уже включает delivery activators (см. get_qr_scan_count).
-        # Поэтому from_cafe = qr_scans − delivery_activators, чтобы
-        # проценты в отчёте формировали честные 100% от числа гостей.
-        from apps.tenant.analytics.api.services import get_delivery_activators_count
-        from_delivery = get_delivery_activators_count(branch_ids, start, end)
-        from_cafe     = max(0, stats['qr_scans'] - from_delivery)
-        total_sources = stats['qr_scans'] or 1
+        # ── Sources: cafe vs delivery (непересекающиеся источники сканов) ──
+        # Сходится с «Отсканировали QR-код» = total_scans = cafe + delivery.
+        from_cafe     = stats['cafe_scans']
+        from_delivery = stats['delivery_scans']
+        total_sources = stats['total_scans'] or 1
 
         # RF segment counts from matrix cells
         segment_counts = {}
@@ -857,6 +854,11 @@ class LoyaltyReportView(View):
             'message_total_read': stats['message_total_read'],
             'message_trackable':  stats.get('message_trackable', 0),
             'qr_scans':                stats['qr_scans'],
+            # Сканы по источникам: «Отсканировали QR-код» = total_scans = кафе+доставка.
+            'cafe_scans':              stats['cafe_scans'],
+            'delivery_scans':          stats['delivery_scans'],
+            'total_scans':             stats['total_scans'],
+            'game_reached':            stats['game_reached'],
             'first_gift_receivers':    stats['first_gift_receivers'],
             'gift_activators':         stats['gift_activators'],
             'quests_completed':        quests_completed,

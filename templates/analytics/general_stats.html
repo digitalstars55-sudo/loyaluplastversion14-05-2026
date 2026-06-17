@@ -93,16 +93,15 @@
   <div class="row g-3 mb-4">
 
     <div class="col-sm-6 col-md-4 col-xl-3">
-      <a href="{% url 'analytics-stats-detail' %}?metric=qr_scans&{{ period_qs }}{% if bp %}&branches={{ bp }}{% endif %}" class="mc-link">
-        <div class="mc-card card acc-green position-relative">
-          <div class="tip-btn">?</div>
-          <div class="card-body">
-            <div class="mc-label">📱 Отсканировали QR-код</div>
-            <div class="mc-val c-green">{{ stats.qr_scans }}</div>
-            <div class="tip-box">Сколько раз гости отсканировали QR-код в заведении за выбранный период. Это основной показатель того, сколько людей реально взаимодействуют с приложением на месте. У одного гостя не может быть больше одного сканирования за 6 часов — это защита от случайных повторных сканов. Если гость пришёл утром и вечером — это 2 сканирования.</div>
-          </div>
+      <div class="mc-card card acc-green position-relative">
+        <div class="tip-btn">?</div>
+        <div class="card-body">
+          <div class="mc-label">📱 Отсканировали QR-код</div>
+          <div class="mc-val c-green">{{ stats.total_scans }}</div>
+          <div class="mc-sub">Все сканы: кафе + доставка</div>
+          <div class="tip-box">Все факты сканирования QR-кода за выбранный период — <b>независимо от того, дошёл ли гость до игры</b>. Это первый контакт гостя с системой. Совпадает с «Всего сканирований» и равно сумме по источникам: кафе + доставка. Защита от фантомов: один гость не считается чаще одного раза в 6 часов. Если гость пришёл утром и вечером — это 2 сканирования. Чтобы увидеть, сколько после скана дошли до игры — метрика «Дошли до игры».</div>
         </div>
-      </a>
+      </div>
     </div>
 
     <div class="col-sm-6 col-md-4 col-xl-3">
@@ -163,10 +162,10 @@
         <div class="mc-card card acc-blue position-relative">
           <div class="tip-btn">?</div>
           <div class="card-body">
-            <div class="mc-label">📬 Подписались в сообщество ВК</div>
+            <div class="mc-label">📬 Подписались в VK — всего</div>
             <div class="mc-val c-blue">{{ stats.new_community_subscribers }}</div>
-            <div class="mc-sub">Всего: кафе + доставка + сториз</div>
-            <div class="tip-box">Суммарно по всем источникам (кафе+доставка+сториз). Сколько гостей подписались на группу ВК именно через наше приложение за выбранный период. Система при первом входе гостя в приложение проверяет через VK API — был ли он уже подписан на группу. Если был подписан заранее (например, подписался сам через ВК, до того как узнал о приложении) — он не считается. Считаются только те, кто подписался именно потому, что приложение его попросило.</div>
+            <div class="mc-sub">Кафе + доставка + сториз + другие</div>
+            <div class="tip-box">Показывает количество пользователей, которые подписались на сообщество VK через наше приложение за выбранный период. В метрику входят подписки из всех источников: кафе, доставка, сториз и другие источники. Считаются только подписки, полученные через наше приложение, а не все подписки в VK в целом: при первом входе система через VK API проверяет, не был ли гость подписан заранее — таких не считаем.</div>
           </div>
         </div>
       </a>
@@ -177,10 +176,10 @@
         <div class="mc-card card acc-blue position-relative">
           <div class="tip-btn">?</div>
           <div class="card-body">
-            <div class="mc-label">📨 Подписались на рассылку ВК</div>
+            <div class="mc-label">📨 Подписались на рассылку — всего</div>
             <div class="mc-val c-blue">{{ stats.new_newsletter_subscribers }}</div>
-            <div class="mc-sub">Всего: кафе + доставка + сториз</div>
-            <div class="tip-box">Аналогично предыдущей метрике, но про рассылку (разрешение на отправку сообщений от сообщества). Считаются только те, кто разрешил сообщения именно через наше приложение за выбранный период. Те, кто разрешал раньше сам — не считаются. Это СУММАРНАЯ цифра по всем источникам (кафе, доставка, сториз).</div>
+            <div class="mc-sub">Кафе + доставка + сториз + другие</div>
+            <div class="tip-box">Показывает количество пользователей, которые подписались на рассылку VK через наше приложение за выбранный период. В метрику входят подписки из всех источников: кафе, доставка, сториз и другие источники. Считаются только подписки, полученные через наше приложение, а не все подписки в VK в целом. Те, кто разрешал рассылку раньше сам — не считаются.</div>
           </div>
         </div>
       </a>
@@ -193,7 +192,7 @@
         <div class="card-body">
           <div class="mc-label">🏪 Сканирования в кафе</div>
           <div class="mc-val c-green">{{ stats.cafe_scans }}</div>
-          <div class="tip-box">Сколько игровых сессий начато в кафе (по QR-коду, не с доставки) за выбранный период. Каждая игра гостя на месте = одно кафе-сканирование.</div>
+          <div class="tip-box">Реальные сканы QR-кода в кафе за выбранный период (факт сканирования, не игра). Один гость не считается чаще раза в 6 часов. Это разбивка общей цифры «Отсканировали QR-код» по источнику «кафе».</div>
         </div>
       </div>
     </div>
@@ -203,8 +202,8 @@
         <div class="tip-btn">?</div>
         <div class="card-body">
           <div class="mc-label">🚚 Сканирования с доставки</div>
-          <div class="mc-val c-orange">{{ stats.delivery_scans }}</div>
-          <div class="tip-box">Сколько кодов доставки активировано гостями за выбранный период. Это «сканирования» с канала доставки (гость ввёл код из заказа в приложении).</div>
+          <div class="mc-val {% if stats.delivery_scans > 0 %}c-orange{% else %}c-grey{% endif %}">{{ stats.delivery_scans }}</div>
+          <div class="tip-box">Сколько кодов доставки активировано гостями за период (гость ввёл код из заказа в приложении). Это разбивка «Отсканировали QR-код» по источнику «доставка». Если у точки нет доставки — здесь 0, на кафе-метрики это не влияет.</div>
         </div>
       </div>
     </div>
@@ -216,7 +215,19 @@
           <div class="mc-label">📊 Всего сканирований</div>
           <div class="mc-val c-purple">{{ stats.total_scans }}</div>
           <div class="mc-sub">Кафе + доставка</div>
-          <div class="tip-box">Общее количество сканирований за период: кафе ({{ stats.cafe_scans }}) + доставка ({{ stats.delivery_scans }}).</div>
+          <div class="tip-box">Общее количество сканирований за период: кафе ({{ stats.cafe_scans }}) + доставка ({{ stats.delivery_scans }}). Это та же цифра, что и «Отсканировали QR-код».</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-sm-6 col-md-4 col-xl-3">
+      <div class="mc-card card acc-teal position-relative">
+        <div class="tip-btn">?</div>
+        <div class="card-body">
+          <div class="mc-label">🎮 Дошли до игры</div>
+          <div class="mc-val c-teal">{{ stats.game_reached }}</div>
+          <div class="mc-sub">Этап воронки после скана</div>
+          <div class="tip-box">Сколько уникальных гостей после сканирования реально начали игру за выбранный период. Это следующий этап воронки: отсканировали QR → <b>дошли до игры</b> → получили подарок → активировали. Разница со «Всего сканирований» показывает потери на этапе загрузки/авторизации/выхода из приложения.</div>
         </div>
       </div>
     </div>
@@ -227,9 +238,9 @@
         <div class="mc-card card acc-blue position-relative">
           <div class="tip-btn">?</div>
           <div class="card-body">
-            <div class="mc-label">📬🏪 В сообщество — кафе</div>
+            <div class="mc-label">📬🏪 Подписались в VK через кафе</div>
             <div class="mc-val c-blue">{{ stats.community_subs_cafe }}</div>
-            <div class="tip-box">Гости, подписавшиеся на сообщество ВК через приложение, находясь в кафе (по QR), за выбранный период.</div>
+            <div class="tip-box">Показывает количество пользователей, которые подписались на сообщество VK через наше приложение после сканирования QR-кода в кафе, за выбранный период.</div>
           </div>
         </div>
       </a>
@@ -240,9 +251,9 @@
         <div class="mc-card card acc-blue position-relative">
           <div class="tip-btn">?</div>
           <div class="card-body">
-            <div class="mc-label">📬🚚 В сообщество — доставка</div>
+            <div class="mc-label">📬🚚 Подписались в VK через доставку</div>
             <div class="mc-val c-blue">{{ stats.community_subs_delivery }}</div>
-            <div class="tip-box">Гости, подписавшиеся на сообщество ВК через приложение, придя с доставки (доставка активна в окне ±1 день от подписки), за выбранный период.</div>
+            <div class="tip-box">Показывает количество пользователей, которые подписались на сообщество VK через наше приложение после перехода по QR-коду или ссылке с доставки, за выбранный период.</div>
           </div>
         </div>
       </a>
@@ -253,9 +264,9 @@
         <div class="mc-card card acc-teal position-relative">
           <div class="tip-btn">?</div>
           <div class="card-body">
-            <div class="mc-label">📬📖 В сообщество — сториз</div>
+            <div class="mc-label">📬📖 Подписались в VK через сториз</div>
             <div class="mc-val c-teal">{{ stats.community_subs_story }}</div>
-            <div class="tip-box">Гости, подписавшиеся на сообщество ВК через сториз-флоу (при получении story-подарка), за выбранный период.</div>
+            <div class="tip-box">Показывает количество пользователей, которые подписались на сообщество VK через наше приложение после перехода из сториз, за выбранный период.</div>
           </div>
         </div>
       </a>
@@ -267,9 +278,9 @@
         <div class="mc-card card acc-blue position-relative">
           <div class="tip-btn">?</div>
           <div class="card-body">
-            <div class="mc-label">📨🏪 На рассылку — кафе</div>
+            <div class="mc-label">📨🏪 Подписались на рассылку через кафе</div>
             <div class="mc-val c-blue">{{ stats.newsletter_subs_cafe }}</div>
-            <div class="tip-box">Гости, разрешившие рассылку ВК через приложение, находясь в кафе (по QR), за выбранный период.</div>
+            <div class="tip-box">Показывает количество пользователей, которые подписались на рассылку VK через наше приложение после сканирования QR-кода в кафе, за выбранный период.</div>
           </div>
         </div>
       </a>
@@ -280,9 +291,9 @@
         <div class="mc-card card acc-blue position-relative">
           <div class="tip-btn">?</div>
           <div class="card-body">
-            <div class="mc-label">📨🚚 На рассылку — доставка</div>
+            <div class="mc-label">📨🚚 Подписались на рассылку через доставку</div>
             <div class="mc-val c-blue">{{ stats.newsletter_subs_delivery }}</div>
-            <div class="tip-box">Гости, разрешившие рассылку ВК через приложение, придя с доставки, за выбранный период.</div>
+            <div class="tip-box">Показывает количество пользователей, которые подписались на рассылку VK через наше приложение после перехода по QR-коду или ссылке с доставки, за выбранный период.</div>
           </div>
         </div>
       </a>
@@ -293,9 +304,9 @@
         <div class="mc-card card acc-teal position-relative">
           <div class="tip-btn">?</div>
           <div class="card-body">
-            <div class="mc-label">📨📖 На рассылку — сториз</div>
+            <div class="mc-label">📨📖 Подписались на рассылку через сториз</div>
             <div class="mc-val c-teal">{{ stats.newsletter_subs_story }}</div>
-            <div class="tip-box">Гости, разрешившие рассылку ВК через сториз-флоу, за выбранный период.</div>
+            <div class="tip-box">Показывает количество пользователей, которые подписались на рассылку VK через наше приложение после перехода из сториз, за выбранный период.</div>
           </div>
         </div>
       </a>
