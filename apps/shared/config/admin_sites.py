@@ -90,6 +90,45 @@ class PublicAdminSite(AdminSite):
             ctx['infra_expiring_soon'] = 0
         return ctx
 
+    # ── Сводная статистика по всем клиентам ────────────────────────────────────
+
+    def get_urls(self):
+        from django.urls import path
+        return [
+            path('overview/', self.admin_view(self._overview_view), name='cross_overview'),
+        ] + super().get_urls()
+
+    def _overview_view(self, request):
+        """
+        /admin/overview/ — сводная статистика сразу по всем подключённым клиентам
+        за выбранный период (вчера/сегодня/7д/30д/диапазон). Только суперадмин
+        (через self.admin_view → has_permission).
+        """
+        from django.template.response import TemplateResponse
+        from apps.shared.clients.cross_stats import (
+            get_cross_tenant_overview, parse_overview_period, OVERVIEW_PERIODS,
+        )
+
+        start, end, active_period = parse_overview_period(request)
+        try:
+            data = get_cross_tenant_overview(start, end)
+        except Exception:
+            logger.exception('Public admin: cross-tenant overview failed')
+            data = {'rows': [], 'totals': {}, 'client_count': 0}
+
+        ctx = self.each_context(request)
+        ctx.update({
+            'title': 'Сводная статистика',
+            'rows': data['rows'],
+            'totals': data['totals'],
+            'client_count': data['client_count'],
+            'period_choices': OVERVIEW_PERIODS,
+            'active_period': active_period,
+            'start': start,
+            'end': end,
+        })
+        return TemplateResponse(request, 'admin/clients/overview.html', ctx)
+
 
 class TenantAdminSite(AdminSite):
     """

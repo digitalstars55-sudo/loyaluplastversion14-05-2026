@@ -85,7 +85,10 @@
         <div class="inf-title">Клиентская <span>Инфраструктура</span></div>
         <div class="inf-subtitle">Управление активными тенантами, доменами и точками</div>
       </div>
-      {% if request.user.is_superuser %}<a href="{% url 'public_admin:clients_company_add' %}" class="inf-btn">+ Новый клиент</a>{% endif %}
+      <div style="display:flex;gap:10px;align-items:center;">
+        <a href="{% url 'public_admin:cross_overview' %}" class="inf-btn" style="background:#16a34a;">📊 Сводная статистика</a>
+        {% if request.user.is_superuser %}<a href="{% url 'public_admin:clients_company_add' %}" class="inf-btn">+ Новый клиент</a>{% endif %}
+      </div>
     </div>
 
     <div class="inf-stats">

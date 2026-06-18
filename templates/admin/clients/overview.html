@@ -1,0 +1,129 @@
+{% extends "admin/base_site.html" %}
+{% load humanize %}
+
+{% block nav-sidebar %}{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  #content { padding: 0 !important; }
+  .ov-wrap { max-width: 1280px; margin: 0 auto; padding: 8px 18px 40px; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; }
+  .ov-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin: 6px 0 4px; }
+  .ov-title { font-size: 22px; font-weight: 800; color:#1f2937; display:flex; align-items:center; gap:10px; }
+  .ov-sub { color:#8a93a3; font-size:13px; margin: 0 0 18px; }
+  /* date filter */
+  .ov-filter { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin: 0 0 22px; }
+  .ov-chip { padding:8px 16px; border-radius:10px; border:1px solid #e3e7ee; background:#fff; color:#465065; font-size:13px; font-weight:600; text-decoration:none; transition:.15s; }
+  .ov-chip:hover { border-color:#86efac; }
+  .ov-chip.active { background:#16a34a; border-color:#16a34a; color:#fff; }
+  .ov-filter form { display:flex; align-items:center; gap:8px; margin:0; }
+  .ov-filter input[type=date] { padding:7px 10px; border:1px solid #e3e7ee; border-radius:10px; font-size:13px; color:#465065; }
+  .ov-apply { padding:8px 18px; border-radius:10px; border:0; background:#16a34a; color:#fff; font-weight:700; font-size:13px; cursor:pointer; }
+  /* cards */
+  .ov-cards { display:grid; grid-template-columns: repeat(5, 1fr); gap:14px; margin: 0 0 26px; }
+  @media (max-width: 1000px){ .ov-cards { grid-template-columns: repeat(2, 1fr); } }
+  .ov-card { background:#fff; border:1px solid #eef1f5; border-radius:16px; padding:16px 18px; box-shadow:0 1px 3px rgba(16,24,40,.04); }
+  .ov-card .lbl { color:#8a93a3; font-size:12.5px; font-weight:600; margin-bottom:8px; display:flex; align-items:center; gap:7px; }
+  .ov-card .val { font-size:30px; font-weight:800; letter-spacing:-.5px; }
+  .c-blue{color:#2563eb} .c-violet{color:#7c3aed} .c-green{color:#16a34a} .c-orange{color:#ea7a17} .c-amber{color:#d4a017}
+  .ic { width:30px;height:30px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:15px; }
+  .ic-blue{background:#e8f0ff} .ic-violet{background:#f3ebff} .ic-green{background:#e7f8ee} .ic-orange{background:#fdeede} .ic-amber{background:#fcf4dc}
+  /* table */
+  .ov-panel { background:#fff; border:1px solid #eef1f5; border-radius:18px; padding:6px 4px 4px; box-shadow:0 1px 3px rgba(16,24,40,.04); }
+  .ov-panel h3 { font-size:15px; font-weight:800; color:#1f2937; margin:14px 18px 8px; }
+  table.ov-tbl { width:100%; border-collapse:collapse; }
+  .ov-tbl thead th { text-align:right; font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:#9aa3b2; font-weight:700; padding:10px 16px; border-bottom:1px solid #eef1f5; }
+  .ov-tbl thead th:first-child { text-align:left; }
+  .ov-tbl tbody td { text-align:right; padding:14px 16px; font-size:14px; color:#384150; border-bottom:1px solid #f3f5f8; font-variant-numeric: tabular-nums; }
+  .ov-tbl tbody td:first-child { text-align:left; font-weight:700; color:#1f2937; }
+  .ov-tbl tbody tr:last-child td { border-bottom:0; }
+  .ov-tbl tbody tr:hover { background:#fafbfc; }
+  .ov-tbl tfoot td { text-align:right; padding:14px 16px; font-size:14px; font-weight:800; color:#1f2937; border-top:2px solid #eef1f5; font-variant-numeric: tabular-nums; }
+  .ov-tbl tfoot td:first-child { text-align:left; }
+  .idx { font-weight:700; color:#16a34a; background:#e7f8ee; padding:3px 9px; border-radius:8px; font-size:13px; }
+  .ov-avatar { width:26px;height:26px;border-radius:8px;background:#eef1f5;display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:#6b7280;font-size:12px;margin-right:9px;vertical-align:middle; }
+  .ov-empty { padding:40px; text-align:center; color:#9aa3b2; }
+  .ov-foot-note { color:#9aa3b2; font-size:12px; margin:14px 4px 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ov-wrap">
+
+  <div class="ov-head">
+    <div class="ov-title">📊 Сводная статистика</div>
+  </div>
+  <div class="ov-sub">Мультиклиентский обзор — все подключённые клиенты на одной странице</div>
+
+  <!-- Фильтр по дате -->
+  <div class="ov-filter">
+    {% for code, label in period_choices %}
+      <a class="ov-chip {% if active_period == code %}active{% endif %}" href="?period={{ code }}">{{ label }}</a>
+    {% endfor %}
+    <form method="get" style="margin-left:6px;">
+      <input type="date" name="start" value="{{ start|date:'Y-m-d' }}">
+      <span style="color:#9aa3b2;">—</span>
+      <input type="date" name="end" value="{{ end|date:'Y-m-d' }}">
+      <button type="submit" class="ov-apply">Применить</button>
+    </form>
+  </div>
+
+  <!-- Тоталы по всем клиентам -->
+  <div class="ov-cards">
+    <div class="ov-card"><div class="lbl"><span class="ic ic-blue">📲</span> Сканирования QR</div><div class="val c-blue">{{ totals.total_scans|default:0|intcomma }}</div></div>
+    <div class="ov-card"><div class="lbl"><span class="ic ic-violet">👥</span> Подписки в группу VK</div><div class="val c-violet">{{ totals.new_community|default:0|intcomma }}</div></div>
+    <div class="ov-card"><div class="lbl"><span class="ic ic-green">✉️</span> Подписки в рассылку</div><div class="val c-green">{{ totals.new_newsletter|default:0|intcomma }}</div></div>
+    <div class="ov-card"><div class="lbl"><span class="ic ic-orange">📸</span> Сделали stories</div><div class="val c-orange">{{ totals.stories|default:0|intcomma }}</div></div>
+    <div class="ov-card"><div class="lbl"><span class="ic ic-amber">⭐</span> Новые отзывы</div><div class="val c-amber">{{ totals.reviews|default:0|intcomma }}</div></div>
+  </div>
+
+  <!-- Таблица по клиентам -->
+  <div class="ov-panel">
+    <h3>Клиенты и ключевые показатели</h3>
+    <table class="ov-tbl">
+      <thead>
+        <tr>
+          <th>Клиент</th>
+          <th>Сканирования</th>
+          <th>В группу VK</th>
+          <th>В рассылку</th>
+          <th>Stories</th>
+          <th>Отзывы</th>
+          <th>Индекс скан.</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td><span class="ov-avatar">{{ r.name|slice:":1"|upper }}</span>{{ r.name }}</td>
+          <td>{{ r.total_scans|intcomma }}</td>
+          <td>{{ r.new_community|intcomma }}</td>
+          <td>{{ r.new_newsletter|intcomma }}</td>
+          <td>{{ r.stories|intcomma }}</td>
+          <td>{{ r.reviews|intcomma }}</td>
+          <td>{% if r.pos_guests %}<span class="idx">{{ r.scan_index }}%</span>{% else %}<span style="color:#c2c8d2;">—</span>{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="ov-empty">Нет активных клиентов за период.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if rows %}
+      <tfoot>
+        <tr>
+          <td>Итого ({{ client_count }})</td>
+          <td>{{ totals.total_scans|intcomma }}</td>
+          <td>{{ totals.new_community|intcomma }}</td>
+          <td>{{ totals.new_newsletter|intcomma }}</td>
+          <td>{{ totals.stories|intcomma }}</td>
+          <td>{{ totals.reviews|intcomma }}</td>
+          <td>{% if totals.pos_guests %}<span class="idx">{{ totals.scan_index }}%</span>{% else %}—{% endif %}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+
+  <div class="ov-foot-note">Показатели рассчитаны за выбранный период · сканирования = кафе + доставка · индекс = уник. гости со сканом / гостей в POS.</div>
+
+</div>
+{% endblock %}
