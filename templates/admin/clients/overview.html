@@ -42,10 +42,19 @@
   .ov-tbl tfoot td:first-child { text-align:left; }
   .idx { font-weight:700; color:#16a34a; background:#e7f8ee; padding:3px 9px; border-radius:8px; font-size:13px; }
   .ov-avatar { width:26px;height:26px;border-radius:8px;background:#eef1f5;display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:#6b7280;font-size:12px;margin-right:9px;vertical-align:middle; }
-  .ov-avatar-img { width:26px;height:26px;border-radius:8px;object-fit:cover;margin-right:9px;vertical-align:middle;background:#f4f6f9;border:1px solid #eef1f5; }
-  .fi-logo { width:20px;height:20px;border-radius:6px;object-fit:cover;background:#f4f6f9; }
+  .ov-avatar-img { width:26px;height:26px;border-radius:8px;object-fit:cover;vertical-align:middle;background:#f4f6f9;border:1px solid #eef1f5; }
+  /* имя рядом с лого (а не под ним при переносе) */
+  .ov-client-cell { display:flex; align-items:center; gap:9px; }
+  .ov-client-cell .ov-avatar, .ov-client-cell .ov-avatar-img { flex:0 0 auto; margin-right:0; }
+  .ov-client-cell .row-link, .ov-client-cell .ov-name-txt { min-width:0; }
+  .fi-logo { width:20px;height:20px;border-radius:6px;object-fit:cover;background:#f4f6f9;flex:0 0 auto; }
   .feed-all { margin-left:auto; font-size:12px; font-weight:600; color:#16a34a; text-decoration:none; }
   .feed-all:hover { text-decoration:underline; }
+  /* лента: фикс. высота со скроллом, чтобы не растягивала страницу */
+  .ov-feed-scroll { max-height:600px; overflow-y:auto; }
+  a.fi-link { display:block; text-decoration:none; color:inherit; }
+  a.fi-link:hover { background:#f7faf8; }
+  a.fi-link:hover .fi-client { color:#16a34a; }
   .ov-empty { padding:40px; text-align:center; color:#9aa3b2; }
   .ov-foot-note { color:#9aa3b2; font-size:12px; margin:14px 4px 0; }
   /* two-column: table + feed */
@@ -120,8 +129,10 @@
           {% for r in rows %}
           <tr {% if r.domain %}class="clickable" onclick="window.location='//{{ r.domain }}/analytics/?start={{ start|date:'Y-m-d' }}&end={{ end|date:'Y-m-d' }}'"{% endif %}>
             <td>
-              {% if r.logo %}<img class="ov-avatar-img" src="{{ r.logo }}" alt="">{% else %}<span class="ov-avatar">{{ r.name|slice:":1"|upper }}</span>{% endif %}
-              {% if r.domain %}<a class="row-link" href="//{{ r.domain }}/analytics/?start={{ start|date:'Y-m-d' }}&end={{ end|date:'Y-m-d' }}" onclick="event.stopPropagation()"><span class="ov-name-txt">{{ r.name }}</span></a>{% else %}<span class="ov-name-txt">{{ r.name }}</span>{% endif %}
+              <div class="ov-client-cell">
+                {% if r.logo %}<img class="ov-avatar-img" src="{{ r.logo }}" alt="">{% else %}<span class="ov-avatar">{{ r.name|slice:":1"|upper }}</span>{% endif %}
+                {% if r.domain %}<a class="row-link" href="//{{ r.domain }}/analytics/?start={{ start|date:'Y-m-d' }}&end={{ end|date:'Y-m-d' }}" onclick="event.stopPropagation()"><span class="ov-name-txt">{{ r.name }}</span></a>{% else %}<span class="ov-name-txt">{{ r.name }}</span>{% endif %}
+              </div>
             </td>
             <td>{{ r.total_scans|intcomma }}</td>
             <td>{{ r.new_community|intcomma }}</td>
@@ -155,19 +166,23 @@
       <h3 style="display:flex;align-items:center;">Лента отзывов
         <a class="feed-all" href="{% url 'public_admin:cross_overview_reviews' %}?{{ period_qs }}">Все отзывы →</a>
       </h3>
+      <div class="ov-feed-scroll">
       {% for f in feed %}
-      <div class="fi">
-        <div class="fi-top">
-          {% if f.logo %}<img class="fi-logo" src="{{ f.logo }}" alt="">{% endif %}
-          <span class="fi-client">{{ f.client }}</span>
-          <span class="badge {{ f.sentiment_class }}">{{ f.sentiment_label }}</span>
-          <span class="fi-time">{{ f.created_at|timesince }} назад</span>
+      <a class="fi-link" {% if f.domain and f.conversation_id %}href="//{{ f.domain }}/admin/branch/testimonialconversation/{{ f.conversation_id }}/change/" target="_blank"{% endif %}>
+        <div class="fi">
+          <div class="fi-top">
+            {% if f.logo %}<img class="fi-logo" src="{{ f.logo }}" alt="">{% endif %}
+            <span class="fi-client">{{ f.client }}</span>
+            <span class="badge {{ f.sentiment_class }}">{{ f.sentiment_label }}</span>
+            <span class="fi-time">{{ f.created_at|timesince }} назад</span>
+          </div>
+          <div class="fi-text">{{ f.text|truncatechars:120 }}</div>
         </div>
-        <div class="fi-text">{{ f.text|truncatechars:120 }}</div>
-      </div>
+      </a>
       {% empty %}
       <div class="feed-empty">Нет отзывов за выбранный период.</div>
       {% endfor %}
+      </div>
     </div>
 
   </div>

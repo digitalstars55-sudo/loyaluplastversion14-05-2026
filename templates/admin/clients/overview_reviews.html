@@ -24,7 +24,10 @@
   .rv-count { color:#8a93a3; font-size:12.5px; margin:0 2px 12px; }
   /* список */
   .rv-list { display:flex; flex-direction:column; gap:10px; }
-  .rv-item { background:#fff; border:1px solid #eef1f5; border-radius:14px; padding:13px 16px; box-shadow:0 1px 2px rgba(16,24,40,.03); }
+  a.rv-link { display:block; text-decoration:none; color:inherit; }
+  a.rv-link:hover .rv-item { border-color:#bbf7d0; box-shadow:0 2px 8px rgba(16,24,40,.07); }
+  a.rv-link:hover .rv-client { color:#16a34a; }
+  .rv-item { background:#fff; border:1px solid #eef1f5; border-radius:14px; padding:13px 16px; box-shadow:0 1px 2px rgba(16,24,40,.03); transition:.12s; }
   .rv-top { display:flex; align-items:center; gap:9px; margin-bottom:6px; }
   .rv-logo { width:24px;height:24px;border-radius:7px;object-fit:cover;background:#f4f6f9;border:1px solid #eef1f5; }
   .rv-ava { width:24px;height:24px;border-radius:7px;background:#eef1f5;display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:#6b7280;font-size:11px; }
@@ -79,16 +82,18 @@
 
   <div class="rv-list">
     {% for f in page_obj %}
-    <div class="rv-item">
-      <div class="rv-top">
-        {% if f.logo %}<img class="rv-logo" src="{{ f.logo }}" alt="">{% else %}<span class="rv-ava">{{ f.client|slice:":1"|upper }}</span>{% endif %}
-        <span class="rv-client">{{ f.client }}</span>
-        <span class="badge {{ f.sentiment_class }}">{{ f.sentiment_label }}</span>
-        {% if f.rating %}<span class="rv-rating">★ {{ f.rating }}</span>{% endif %}
-        <span class="rv-time">{{ f.created_at|timesince }} назад</span>
+    <a class="rv-link" {% if f.domain and f.conversation_id %}href="//{{ f.domain }}/admin/branch/testimonialconversation/{{ f.conversation_id }}/change/" target="_blank"{% endif %}>
+      <div class="rv-item">
+        <div class="rv-top">
+          {% if f.logo %}<img class="rv-logo" src="{{ f.logo }}" alt="">{% else %}<span class="rv-ava">{{ f.client|slice:":1"|upper }}</span>{% endif %}
+          <span class="rv-client">{{ f.client }}</span>
+          <span class="badge {{ f.sentiment_class }}">{{ f.sentiment_label }}</span>
+          {% if f.rating %}<span class="rv-rating">★ {{ f.rating }}</span>{% endif %}
+          <span class="rv-time">{{ f.created_at|timesince }} назад</span>
+        </div>
+        <div class="rv-text">{{ f.text }}</div>
       </div>
-      <div class="rv-text">{{ f.text }}</div>
-    </div>
+    </a>
     {% empty %}
     <div class="rv-empty">Нет отзывов по выбранным фильтрам.</div>
     {% endfor %}

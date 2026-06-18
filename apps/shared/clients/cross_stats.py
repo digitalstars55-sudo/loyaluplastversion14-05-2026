@@ -143,6 +143,8 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
                 feed.append({
                     'client': company.name,
                     'logo': logo,
+                    'domain': '',  # проставляется в get_cross_tenant_overview
+                    'conversation_id': m.conversation_id,
                     'text': m.text.strip(),
                     'created_at': m.created_at,
                     'sentiment_label': meta[0],
@@ -188,6 +190,8 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
         primary = next((d for d in c.domains.all() if d.is_primary), None) \
             or next(iter(c.domains.all()), None)
         row['domain'] = primary.domain if primary else ''
+        for fi in c_feed:
+            fi['domain'] = row['domain']
         rows.append(row)
         feed.extend(c_feed)
         for k in ('total_scans', 'new_community', 'new_newsletter', 'stories', 'reviews', 'qr_scans', 'pos_guests'):
@@ -219,12 +223,16 @@ def get_cross_tenant_reviews(start: date, end: date, sentiment_filter: str = 'al
         .exclude(schema_name='public')
         .filter(is_active=True)
         .select_related('config')
+        .prefetch_related('domains')
         .order_by('name')
     )
     sents = _sentiment_in(sentiment_filter)
     out = []
     for c in companies:
         logo = _company_logo(c)
+        primary = next((d for d in c.domains.all() if d.is_primary), None) \
+            or next(iter(c.domains.all()), None)
+        domain = primary.domain if primary else ''
         try:
             with schema_context(c.schema_name):
                 qs = (
@@ -240,7 +248,8 @@ def get_cross_tenant_reviews(start: date, end: date, sentiment_filter: str = 'al
                         continue
                     meta = _SENTIMENT_FEED.get(m.conversation.sentiment, ('Без оценки', 'neu'))
                     out.append({
-                        'client': c.name, 'logo': logo, 'text': m.text.strip(),
+                        'client': c.name, 'logo': logo, 'domain': domain,
+                        'conversation_id': m.conversation_id, 'text': m.text.strip(),
                         'created_at': m.created_at, 'rating': m.rating,
                         'sentiment_label': meta[0], 'sentiment_class': meta[1],
                     })
