@@ -66,7 +66,7 @@ def _cached_pos_guests(start: date, end: date) -> int:
 def _tenant_row(company: Company, start: date, end: date) -> dict:
     """Считает строку статистики одного клиента (внутри его схемы)."""
     from apps.tenant.analytics.api.services import get_general_stats
-    from apps.tenant.branch.models import TestimonialConversation
+    from apps.tenant.branch.models import TestimonialMessage
 
     row = {
         'name': company.name, 'schema': company.schema_name, 'client_id': company.client_id,
@@ -77,10 +77,13 @@ def _tenant_row(company: Company, start: date, end: date) -> dict:
     try:
         with schema_context(company.schema_name):
             stats = get_general_stats(None, start, end, skip_slow=True)
+            # Новые отзывы = диалоги с гостевым сообщением за период (НЕ admin-ответы,
+            # НЕ «оживлённые» рассылкой по last_message_at — считаем по созданию сообщения).
             reviews = (
-                TestimonialConversation.objects
-                .filter(last_message_at__date__gte=start, last_message_at__date__lte=end)
-                .count()
+                TestimonialMessage.objects
+                .filter(created_at__date__gte=start, created_at__date__lte=end)
+                .exclude(source=TestimonialMessage.Source.ADMIN_REPLY)
+                .values('conversation').distinct().count()
             )
             pos = _cached_pos_guests(start, end)
         qr = stats.get('qr_scans', 0) or 0
@@ -114,14 +117,17 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
         'total_scans': 0, 'new_community': 0, 'new_newsletter': 0,
         'stories': 0, 'reviews': 0, 'qr_scans': 0, 'pos_guests': 0,
     }
+    idx_qr = 0  # числитель индекса — только тенанты, у которых есть POS-данные
     for c in companies:
         row = _tenant_row(c, start, end)
         rows.append(row)
         for k in ('total_scans', 'new_community', 'new_newsletter', 'stories', 'reviews', 'qr_scans', 'pos_guests'):
             totals[k] += row[k]
+        if row['pos_guests']:
+            idx_qr += row['qr_scans']
 
     totals['scan_index'] = (
-        round(totals['qr_scans'] / totals['pos_guests'] * 100, 1)
+        round(idx_qr / totals['pos_guests'] * 100, 1)
         if totals['pos_guests'] else 0.0
     )
     return {'rows': rows, 'totals': totals, 'client_count': len(rows)}
