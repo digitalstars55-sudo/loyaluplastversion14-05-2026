@@ -63,29 +63,51 @@ def _cached_pos_guests(start: date, end: date) -> int:
     ).aggregate(s=Sum('guest_count'))['s'] or 0
 
 
-def _tenant_row(company: Company, start: date, end: date) -> dict:
-    """Считает строку статистики одного клиента (внутри его схемы)."""
+# Тональность → (подпись, css-класс) для ленты. WAITING/SPAM в ленту не идут.
+_SENTIMENT_FEED = {
+    'POSITIVE':           ('Позитивный', 'pos'),
+    'NEGATIVE':           ('Негативный', 'neg'),
+    'PARTIALLY_NEGATIVE': ('Частично негативный', 'neg'),
+    'NEUTRAL':            ('Нейтральный', 'neu'),
+}
+
+
+def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
+    """Считает строку статистики + последние отзывы одного клиента (в его схеме)."""
     from apps.tenant.analytics.api.services import get_general_stats
     from apps.tenant.branch.models import TestimonialMessage
 
     row = {
         'name': company.name, 'schema': company.schema_name, 'client_id': company.client_id,
-        'total_scans': 0, 'new_community': 0, 'new_newsletter': 0,
+        'domain': '', 'total_scans': 0, 'new_community': 0, 'new_newsletter': 0,
         'stories': 0, 'reviews': 0, 'scan_index': 0.0,
         'qr_scans': 0, 'pos_guests': 0, 'ok': False,
     }
+    feed = []
     try:
         with schema_context(company.schema_name):
             stats = get_general_stats(None, start, end, skip_slow=True)
             # Новые отзывы = диалоги с гостевым сообщением за период (НЕ admin-ответы,
             # НЕ «оживлённые» рассылкой по last_message_at — считаем по созданию сообщения).
-            reviews = (
+            guest_msgs = (
                 TestimonialMessage.objects
                 .filter(created_at__date__gte=start, created_at__date__lte=end)
                 .exclude(source=TestimonialMessage.Source.ADMIN_REPLY)
-                .values('conversation').distinct().count()
             )
+            reviews = guest_msgs.values('conversation').distinct().count()
             pos = _cached_pos_guests(start, end)
+            # последние 6 отзывов клиента (с классифицированной тональностью)
+            for m in guest_msgs.select_related('conversation').order_by('-created_at')[:6]:
+                meta = _SENTIMENT_FEED.get(m.conversation.sentiment)
+                if not meta or not (m.text or '').strip():
+                    continue
+                feed.append({
+                    'client': company.name,
+                    'text': m.text.strip(),
+                    'created_at': m.created_at,
+                    'sentiment_label': meta[0],
+                    'sentiment_class': meta[1],
+                })
         qr = stats.get('qr_scans', 0) or 0
         row.update({
             'total_scans':   stats.get('total_scans', 0) or 0,
@@ -100,7 +122,7 @@ def _tenant_row(company: Company, start: date, end: date) -> dict:
         })
     except Exception:
         logger.exception('cross_stats: tenant %s failed', company.schema_name)
-    return row
+    return row, feed
 
 
 def get_cross_tenant_overview(start: date, end: date) -> dict:
@@ -109,18 +131,24 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
         Company.objects
         .exclude(schema_name='public')
         .filter(is_active=True)
+        .prefetch_related('domains')
         .order_by('name')
     )
 
     rows = []
+    feed = []
     totals = {
         'total_scans': 0, 'new_community': 0, 'new_newsletter': 0,
         'stories': 0, 'reviews': 0, 'qr_scans': 0, 'pos_guests': 0,
     }
     idx_qr = 0  # числитель индекса — только тенанты, у которых есть POS-данные
     for c in companies:
-        row = _tenant_row(c, start, end)
+        row, c_feed = _tenant_row(c, start, end)
+        primary = next((d for d in c.domains.all() if d.is_primary), None) \
+            or next(iter(c.domains.all()), None)
+        row['domain'] = primary.domain if primary else ''
         rows.append(row)
+        feed.extend(c_feed)
         for k in ('total_scans', 'new_community', 'new_newsletter', 'stories', 'reviews', 'qr_scans', 'pos_guests'):
             totals[k] += row[k]
         if row['pos_guests']:
@@ -130,4 +158,7 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
         round(idx_qr / totals['pos_guests'] * 100, 1)
         if totals['pos_guests'] else 0.0
     )
-    return {'rows': rows, 'totals': totals, 'client_count': len(rows)}
+    # лента: все отзывы клиентов, новые сверху, топ-20
+    feed.sort(key=lambda r: r['created_at'], reverse=True)
+    feed = feed[:20]
+    return {'rows': rows, 'totals': totals, 'client_count': len(rows), 'feed': feed}

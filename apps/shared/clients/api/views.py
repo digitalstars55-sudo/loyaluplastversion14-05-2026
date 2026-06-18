@@ -36,6 +36,7 @@ class CrossTenantOverviewView(APIView):
             'client_count': data['client_count'],
             'totals': data['totals'],
             'rows': data['rows'],
+            'feed': data.get('feed', []),
         })
 
 

@@ -121,6 +121,7 @@ class PublicAdminSite(AdminSite):
             'title': 'Сводная статистика',
             'rows': data['rows'],
             'totals': data['totals'],
+            'feed': data.get('feed', []),
             'client_count': data['client_count'],
             'period_choices': OVERVIEW_PERIODS,
             'active_period': active_period,
