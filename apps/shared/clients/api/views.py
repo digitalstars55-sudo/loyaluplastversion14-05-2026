@@ -40,6 +40,41 @@ class CrossTenantOverviewView(APIView):
         })
 
 
+class CrossTenantReviewsView(APIView):
+    """
+    GET /api/v1/overview/reviews/?period=30d&sentiment=all&page=1
+
+    Все отзывы со всех клиентов за период с фильтром по типу + пагинацией.
+    Только суперадмин.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        u = request.user
+        if not (u.is_superuser or getattr(u, 'role', None) == 'superadmin'):
+            return Response({'detail': 'Только для суперадмина.'}, status=status.HTTP_403_FORBIDDEN)
+
+        from django.core.paginator import Paginator
+        from apps.shared.clients.cross_stats import (
+            get_cross_tenant_reviews, parse_overview_period, SENTIMENT_FILTERS,
+        )
+        start, end, active_period = parse_overview_period(request)
+        sentiment = request.GET.get('sentiment', 'all')
+        if sentiment not in dict(SENTIMENT_FILTERS):
+            sentiment = 'all'
+        reviews = get_cross_tenant_reviews(start, end, sentiment)
+        paginator = Paginator(reviews, 30)
+        page_obj = paginator.get_page(request.GET.get('page'))
+        return Response({
+            'period': active_period, 'sentiment': sentiment,
+            'start': start.isoformat(), 'end': end.isoformat(),
+            'total': paginator.count, 'page': page_obj.number, 'num_pages': paginator.num_pages,
+            'results': [
+                {**r, 'created_at': r['created_at'].isoformat()} for r in page_obj
+            ],
+        })
+
+
 class TenantDomainView(APIView):
     """
     GET /api/company/<client_id>/

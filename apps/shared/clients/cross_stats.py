@@ -55,6 +55,13 @@ def parse_overview_period(request) -> tuple[date, date, str]:
     return start, end, preset
 
 
+def overview_period_qs(active_period: str, start: date, end: date) -> str:
+    """Фрагмент query-string, сохраняющий выбранный период в ссылках/пагинации."""
+    if active_period == 'custom':
+        return f'start={start.isoformat()}&end={end.isoformat()}'
+    return f'period={active_period}'
+
+
 def _cached_pos_guests(start: date, end: date) -> int:
     """Сумма гостей POS за период ТОЛЬКО из кэша (без живого вызова кассы)."""
     from apps.tenant.analytics.models import POSGuestCache
@@ -63,13 +70,44 @@ def _cached_pos_guests(start: date, end: date) -> int:
     ).aggregate(s=Sum('guest_count'))['s'] or 0
 
 
-# Тональность → (подпись, css-класс) для ленты. WAITING/SPAM в ленту не идут.
+# Тональность → (подпись, css-класс) для ленты. SPAM в ленту не идёт.
 _SENTIMENT_FEED = {
     'POSITIVE':           ('Позитивный', 'pos'),
     'NEGATIVE':           ('Негативный', 'neg'),
     'PARTIALLY_NEGATIVE': ('Частично негативный', 'neg'),
     'NEUTRAL':            ('Нейтральный', 'neu'),
+    'WAITING':            ('Без оценки', 'neu'),
 }
+
+# Фильтры типа отзыва для страницы «Все отзывы».
+SENTIMENT_FILTERS = [
+    ('all',      'Все'),
+    ('positive', 'Позитивные'),
+    ('neutral',  'Нейтральные'),
+    ('negative', 'Негативные'),
+]
+
+
+def _sentiment_in(sentiment_filter: str) -> list[str]:
+    """Какие conversation.sentiment попадают под выбранный фильтр."""
+    if sentiment_filter == 'positive':
+        return ['POSITIVE']
+    if sentiment_filter == 'negative':
+        return ['NEGATIVE', 'PARTIALLY_NEGATIVE']
+    if sentiment_filter == 'neutral':
+        return ['NEUTRAL']
+    return ['POSITIVE', 'NEGATIVE', 'PARTIALLY_NEGATIVE', 'NEUTRAL', 'WAITING']  # all (без SPAM)
+
+
+def _company_logo(company: Company) -> str:
+    """URL логотипа клиента из ClientConfig (public-схема) или '' если нет."""
+    try:
+        cfg = getattr(company, 'config', None)
+        if cfg and cfg.logotype_image:
+            return cfg.logotype_image.url
+    except Exception:
+        pass
+    return ''
 
 
 def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
@@ -77,9 +115,10 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
     from apps.tenant.analytics.api.services import get_general_stats
     from apps.tenant.branch.models import TestimonialMessage
 
+    logo = _company_logo(company)
     row = {
         'name': company.name, 'schema': company.schema_name, 'client_id': company.client_id,
-        'domain': '', 'total_scans': 0, 'new_community': 0, 'new_newsletter': 0,
+        'domain': '', 'logo': logo, 'total_scans': 0, 'new_community': 0, 'new_newsletter': 0,
         'stories': 0, 'reviews': 0, 'scan_index': 0.0,
         'qr_scans': 0, 'pos_guests': 0, 'ok': False,
     }
@@ -103,6 +142,7 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
                     continue
                 feed.append({
                     'client': company.name,
+                    'logo': logo,
                     'text': m.text.strip(),
                     'created_at': m.created_at,
                     'sentiment_label': meta[0],
@@ -131,6 +171,7 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
         Company.objects
         .exclude(schema_name='public')
         .filter(is_active=True)
+        .select_related('config')
         .prefetch_related('domains')
         .order_by('name')
     )
@@ -162,3 +203,48 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
     feed.sort(key=lambda r: r['created_at'], reverse=True)
     feed = feed[:20]
     return {'rows': rows, 'totals': totals, 'client_count': len(rows), 'feed': feed}
+
+
+def get_cross_tenant_reviews(start: date, end: date, sentiment_filter: str = 'all') -> list:
+    """
+    ПОЛНЫЙ список отзывов со всех клиентов за период (для страницы «Все отзывы»),
+    отфильтрованный по типу тональности, новые сверху. Сразу по всем клиентам.
+
+    Ограничение: до 500 на клиента (период и так бьёт объём) — для дашборда хватает.
+    """
+    from apps.tenant.branch.models import TestimonialMessage
+
+    companies = (
+        Company.objects
+        .exclude(schema_name='public')
+        .filter(is_active=True)
+        .select_related('config')
+        .order_by('name')
+    )
+    sents = _sentiment_in(sentiment_filter)
+    out = []
+    for c in companies:
+        logo = _company_logo(c)
+        try:
+            with schema_context(c.schema_name):
+                qs = (
+                    TestimonialMessage.objects
+                    .filter(created_at__date__gte=start, created_at__date__lte=end)
+                    .exclude(source=TestimonialMessage.Source.ADMIN_REPLY)
+                    .filter(conversation__sentiment__in=sents)
+                    .select_related('conversation')
+                    .order_by('-created_at')[:500]
+                )
+                for m in qs:
+                    if not (m.text or '').strip():
+                        continue
+                    meta = _SENTIMENT_FEED.get(m.conversation.sentiment, ('Без оценки', 'neu'))
+                    out.append({
+                        'client': c.name, 'logo': logo, 'text': m.text.strip(),
+                        'created_at': m.created_at, 'rating': m.rating,
+                        'sentiment_label': meta[0], 'sentiment_class': meta[1],
+                    })
+        except Exception:
+            logger.exception('cross_stats reviews: tenant %s failed', c.schema_name)
+    out.sort(key=lambda r: r['created_at'], reverse=True)
+    return out

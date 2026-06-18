@@ -1,0 +1,110 @@
+{% extends "admin/base_site.html" %}
+
+{% block nav-sidebar %}{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  #content { padding: 0 !important; }
+  .rv-wrap { max-width: 940px; margin: 0 auto; padding: 8px 18px 50px; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; }
+  .rv-head { display:flex; align-items:center; gap:14px; margin: 6px 0 2px; }
+  .rv-title { font-size: 22px; font-weight: 800; color:#1f2937; }
+  .rv-back { font-size:13px; font-weight:600; color:#16a34a; text-decoration:none; }
+  .rv-back:hover { text-decoration:underline; }
+  .rv-sub { color:#8a93a3; font-size:13px; margin: 0 0 18px; }
+  .rv-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin: 0 0 12px; }
+  .rv-chip { padding:7px 15px; border-radius:10px; border:1px solid #e3e7ee; background:#fff; color:#465065; font-size:13px; font-weight:600; text-decoration:none; }
+  .rv-chip:hover { border-color:#86efac; }
+  .rv-chip.active { background:#16a34a; border-color:#16a34a; color:#fff; }
+  .rv-chip.s-pos.active{background:#16a34a;border-color:#16a34a} .rv-chip.s-neg.active{background:#dc2626;border-color:#dc2626} .rv-chip.s-neu.active{background:#5b6470;border-color:#5b6470}
+  .rv-filters form { display:flex; align-items:center; gap:8px; margin:0; }
+  .rv-filters input[type=date] { padding:7px 10px; border:1px solid #e3e7ee; border-radius:10px; font-size:13px; color:#465065; }
+  .rv-apply { padding:8px 16px; border-radius:10px; border:0; background:#465065; color:#fff; font-weight:700; font-size:13px; cursor:pointer; }
+  .rv-sep { height:1px; background:#eef1f5; margin: 4px 0 16px; }
+  .rv-count { color:#8a93a3; font-size:12.5px; margin:0 2px 12px; }
+  /* список */
+  .rv-list { display:flex; flex-direction:column; gap:10px; }
+  .rv-item { background:#fff; border:1px solid #eef1f5; border-radius:14px; padding:13px 16px; box-shadow:0 1px 2px rgba(16,24,40,.03); }
+  .rv-top { display:flex; align-items:center; gap:9px; margin-bottom:6px; }
+  .rv-logo { width:24px;height:24px;border-radius:7px;object-fit:cover;background:#f4f6f9;border:1px solid #eef1f5; }
+  .rv-ava { width:24px;height:24px;border-radius:7px;background:#eef1f5;display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:#6b7280;font-size:11px; }
+  .rv-client { font-weight:700; color:#1f2937; font-size:13.5px; }
+  .rv-time { margin-left:auto; color:#aeb6c2; font-size:11.5px; white-space:nowrap; }
+  .rv-text { color:#46505f; font-size:13.5px; line-height:1.5; }
+  .rv-rating { color:#d4a017; font-size:12px; font-weight:700; margin-left:2px; }
+  .badge { font-size:10.5px; font-weight:700; padding:2px 9px; border-radius:20px; white-space:nowrap; }
+  .badge.pos{background:#e7f8ee;color:#16a34a} .badge.neg{background:#fde8e8;color:#dc2626} .badge.neu{background:#eef2f7;color:#5b6470}
+  .rv-empty { padding:50px; text-align:center; color:#9aa3b2; }
+  /* пагинация */
+  .rv-pg { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:22px; }
+  .rv-pg a, .rv-pg span { padding:7px 13px; border-radius:9px; border:1px solid #e3e7ee; background:#fff; color:#465065; font-size:13px; font-weight:600; text-decoration:none; }
+  .rv-pg .cur { background:#16a34a; border-color:#16a34a; color:#fff; }
+  .rv-pg .disabled { color:#c2c8d2; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rv-wrap">
+
+  <div class="rv-head">
+    <div class="rv-title">💬 Все отзывы</div>
+    <a class="rv-back" href="{% url 'public_admin:cross_overview' %}?{{ period_qs }}">← к сводной статистике</a>
+  </div>
+  <div class="rv-sub">Отзывы со всех клиентов сразу — фильтр по типу и периоду</div>
+
+  <!-- Период -->
+  <div class="rv-filters">
+    {% for code, label in period_choices %}
+      <a class="rv-chip {% if active_period == code %}active{% endif %}" href="?period={{ code }}&sentiment={{ sentiment }}">{{ label }}</a>
+    {% endfor %}
+    <form method="get">
+      <input type="hidden" name="sentiment" value="{{ sentiment }}">
+      <input type="date" name="start" value="{{ start|date:'Y-m-d' }}">
+      <span style="color:#9aa3b2;">—</span>
+      <input type="date" name="end" value="{{ end|date:'Y-m-d' }}">
+      <button type="submit" class="rv-apply">Применить</button>
+    </form>
+  </div>
+
+  <!-- Тип отзыва -->
+  <div class="rv-filters">
+    {% for code, label in sentiment_filters %}
+      <a class="rv-chip {% if code == 'positive' %}s-pos{% elif code == 'negative' %}s-neg{% elif code == 'neutral' %}s-neu{% endif %} {% if sentiment == code %}active{% endif %}"
+         href="?sentiment={{ code }}&{{ period_qs }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="rv-sep"></div>
+  <div class="rv-count">Найдено отзывов: <b>{{ total }}</b></div>
+
+  <div class="rv-list">
+    {% for f in page_obj %}
+    <div class="rv-item">
+      <div class="rv-top">
+        {% if f.logo %}<img class="rv-logo" src="{{ f.logo }}" alt="">{% else %}<span class="rv-ava">{{ f.client|slice:":1"|upper }}</span>{% endif %}
+        <span class="rv-client">{{ f.client }}</span>
+        <span class="badge {{ f.sentiment_class }}">{{ f.sentiment_label }}</span>
+        {% if f.rating %}<span class="rv-rating">★ {{ f.rating }}</span>{% endif %}
+        <span class="rv-time">{{ f.created_at|timesince }} назад</span>
+      </div>
+      <div class="rv-text">{{ f.text }}</div>
+    </div>
+    {% empty %}
+    <div class="rv-empty">Нет отзывов по выбранным фильтрам.</div>
+    {% endfor %}
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+  <div class="rv-pg">
+    {% if page_obj.has_previous %}
+      <a href="?page={{ page_obj.previous_page_number }}&sentiment={{ sentiment }}&{{ period_qs }}">← Назад</a>
+    {% else %}<span class="disabled">← Назад</span>{% endif %}
+    <span class="cur">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}
+      <a href="?page={{ page_obj.next_page_number }}&sentiment={{ sentiment }}&{{ period_qs }}">Вперёд →</a>
+    {% else %}<span class="disabled">Вперёд →</span>{% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

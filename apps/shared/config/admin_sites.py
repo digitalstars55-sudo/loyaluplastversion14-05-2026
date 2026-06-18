@@ -96,6 +96,7 @@ class PublicAdminSite(AdminSite):
         from django.urls import path
         return [
             path('overview/', self.admin_view(self._overview_view), name='cross_overview'),
+            path('overview/reviews/', self.admin_view(self._overview_reviews_view), name='cross_overview_reviews'),
         ] + super().get_urls()
 
     def _overview_view(self, request):
@@ -107,6 +108,7 @@ class PublicAdminSite(AdminSite):
         from django.template.response import TemplateResponse
         from apps.shared.clients.cross_stats import (
             get_cross_tenant_overview, parse_overview_period, OVERVIEW_PERIODS,
+            overview_period_qs,
         )
 
         start, end, active_period = parse_overview_period(request)
@@ -125,10 +127,51 @@ class PublicAdminSite(AdminSite):
             'client_count': data['client_count'],
             'period_choices': OVERVIEW_PERIODS,
             'active_period': active_period,
+            'period_qs': overview_period_qs(active_period, start, end),
             'start': start,
             'end': end,
         })
         return TemplateResponse(request, 'admin/clients/overview.html', ctx)
+
+    def _overview_reviews_view(self, request):
+        """
+        /admin/overview/reviews/ — все отзывы со ВСЕХ клиентов за период,
+        с фильтром по типу (Все/Позитивные/Нейтральные/Негативные) и пагинацией.
+        """
+        from django.core.paginator import Paginator
+        from django.template.response import TemplateResponse
+        from apps.shared.clients.cross_stats import (
+            get_cross_tenant_reviews, parse_overview_period,
+            OVERVIEW_PERIODS, SENTIMENT_FILTERS, overview_period_qs,
+        )
+
+        start, end, active_period = parse_overview_period(request)
+        sentiment = request.GET.get('sentiment', 'all')
+        if sentiment not in dict(SENTIMENT_FILTERS):
+            sentiment = 'all'
+        try:
+            reviews = get_cross_tenant_reviews(start, end, sentiment)
+        except Exception:
+            logger.exception('Public admin: cross-tenant reviews failed')
+            reviews = []
+
+        paginator = Paginator(reviews, 30)
+        page_obj = paginator.get_page(request.GET.get('page'))
+
+        ctx = self.each_context(request)
+        ctx.update({
+            'title': 'Все отзывы',
+            'page_obj': page_obj,
+            'total': len(reviews),
+            'period_choices': OVERVIEW_PERIODS,
+            'active_period': active_period,
+            'sentiment': sentiment,
+            'sentiment_filters': SENTIMENT_FILTERS,
+            'period_qs': overview_period_qs(active_period, start, end),
+            'start': start,
+            'end': end,
+        })
+        return TemplateResponse(request, 'admin/clients/overview_reviews.html', ctx)
 
 
 class TenantAdminSite(AdminSite):
