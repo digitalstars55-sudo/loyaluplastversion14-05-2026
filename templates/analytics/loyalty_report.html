@@ -279,10 +279,10 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
           <td class="R-value">{{ report.total_scans }}</td>
           <td class="R-src">Это <b>все факты сканирования QR-кода</b> за период — независимо от того, дошёл ли гость до игры. Равно сумме по источникам: кафе ({{ report.cafe_scans }}) + доставка ({{ report.delivery_scans }}), и совпадает со «Всего сканирований». Один гость не считается чаще, чем раз в 6 часов. <span class="R-src-ex"><b>Пример:</b> 300 сканирований за март → 300.</span></td>
         </tr>
-        <tr data-key="Дошли до игры" data-val="{{ report.game_reached }}">
-          <td class="R-metric">🎮 Дошли до игры</td>
+        <tr data-key="Начали игру" data-val="{{ report.game_reached }}">
+          <td class="R-metric">🎮 Начали игру</td>
           <td class="R-value">{{ report.game_reached }}</td>
-          <td class="R-src">Это <b>уникальные гости, которые после скана реально начали игру</b> за период. Следующий этап воронки: отсканировали QR → дошли до игры → получили подарок → активировали. Разница со сканами = потери на загрузке/авторизации. <span class="R-src-ex"><b>Пример:</b> из 300 сканов 210 дошли до игры → 210.</span></td>
+          <td class="R-src">Сколько раз гости <b>запустили игру после скана</b> за период — в тех же единицах, что «Отсканировали QR-код» (по событиям). Воронка: отсканировали QR → начали игру → получили подарок → активировали. Близко к числу сканов = почти все доходят до игры. <span class="R-src-ex"><b>Пример:</b> из 300 сканов 285 запусков игры → 285.</span></td>
         </tr>
         <tr data-key="Гости в базе (группа + рассылка)" data-val="{{ report.total_vk }}">
           <td class="R-metric">📬 Гости в базе (группа + рассылка)</td>
@@ -748,6 +748,14 @@ function secMetrics(num){
     const k=el.getAttribute('data-key'), v=el.getAttribute('data-val');
     if(k&&v) m[k]=v;
   });
+  // Секции-резюме («Итоговые выводы», «Рекомендации») своих метрик-строк не
+  // имеют — подаём AI цифры ВСЕГО отчёта, иначе он пишет «данных нет».
+  if(Object.keys(m).length===0){
+    document.querySelectorAll('[data-section] [data-key]').forEach(el=>{
+      const k=el.getAttribute('data-key'), v=el.getAttribute('data-val');
+      if(k&&v) m[k]=v;
+    });
+  }
   return m;
 }
 

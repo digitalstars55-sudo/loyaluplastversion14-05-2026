@@ -637,11 +637,13 @@ def get_delivery_scan_count(branch_ids: list[int] | None, start_date: date, end_
 
 def get_game_reached_count(branch_ids: list[int] | None, start_date: date, end_date: date) -> int:
     """
-    «Дошли до игры» — уникальные гости, начавшие игру (ClientAttempt) за период.
+    «Начали игру» — количество запусков игры (ClientAttempt-события) за период.
 
-    Отдельный этап воронки ПОСЛЕ сканирования: отсканировали QR → дошли до игры →
-    получили подарок → активировали. Считаем людей (дедуп по guest.Client),
-    а не сессии, поэтому величина сопоставима с другими people-метриками.
+    Этап воронки ПОСЛЕ сканирования: отсканировали QR → начали игру → получили
+    подарок → активировали. Считаем СОБЫТИЯ (как и «Отсканировали QR-код» —
+    события сканов), чтобы воронка была в одних единицах: 993 скана → 948
+    запусков игры (а не 451 «уникальный игрок» — это было несравнимо со сканами
+    и создавало ложную картину «половина не дошла»).
     """
     from apps.tenant.game.models import ClientAttempt
     qs = ClientAttempt.objects.filter(
@@ -649,7 +651,7 @@ def get_game_reached_count(branch_ids: list[int] | None, start_date: date, end_d
         created_at__date__lte=end_date,
     )
     qs = _branch_filter(qs, branch_ids, 'client__branch__in')
-    return qs.values('client__client_id').distinct().count()
+    return qs.count()
 
 
 # ── Подписки по источникам (community/newsletter × cafe/delivery/story), за период ──
