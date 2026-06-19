@@ -56,6 +56,8 @@ class ReviewListSerializer(serializers.ModelSerializer):
     has_draft       = serializers.SerializerMethodField()
     draft_text      = serializers.SerializerMethodField()
     draft_created_at = serializers.SerializerMethodField()
+    review_link_yandex = serializers.SerializerMethodField()
+    review_link_2gis   = serializers.SerializerMethodField()
 
     class Meta:
         model = TestimonialConversation
@@ -77,7 +79,15 @@ class ReviewListSerializer(serializers.ModelSerializer):
             'has_draft',
             'draft_text',
             'draft_created_at',
+            'review_link_yandex',
+            'review_link_2gis',
         ]
+
+    def get_review_link_yandex(self, obj) -> str:
+        return obj.branch.review_link_yandex if obj.branch_id else ''
+
+    def get_review_link_2gis(self, obj) -> str:
+        return obj.branch.review_link_2gis if obj.branch_id else ''
 
     def _last_message(self, obj):
         # Кэш на инстансе чтобы не дёргать БД повторно
