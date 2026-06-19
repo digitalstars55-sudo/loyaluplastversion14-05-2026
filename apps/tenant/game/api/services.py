@@ -159,8 +159,17 @@ def start_game(vk_id: int, branch_id: int, code: str | None = None, delivery: bo
     """
     client_branch = _get_client_branch(vk_id, branch_id)
 
+    # Доставочная сессия обходит 18-часовой GAME-кулдаун: каждый доставочный
+    # заказ = отдельная игра. Анти-фарм обеспечивает одноразовый код заказа —
+    # claim_game всё равно не начислит приз без активного кода доставки
+    # (needs_delivery_code). Кафе-сканы (без доставки) остаются под кулдауном.
+    has_active_delivery = client_branch.activated_deliveries.filter(
+        expires_at__gt=timezone.now(),
+    ).exists()
+    is_delivery_session = delivery or has_active_delivery
+
     cooldown = _get_game_cooldown(client_branch)
-    if cooldown and cooldown.is_active:
+    if cooldown and cooldown.is_active and not is_delivery_session:
         raise GameCooldownActive(cooldown)
 
     attempt_count = ClientAttempt.objects.filter(client=client_branch).count()
@@ -189,11 +198,7 @@ def start_game(vk_id: int, branch_id: int, code: str | None = None, delivery: bo
     # Attempt 3+ → require daily code unless the guest came via delivery
     validated_code: str | None = None
     if attempt_num >= 3:
-        has_active_delivery = client_branch.activated_deliveries.filter(
-            expires_at__gt=timezone.now(),
-        ).exists()
-        is_delivery = delivery or has_active_delivery
-        if not is_delivery:
+        if not is_delivery_session:
             if not code:
                 raise CodeRequired(score)
             _validate_game_code(client_branch.branch, code)
