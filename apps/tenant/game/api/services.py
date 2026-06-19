@@ -159,17 +159,19 @@ def start_game(vk_id: int, branch_id: int, code: str | None = None, delivery: bo
     """
     client_branch = _get_client_branch(vk_id, branch_id)
 
-    # Доставочная сессия обходит 18-часовой GAME-кулдаун: каждый доставочный
-    # заказ = отдельная игра. Анти-фарм обеспечивает одноразовый код заказа —
-    # claim_game всё равно не начислит приз без активного кода доставки
-    # (needs_delivery_code). Кафе-сканы (без доставки) остаются под кулдауном.
     has_active_delivery = client_branch.activated_deliveries.filter(
         expires_at__gt=timezone.now(),
     ).exists()
     is_delivery_session = delivery or has_active_delivery
 
+    # Доставочная сессия обходит 18-часовой GAME-кулдаун: каждый доставочный
+    # заказ = отдельная игра. Обходим ТОЛЬКО по флагу `delivery` (буклет открыл
+    # доставку-режим), НЕ по has_active_delivery — иначе незавершённый код позволил
+    # бы крутить в кафе-режиме (delivery=false), где claim код НЕ гасит → фарм монет.
+    # Начисление всё равно требует активный одноразовый код (claim → needs_delivery_code),
+    # так что фарма по флагу нет. Кафе-сканы (delivery=false) остаются под кулдауном.
     cooldown = _get_game_cooldown(client_branch)
-    if cooldown and cooldown.is_active and not is_delivery_session:
+    if cooldown and cooldown.is_active and not delivery:
         raise GameCooldownActive(cooldown)
 
     attempt_count = ClientAttempt.objects.filter(client=client_branch).count()
