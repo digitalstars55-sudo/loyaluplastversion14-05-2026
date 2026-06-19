@@ -1807,3 +1807,20 @@ def apply_vk_membership_event(
             updated = True
 
     return updated
+
+
+def get_fallback_review_links() -> tuple[str, str]:
+    """
+    Ссылки «основной» точки сети (Яндекс, 2ГИС) — для кнопки «Вставить ссылки»
+    на позитивных отзывах БЕЗ привязки к кафе (общие VK-отзывы сети).
+
+    Берёт точку с review_links_default=True (и заполненными ссылками); если
+    такой нет — первую активную точку с обеими ссылками. Иначе ('','').
+    """
+    from apps.tenant.branch.models import Branch
+    qs = (
+        Branch.objects.filter(is_active=True)
+        .exclude(review_link_yandex='').exclude(review_link_2gis='')
+    )
+    b = qs.filter(review_links_default=True).first() or qs.order_by('name').first()
+    return (b.review_link_yandex, b.review_link_2gis) if b else ('', '')

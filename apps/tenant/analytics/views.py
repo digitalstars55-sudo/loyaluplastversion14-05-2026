@@ -604,10 +604,15 @@ class ReviewsDetailView(View):
             'WAITING':            '#3b82f6',
         }
 
+        from apps.tenant.branch.api.services import get_fallback_review_links
+        fb_yandex, fb_2gis = get_fallback_review_links()
+
         context = {
             'title':             _SENTIMENT_LABELS.get(sentiment, 'Все отзывы'),
             'sentiment':         sentiment,
             'sentiment_color':   _SENTIMENT_COLORS.get(sentiment, '#6b7280'),
+            'fallback_yandex':   fb_yandex,
+            'fallback_2gis':     fb_2gis,
             'conversations':     qs,
             'total':             qs.count(),
             'branches':          branches,

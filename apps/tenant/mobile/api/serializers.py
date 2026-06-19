@@ -84,10 +84,15 @@ class ReviewListSerializer(serializers.ModelSerializer):
         ]
 
     def get_review_link_yandex(self, obj) -> str:
-        return obj.branch.review_link_yandex if obj.branch_id else ''
+        # Ссылки точки; если кафе не определено (общий VK-отзыв) — фолбэк основной точки.
+        if obj.branch_id and obj.branch.review_link_yandex:
+            return obj.branch.review_link_yandex
+        return self.context.get('fb_yandex', '')
 
     def get_review_link_2gis(self, obj) -> str:
-        return obj.branch.review_link_2gis if obj.branch_id else ''
+        if obj.branch_id and obj.branch.review_link_2gis:
+            return obj.branch.review_link_2gis
+        return self.context.get('fb_2gis', '')
 
     def _last_message(self, obj):
         # Кэш на инстансе чтобы не дёргать БД повторно

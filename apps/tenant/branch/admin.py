@@ -181,8 +181,8 @@ class BranchAdmin(admin.ModelAdmin):
         })
 
         reviews = ('Ссылки на отзыв-площадки', {
-            'fields': ('review_link_yandex', 'review_link_2gis'),
-            'description': 'Подставляются кнопкой «Вставить ссылки» в ответ ТОЛЬКО на позитивные отзывы этой точки.',
+            'fields': ('review_link_yandex', 'review_link_2gis', 'review_links_default'),
+            'description': 'Подставляются кнопкой «Вставить ссылки» в ответ ТОЛЬКО на позитивные отзывы. «Основная точка» — её ссылки берутся для отзывов сети без привязки к кафе.',
         })
 
         if pos_type == POSType.IIKO:

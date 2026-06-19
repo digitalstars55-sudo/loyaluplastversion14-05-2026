@@ -81,6 +81,11 @@ class Branch(TimeStampedModel):
         verbose_name='Ссылка 2ГИС',
         help_text='Ссылка на отзывы этой точки в 2ГИС. Подставляется кнопкой в ответ ТОЛЬКО на позитивные отзывы.',
     )
+    review_links_default = models.BooleanField(
+        default=False,
+        verbose_name='Основная точка для ссылок',
+        help_text='Если у позитивного отзыва не определено кафе (общий VK-отзыв сети) — кнопка вставит ссылки ЭТОЙ точки. Отметьте одну точку сети.',
+    )
 
     def save(self, *args, **kwargs):
         # Пустые строки → NULL, чтобы не нарушать unique-ограничение

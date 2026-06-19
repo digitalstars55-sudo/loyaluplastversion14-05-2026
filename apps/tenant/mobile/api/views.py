@@ -64,6 +64,15 @@ class MobileReviewListAPIView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = ReviewListSerializer
 
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        # Фолбэк-ссылки основной точки — для отзывов без привязки к кафе.
+        from apps.tenant.branch.api.services import get_fallback_review_links
+        fb_ya, fb_gis = get_fallback_review_links()
+        ctx['fb_yandex'] = fb_ya
+        ctx['fb_2gis'] = fb_gis
+        return ctx
+
     def get_queryset(self):
         from apps.shared.users.access import user_allowed_branches, current_schema_name
         qs = TestimonialConversation.objects.select_related(
