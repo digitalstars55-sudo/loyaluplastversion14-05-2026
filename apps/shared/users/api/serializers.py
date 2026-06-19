@@ -35,6 +35,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     tenant_domain = serializers.SerializerMethodField()
     tenant_name = serializers.SerializerMethodField()
     companies = serializers.SerializerMethodField()
+    is_superadmin = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -43,9 +44,13 @@ class ProfileSerializer(serializers.ModelSerializer):
             'email', 'phone', 'city', 'birthday', 'birthday_set_at',
             'avatar_url', 'branch_ids',
             'tenant_domain', 'tenant_name', 'companies',
-            'push_prefs',
+            'push_prefs', 'is_superadmin',
         ]
         read_only_fields = fields
+
+    def get_is_superadmin(self, obj) -> bool:
+        # Платформенный суперадмин — видит сводную по всем клиентам (как /admin/overview/).
+        return bool(obj.is_superuser or getattr(obj, 'role', None) == 'superadmin')
 
     def get_full_name(self, obj) -> str:
         full = (obj.get_full_name() or '').strip()
