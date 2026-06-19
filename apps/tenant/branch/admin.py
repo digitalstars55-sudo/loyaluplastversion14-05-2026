@@ -180,6 +180,11 @@ class BranchAdmin(admin.ModelAdmin):
             'fields': ('branch_id', 'name', 'description', 'is_active', 'story_image'),
         })
 
+        reviews = ('Ссылки на отзыв-площадки', {
+            'fields': ('review_link_yandex', 'review_link_2gis'),
+            'description': 'Подставляются кнопкой «Вставить ссылки» в ответ ТОЛЬКО на позитивные отзывы этой точки.',
+        })
+
         if pos_type == POSType.IIKO:
             return [
                 base,
@@ -187,6 +192,7 @@ class BranchAdmin(admin.ModelAdmin):
                     'fields': ('iiko_organization_id',),
                     'description': 'UUID организации из личного кабинета iiko.',
                 }),
+                reviews,
             ]
 
         if pos_type == POSType.DOOGLYS:
@@ -196,6 +202,7 @@ class BranchAdmin(admin.ModelAdmin):
                     'fields': ('dooglys_branch_id', 'dooglys_sale_point_id'),
                     'description': 'Идентификаторы точки в системе Dooglys.',
                 }),
+                reviews,
             ]
 
         # POS не настроен — показываем оба блока свёрнутыми
@@ -209,6 +216,7 @@ class BranchAdmin(admin.ModelAdmin):
                 'fields': ('dooglys_branch_id', 'dooglys_sale_point_id'),
                 'classes': ('collapse',),
             }),
+            reviews,
         ]
 
     @admin.display(description='Касса')

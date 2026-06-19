@@ -68,6 +68,20 @@ class Branch(TimeStampedModel):
         help_text='Изображение-шаблон, которое гость видит перед публикацией VK-сторис.',
     )
 
+    # ── Ссылки на отзыв-площадки (для кнопки «Вставить ссылки» в ответах) ──────
+    review_link_yandex = models.URLField(
+        max_length=500,
+        blank=True,
+        verbose_name='Ссылка Яндекс Карты',
+        help_text='Ссылка на отзывы этой точки на Яндекс Картах. Подставляется кнопкой в ответ ТОЛЬКО на позитивные отзывы.',
+    )
+    review_link_2gis = models.URLField(
+        max_length=500,
+        blank=True,
+        verbose_name='Ссылка 2ГИС',
+        help_text='Ссылка на отзывы этой точки в 2ГИС. Подставляется кнопкой в ответ ТОЛЬКО на позитивные отзывы.',
+    )
+
     def save(self, *args, **kwargs):
         # Пустые строки → NULL, чтобы не нарушать unique-ограничение
         if not self.dooglys_sale_point_id:

@@ -138,6 +138,11 @@
         <div class="d-flex gap-2 align-items-center flex-wrap">
           <button class="btn btn-sm btn-primary btn-send" onclick="sendReply({{ conv.id }})">Отправить</button>
           <button class="btn btn-sm btn-outline-secondary" onclick="generateAI({{ conv.id }}, this)">✨ Сгенерировать (AI)</button>
+          {% if conv.sentiment == 'POSITIVE' and conv.branch.review_link_yandex and conv.branch.review_link_2gis %}
+          <button class="btn btn-sm btn-outline-success"
+                  title="Добавить в конец ответа ссылки на Яндекс Карты и 2ГИС этой точки"
+                  onclick="insertReviewLinks({{ conv.id }}, '{{ conv.branch.review_link_yandex|escapejs }}', '{{ conv.branch.review_link_2gis|escapejs }}')">🔗 Вставить ссылки</button>
+          {% endif %}
           <span id="reply-status-{{ conv.id }}" class="small text-muted"></span>
         </div>
       </div>
@@ -156,6 +161,18 @@
 <script>
 const REVIEW_REPLY_URL = '{% url "analytics-reviews-reply" %}';
 const REVIEW_AI_URL = '{% url "analytics-reviews-ai-reply" %}';
+
+// Вставка ссылок на отзыв-площадки (только позитивные отзывы, ссылки точки из админки).
+function insertReviewLinks(id, yandex, gis){
+  const ta = document.getElementById('reply-text-' + id);
+  if(!ta) return;
+  if(yandex && ta.value.indexOf(yandex) !== -1){ ta.focus(); return; } // уже вставлено
+  const block = '\n\nБудем очень рады, если вы также оставите отзыв о нас на Яндекс Картах и в 2ГИС — это помогает другим гостям выбрать нас:\n'
+    + 'Яндекс Карты: ' + yandex + '\n2ГИС: ' + gis;
+  ta.value = ta.value.replace(/\s+$/, '') + block;
+  ta.focus();
+  ta.scrollTop = ta.scrollHeight;
+}
 </script>
 <script src="{% static 'analytics/js/reviews_detail.js' %}"></script>
 {% endblock %}

@@ -24,6 +24,15 @@
     .then(function (d) { btn.disabled = false; btn.textContent = orig; if (d.text && ta) ta.value = d.text; })
     .catch(function ()  { btn.disabled = false; btn.textContent = orig; });
   };
+  window._lvInsertLinks = function (yandex, gis) {
+    var ta = document.getElementById('lv-ta');
+    if (!ta) return;
+    if (yandex && ta.value.indexOf(yandex) !== -1) { ta.focus(); return; }
+    var block = '\n\nБудем очень рады, если вы также оставите отзыв о нас на Яндекс Картах и в 2ГИС — это помогает другим гостям выбрать нас:\n'
+      + 'Яндекс Карты: ' + yandex + '\n2ГИС: ' + gis;
+    ta.value = ta.value.replace(/\s+$/, '') + block;
+    ta.focus();
+  };
 })();
 </script>
 
@@ -192,6 +201,11 @@
         <div class="lv-btns">
           <button type="button" class="lv-btn lv-btn-ai"
             onclick="_lvAiGenerate(this, parseInt(document.getElementById('lv-conv-id').textContent,10))">🤖 ИИ</button>
+          {% if original.sentiment == 'POSITIVE' and original.branch.review_link_yandex and original.branch.review_link_2gis %}
+          <button type="button" class="lv-btn" style="background:#e7f8ee;color:#16a34a;border:1px solid #bbf7d0;"
+            title="Добавить ссылки Яндекс Карты и 2ГИС этой точки"
+            onclick="_lvInsertLinks('{{ original.branch.review_link_yandex|escapejs }}','{{ original.branch.review_link_2gis|escapejs }}')">🔗 Ссылки</button>
+          {% endif %}
           <button id="lv-send" type="submit" name="_send_reply" value="1"
             class="lv-btn lv-btn-send">📤 Отправить</button>
         </div>
