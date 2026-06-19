@@ -138,10 +138,14 @@
         <div class="d-flex gap-2 align-items-center flex-wrap">
           <button class="btn btn-sm btn-primary btn-send" onclick="sendReply({{ conv.id }})">Отправить</button>
           <button class="btn btn-sm btn-outline-secondary" onclick="generateAI({{ conv.id }}, this)">✨ Сгенерировать (AI)</button>
-          {% if conv.sentiment == 'POSITIVE' and conv.branch.review_link_yandex and conv.branch.review_link_2gis %}
-          <button class="btn btn-sm btn-outline-success"
-                  title="Добавить в конец ответа ссылки на Яндекс Карты и 2ГИС этой точки"
-                  onclick="insertReviewLinks({{ conv.id }}, '{{ conv.branch.review_link_yandex|escapejs }}', '{{ conv.branch.review_link_2gis|escapejs }}')">🔗 Вставить ссылки</button>
+          {% if conv.sentiment == 'POSITIVE' %}
+            {% if conv.branch.review_link_yandex and conv.branch.review_link_2gis %}
+            <button class="btn btn-sm btn-outline-success" title="Ссылки этой точки"
+                    onclick="insertReviewLinks({{ conv.id }}, '{{ conv.branch.review_link_yandex|escapejs }}', '{{ conv.branch.review_link_2gis|escapejs }}')">🔗 Вставить ссылки</button>
+            {% elif fallback_yandex and fallback_2gis %}
+            <button class="btn btn-sm btn-outline-success" title="Ссылки основной точки сети (кафе у отзыва не определено)"
+                    onclick="insertReviewLinks({{ conv.id }}, '{{ fallback_yandex|escapejs }}', '{{ fallback_2gis|escapejs }}')">🔗 Вставить ссылки</button>
+            {% endif %}
           {% endif %}
           <span id="reply-status-{{ conv.id }}" class="small text-muted"></span>
         </div>
