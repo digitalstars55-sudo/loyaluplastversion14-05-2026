@@ -889,6 +889,49 @@ class POSGuestCache(models.Model):
         return f'{self.date} | {self.branch.name}: {self.guest_count}'
 
 
+class DailyOrderStat(TimeStampedModel):
+    """
+    Суточное количество заказов по точке из POS (Dooglys / iiko) — для индекса
+    сканирований (QR-сканы ÷ заказы).
+
+    Заполняется пушем от POS: POS в 4:00 (после закрытия смен) шлёт числа за
+    предыдущие сутки на POST /api/v1/orders/daily/. Одна запись на (branch, date),
+    перезаписывается (update_or_create).
+
+    Разбивка по ТЗ:
+      orders_in_cafe        — заказы «в кафе» (order_type=hold), любой источник
+      orders_pickup_admin   — самовывоз, принят админом кафе (source=cashier-retail)
+      orders_delivery_admin — доставка, принят админом кафе (source=cashier-retail)
+      orders_total          — сумма трёх (знаменатель индекса; зеркалится в POSGuestCache)
+    """
+
+    branch = models.ForeignKey(
+        'branch.Branch',
+        on_delete=models.CASCADE,
+        related_name='daily_order_stats',
+        verbose_name='Торговая точка',
+    )
+    date = models.DateField(db_index=True, verbose_name='Дата')
+    orders_total = models.PositiveIntegerField(default=0, verbose_name='Всего заказов')
+    orders_in_cafe = models.PositiveIntegerField(default=0, verbose_name='В кафе')
+    orders_pickup_admin = models.PositiveIntegerField(default=0, verbose_name='Самовывоз (админ)')
+    orders_delivery_admin = models.PositiveIntegerField(default=0, verbose_name='Доставка (админ)')
+    source = models.CharField(max_length=20, default='dooglys', verbose_name='Источник POS')
+    cafe_name_raw = models.CharField(max_length=255, blank=True, default='', verbose_name='Название кафе (от POS)')
+
+    class Meta:
+        unique_together = ('branch', 'date')
+        ordering = ['-date']
+        verbose_name = 'Суточные заказы (POS)'
+        verbose_name_plural = 'Суточные заказы (POS)'
+        indexes = [
+            models.Index(fields=['branch', 'date'], name='daily_orders_branch_date_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.date} | {self.branch.name}: {self.orders_total}'
+
+
 class BranchSegmentSnapshotDelivery(TimeStampedModel):
     """
     Ежедневный снапшот распределения гостей по сегментам доставки.

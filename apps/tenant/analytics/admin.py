@@ -7,7 +7,7 @@ from django.utils.html import format_html, mark_safe
 
 from apps.shared.config.admin_sites import tenant_admin
 
-from .models import BranchSegmentSnapshot, GuestRFScore, KnowledgeBaseDocument, RFMigrationLog, RFSegment, RFSettings
+from .models import BranchSegmentSnapshot, DailyOrderStat, GuestRFScore, KnowledgeBaseDocument, RFMigrationLog, RFSegment, RFSettings
 
 # ── Style constants ───────────────────────────────────────────────────────────
 
@@ -974,3 +974,15 @@ class KnowledgeBaseDocumentAdmin(admin.ModelAdmin):
     @admin.display(description='Текст извлечён', boolean=True)
     def has_text_col(self, obj):
         return bool(obj.extracted_text)
+
+@admin.register(DailyOrderStat, site=tenant_admin)
+class DailyOrderStatAdmin(admin.ModelAdmin):
+    list_display = (
+        'date', 'branch', 'orders_total',
+        'orders_in_cafe', 'orders_pickup_admin', 'orders_delivery_admin',
+        'source', 'updated_at',
+    )
+    list_filter = ('source', 'branch')
+    date_hierarchy = 'date'
+    search_fields = ('branch__name', 'cafe_name_raw')
+    readonly_fields = ('created_at', 'updated_at')

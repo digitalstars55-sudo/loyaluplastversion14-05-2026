@@ -16,6 +16,7 @@ class SpectacularRedocView(_RedocView):
 
 from apps.shared.config.admin_sites import public_admin
 from apps.tenant.delivery.api.public_views import PublicDeliveryWebhook
+from apps.tenant.analytics.api.orders_public import PublicDailyOrdersIngest
 from main.views import health
 
 urlpatterns = [
@@ -23,6 +24,7 @@ urlpatterns = [
     path('admin/', public_admin.urls),
     path('api/v1/', include('apps.shared.clients.api.urls')),
     path('api/v1/delivery/webhook/', PublicDeliveryWebhook.as_view(), name='public-delivery-webhook'),
+    path('api/v1/orders/daily/', PublicDailyOrdersIngest.as_view(), name='public-daily-orders-ingest'),
     path('api/v1/internal/support/', include('apps.shared.relay.urls')),
 
     # Мобильное API на public-схеме: auth (JWT) + lead-онбординг.
