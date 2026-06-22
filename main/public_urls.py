@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import include, path
+from django.views.generic import TemplateView
 
 from drf_spectacular.views import SpectacularAPIView
 from drf_spectacular.views import SpectacularSwaggerView as _SwaggerView
@@ -30,6 +31,10 @@ urlpatterns = [
     # Мобильное API на public-схеме: auth (JWT) + lead-онбординг.
     path('api/v1/', include('apps.shared.users.api.urls')),
     path('api/v1/', include('apps.shared.leads.api.urls')),
+
+    # Юридические страницы (для App Store / Google Play и VK).
+    path('privacy', TemplateView.as_view(template_name='legal/privacy.html'), name='privacy'),
+    path('terms', TemplateView.as_view(template_name='legal/terms.html'), name='terms'),
 
     # API Docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

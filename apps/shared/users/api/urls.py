@@ -7,7 +7,7 @@ from django.urls import path
 
 from .views import (
     LoginAPIView, LogoutAPIView, MeAPIView, PushRegisterAPIView, RefreshAPIView,
-    NotificationListAPIView, PushPrefsAPIView,
+    NotificationListAPIView, PushPrefsAPIView, DeleteAccountAPIView,
 )
 
 urlpatterns = [
@@ -15,6 +15,7 @@ urlpatterns = [
     path('auth/logout/',   LogoutAPIView.as_view(),   name='mobile-auth-logout'),
     path('auth/me/',       MeAPIView.as_view(),       name='mobile-auth-me'),
     path('me/',            MeAPIView.as_view(),       name='mobile-me'),
+    path('me/delete/',     DeleteAccountAPIView.as_view(), name='mobile-me-delete'),
     path('me/push-prefs/', PushPrefsAPIView.as_view(), name='mobile-push-prefs'),
     path('auth/refresh/',  RefreshAPIView.as_view(),  name='mobile-auth-refresh'),
     path('push/register/', PushRegisterAPIView.as_view(), name='mobile-push-register'),

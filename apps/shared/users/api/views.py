@@ -155,6 +155,51 @@ class LogoutAPIView(APIView):
         return Response({'detail': 'logged out'}, status=status.HTTP_200_OK)
 
 
+class DeleteAccountAPIView(APIView):
+    """
+    POST /api/v1/me/delete/  body: {password}
+
+    Полное удаление собственного аккаунта владельца/менеджера из приложения
+    (требование App Store, Guideline 5.1.1(v)). Удаляет учётную запись и связанные
+    личные данные (профиль, push-токены — CASCADE). Данные тенанта (гости, точки,
+    статистика) не трогаются — это отдельные сущности.
+
+    Требует подтверждения паролем. Суперадмина/суперюзера через приложение
+    удалить нельзя (платформенный аккаунт — только вручную в админке).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+
+        if user.is_superuser or getattr(user, 'role', None) == 'superadmin':
+            return Response(
+                {'detail': 'Аккаунт суперадмина нельзя удалить из приложения.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        password = (request.data or {}).get('password') or ''
+        if not user.check_password(password):
+            return Response(
+                {'detail': 'Неверный пароль. Подтвердите удаление текущим паролем.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Фиксируем удаление в журнале ДО удаления (actor станет NULL, ник останется).
+        try:
+            from apps.shared.audit.services import record_event
+            record_event(
+                action='delete', request=request, actor=user,
+                target='Удаление аккаунта',
+                meta={'user_id': user.pk, 'username': user.username, 'via': 'mobile'},
+            )
+        except Exception:
+            pass
+
+        user.delete()  # CASCADE снимет push-токены; M2M companies очистится
+        return Response({'detail': 'Аккаунт удалён.'}, status=status.HTTP_200_OK)
+
+
 class RefreshAPIView(APIView):
     """POST /api/v1/auth/refresh/  body: {refresh}"""
     permission_classes = [AllowAny]
