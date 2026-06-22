@@ -219,6 +219,56 @@ def get_new_newsletter_subscribers(
     return qs.values('client__client_id').distinct().count()
 
 
+# ── Metric 7a1: Unique digitized guests (subscribed to ≥1 channel) ───────────
+
+def get_unique_digitized_guests(
+    branch_ids: list[int] | None, start_date: date, end_date: date
+) -> int:
+    """
+    Уникальные оцифрованные гости (ТЗ §6.1): подписались хотя бы на один канал
+    (VK-сообщество ИЛИ рассылку) через приложение за период. Один человек = 1,
+    даже если подписался на оба канала. Дедуп по guest.Client.
+    """
+    from apps.tenant.branch.models import ClientVKStatus
+
+    qs = ClientVKStatus.objects.filter(
+        Q(
+            community_via_app=True,
+            community_joined_at__date__gte=start_date,
+            community_joined_at__date__lte=end_date,
+        )
+        | Q(
+            newsletter_via_app=True,
+            newsletter_joined_at__date__gte=start_date,
+            newsletter_joined_at__date__lte=end_date,
+        )
+    )
+    qs = _branch_filter(qs, branch_ids, 'client__branch__in')
+    return qs.values('client__client_id').distinct().count()
+
+
+# ── Metric 7a2: Gift cost total (себестоимость активированных подарков) ───────
+
+def get_gift_cost_total(
+    branch_ids: list[int] | None, start_date: date, end_date: date
+):
+    """
+    Затраты клиента на подарочную продукцию за период (ТЗ §3.3): сумма
+    себестоимости (снимка на момент активации) по всем активированным
+    подаркам за период. Возвращает Decimal ₽.
+    """
+    from decimal import Decimal
+    from django.db.models import Sum
+    from apps.tenant.inventory.models import GiftCostEvent
+
+    qs = GiftCostEvent.objects.filter(
+        activated_at__date__gte=start_date,
+        activated_at__date__lte=end_date,
+    )
+    qs = _branch_filter(qs, branch_ids, 'branch__in')
+    return qs.aggregate(total=Sum('cost_rub'))['total'] or Decimal('0')
+
+
 # ── Metric 7b: First gift receivers ──────────────────────────────────────────
 
 def get_first_gift_receivers(
@@ -910,6 +960,11 @@ def get_general_stats(
         'coin_purchasers':           get_coin_purchasers(branch_ids, start_date, end_date),
         'new_community_subscribers': new_community,
         'new_newsletter_subscribers': new_newsletter,
+        # «Экономика клиента» (ТЗ): затраты на подарки и уникальные оцифрованные
+        # гости. Подписочные контакты = new_community + new_newsletter (см. выше).
+        # Стоимость обслуживания и производные цены считаются на уровне Company.
+        'gift_cost_rub':             float(get_gift_cost_total(branch_ids, start_date, end_date)),
+        'unique_digitized_guests':   get_unique_digitized_guests(branch_ids, start_date, end_date),
         'first_gift_receivers':      get_first_gift_receivers(branch_ids, start_date, end_date),
         'gift_activators':           get_gift_activators(branch_ids, start_date, end_date),
         'birthday_greetings_sent':   get_birthday_greetings_sent(branch_ids, start_date, end_date),

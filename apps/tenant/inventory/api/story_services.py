@@ -493,4 +493,12 @@ def activate_story_gift(vk_id: int, branch_id: int, code: str | None = None) -> 
             raise denied
 
     entry.activate(activated_branch=activated_branch)
+
+    # Снимок себестоимости подарка для «Экономики клиента» (ТЗ §3.2).
+    from apps.tenant.inventory.models import GiftCostEvent
+    GiftCostEvent.record(
+        client_branch=cb, product=entry.product,
+        branch=entry.activated_branch or cb.branch,
+        kind=GiftCostEvent.Kind.STORY, activated_at=entry.activated_at,
+    )
     return entry

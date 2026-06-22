@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 
 from apps.shared.config.admin_sites import public_admin
-from .models import Company, Domain
+from .models import Company, Domain, ServiceCostPeriod
 
 
 # ── Root domain helper ────────────────────────────────────────────────────────
@@ -89,6 +89,25 @@ class DomainForm(forms.ModelForm):
         self.fields['domain'] = SubdomainField(root_domain=root, label='Поддомен')
 
 
+class ServiceCostPeriodInline(admin.TabularInline):
+    """История стоимости обслуживания клиента (ТЗ §4)."""
+    model = ServiceCostPeriod
+    extra = 0
+    fields = ('monthly_rub', 'start_date', 'end_date')
+    verbose_name = 'Стоимость обслуживания'
+    verbose_name_plural = 'Стоимость обслуживания — история тарифов'
+
+    def has_add_permission(self, request, obj=None):
+        if getattr(request.user, 'role', None) == 'network_admin':
+            return False
+        return super().has_add_permission(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        if getattr(request.user, 'role', None) == 'network_admin':
+            return False
+        return super().has_change_permission(request, obj)
+
+
 class DomainInline(admin.TabularInline):
     model = Domain
     form = DomainForm
@@ -166,7 +185,7 @@ class PaymentStatusFilter(admin.SimpleListFilter):
 
 @admin.register(Company, site=public_admin)
 class CompanyAdmin(admin.ModelAdmin):
-    inlines = [DomainInline]
+    inlines = [DomainInline, ServiceCostPeriodInline]
     list_display = ('name', 'client_id', 'schema_name', 'primary_domain', 'is_active', 'payment_badge', 'config_link', 'admin_link')
     list_filter = ('is_active', PaymentStatusFilter)
     search_fields = ('name', 'schema_name')

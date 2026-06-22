@@ -329,6 +329,13 @@ def activate_item(
     from apps.tenant.branch.models import ContactPointEvent
     ContactPointEvent.record(cb, ContactPointEvent.Stage.ACTIVATE)
 
+    # Снимок себестоимости подарка для «Экономики клиента» (ТЗ §3.2).
+    from apps.tenant.inventory.models import GiftCostEvent
+    GiftCostEvent.record(
+        client_branch=cb, product=item.product, branch=cb.branch,
+        kind=GiftCostEvent.Kind.INVENTORY, activated_at=item.activated_at,
+    )
+
     return InventoryItem.objects.select_related('product').get(pk=item.pk)
 
 

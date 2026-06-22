@@ -6,7 +6,7 @@ from django.utils.html import format_html, mark_safe
 from apps.shared.config.admin_sites import tenant_admin
 
 from .models import (
-    AcquisitionSource, InventoryItem, ItemStatus,
+    AcquisitionSource, GiftCostEvent, InventoryItem, ItemStatus,
     StoryGiftEntry, StoryStatus,
     SuperPrizeEntry, SuperPrizeTrigger,
 )
@@ -584,3 +584,41 @@ class StoryGiftEntryAdmin(admin.ModelAdmin):
             return '—'
         style = _STORY_STATUS_STYLES.get(obj.status, _PENDING_STYLE)
         return format_html('<span style="{}">{}</span>', style, obj.status_label)
+
+
+# ── GiftCostEvent admin (затраты на подарки, read-only) ───────────────────────
+
+@admin.register(GiftCostEvent, site=tenant_admin)
+class GiftCostEventAdmin(admin.ModelAdmin):
+    """Снимки затрат на активированные подарки — только для аудита/просмотра."""
+
+    list_display = ('activated_at', 'cost_col', 'kind_col', 'product_col', 'branch', 'client_branch')
+    list_filter = ('kind', 'branch', 'activated_at')
+    search_fields = ('product__name', 'client_branch__client__vk_id')
+    date_hierarchy = 'activated_at'
+    readonly_fields = (
+        'client_branch', 'product', 'branch', 'kind', 'cost_rub', 'activated_at',
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('product', 'branch', 'client_branch__client')
+
+    @admin.display(description='Себестоимость', ordering='cost_rub')
+    def cost_col(self, obj):
+        return f'{obj.cost_rub} ₽'
+
+    @admin.display(description='Тип', ordering='kind')
+    def kind_col(self, obj):
+        return obj.get_kind_display()
+
+    @admin.display(description='Подарок', ordering='product__name')
+    def product_col(self, obj):
+        if obj.product:
+            return obj.product.name
+        return mark_safe('<span style="color:var(--body-quiet-color,#aaa);font-style:italic;">—</span>')

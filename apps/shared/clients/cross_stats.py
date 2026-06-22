@@ -131,6 +131,10 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
         'domain': '', 'logo': logo, 'total_scans': 0, 'new_community': 0, 'new_newsletter': 0,
         'stories': 0, 'reviews': 0, 'scan_index': 0.0,
         'qr_scans': 0, 'pos_guests': 0, 'ok': False,
+        # «Экономика клиента» (ТЗ)
+        'gift_cost': 0.0, 'service_cost': 0.0, 'total_cost': 0.0,
+        'sub_contacts': 0, 'unique_digitized': 0,
+        'cost_per_contact': None, 'cost_per_unique': None,
     }
     feed = []
     try:
@@ -166,15 +170,33 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
                     'review_link_2gis':   _conv_review_link(m.conversation, '2gis', fb_gis),
                 })
         qr = stats.get('qr_scans', 0) or 0
+        new_community  = stats.get('new_community_subscribers', 0) or 0
+        new_newsletter = stats.get('new_newsletter_subscribers', 0) or 0
+        # «Экономика клиента»: затраты на подарки (снимок) + стоимость обслуживания
+        # (проренка по истории тарифов, считается в public-схеме — мы уже вышли из
+        # schema_context тенанта). Производные цены — с защитой от деления на ноль.
+        from apps.shared.clients.models import ServiceCostPeriod
+        gift_cost    = round(float(stats.get('gift_cost_rub', 0) or 0), 2)
+        service_cost = round(float(ServiceCostPeriod.cost_for(company, start, end)), 2)
+        total_cost   = round(service_cost + gift_cost, 2)
+        sub_contacts = new_community + new_newsletter
+        unique_dig   = stats.get('unique_digitized_guests', 0) or 0
         row.update({
             'total_scans':   stats.get('total_scans', 0) or 0,
-            'new_community': stats.get('new_community_subscribers', 0) or 0,
-            'new_newsletter': stats.get('new_newsletter_subscribers', 0) or 0,
+            'new_community': new_community,
+            'new_newsletter': new_newsletter,
             'stories':       stats.get('vk_stories_publishers', 0) or 0,
             'reviews':       reviews,
             'qr_scans':      qr,
             'pos_guests':    pos,
             'scan_index':    round(qr / pos * 100, 1) if pos else 0.0,
+            'gift_cost':     gift_cost,
+            'service_cost':  service_cost,
+            'total_cost':    total_cost,
+            'sub_contacts':  sub_contacts,
+            'unique_digitized': unique_dig,
+            'cost_per_contact': round(total_cost / sub_contacts, 2) if sub_contacts else None,
+            'cost_per_unique':  round(total_cost / unique_dig, 2) if unique_dig else None,
             'ok':            True,
         })
     except Exception:
@@ -198,6 +220,9 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
     totals = {
         'total_scans': 0, 'new_community': 0, 'new_newsletter': 0,
         'stories': 0, 'reviews': 0, 'qr_scans': 0, 'pos_guests': 0,
+        # «Экономика клиента» — суммарно по всем клиентам
+        'gift_cost': 0.0, 'service_cost': 0.0, 'total_cost': 0.0,
+        'sub_contacts': 0, 'unique_digitized': 0,
     }
     idx_qr = 0  # числитель индекса — только тенанты, у которых есть POS-данные
     for c in companies:
@@ -209,7 +234,9 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
             fi['domain'] = row['domain']
         rows.append(row)
         feed.extend(c_feed)
-        for k in ('total_scans', 'new_community', 'new_newsletter', 'stories', 'reviews', 'qr_scans', 'pos_guests'):
+        for k in ('total_scans', 'new_community', 'new_newsletter', 'stories', 'reviews',
+                  'qr_scans', 'pos_guests', 'gift_cost', 'service_cost', 'total_cost',
+                  'sub_contacts', 'unique_digitized'):
             totals[k] += row[k]
         if row['pos_guests']:
             idx_qr += row['qr_scans']
@@ -217,6 +244,18 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
     totals['scan_index'] = (
         round(idx_qr / totals['pos_guests'] * 100, 1)
         if totals['pos_guests'] else 0.0
+    )
+    # Округление денег + производные цены по тоталам (защита от деления на ноль).
+    totals['gift_cost']    = round(totals['gift_cost'], 2)
+    totals['service_cost'] = round(totals['service_cost'], 2)
+    totals['total_cost']   = round(totals['total_cost'], 2)
+    totals['cost_per_contact'] = (
+        round(totals['total_cost'] / totals['sub_contacts'], 2)
+        if totals['sub_contacts'] else None
+    )
+    totals['cost_per_unique'] = (
+        round(totals['total_cost'] / totals['unique_digitized'], 2)
+        if totals['unique_digitized'] else None
     )
     # лента: все отзывы клиентов, новые сверху, топ-20
     feed.sort(key=lambda r: r['created_at'], reverse=True)

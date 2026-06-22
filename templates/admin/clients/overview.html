@@ -75,6 +75,14 @@
   .badge { font-size:10.5px; font-weight:700; padding:2px 9px; border-radius:20px; white-space:nowrap; }
   .badge.pos{background:#e7f8ee;color:#16a34a} .badge.neg{background:#fde8e8;color:#dc2626} .badge.neu{background:#eef2f7;color:#5b6470}
   .feed-empty { padding:26px 16px; text-align:center; color:#aab2bf; font-size:13px; }
+  /* экономика клиента */
+  .c-rose{color:#e11d48} .c-teal{color:#0d9488} .c-slate{color:#475569}
+  .ic-rose{background:#fdeaef} .ic-teal{background:#dcf5f1} .ic-slate{background:#eef1f5}
+  .ov-sec-title { font-size:16px; font-weight:800; color:#1f2937; margin:30px 2px 14px; display:flex; align-items:center; gap:9px; }
+  .ov-money { font-variant-numeric: tabular-nums; }
+  .ov-nodata { color:#c2c8d2; font-size:13px; }
+  .ov-q { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:#e3e7ee; color:#6b7280; font-size:10px; font-weight:800; cursor:help; margin-left:5px; }
+  .ov-econ td.pos-cost { color:#e11d48; font-weight:700; }
 </style>
 {% endblock %}
 
@@ -106,6 +114,93 @@
     <div class="ov-card"><div class="lbl"><span class="ic ic-green">✉️</span> Подписки в рассылку</div><div class="val c-green">{{ totals.new_newsletter|default:0|intcomma }}</div></div>
     <div class="ov-card"><div class="lbl"><span class="ic ic-orange">📸</span> Сделали stories</div><div class="val c-orange">{{ totals.stories|default:0|intcomma }}</div></div>
     <div class="ov-card"><div class="lbl"><span class="ic ic-amber">⭐</span> Новые отзывы</div><div class="val c-amber">{{ totals.reviews|default:0|intcomma }}</div></div>
+  </div>
+
+  <!-- ───────────── Экономика клиента ───────────── -->
+  <div class="ov-sec-title">💰 Экономика клиента</div>
+  <div class="ov-cards">
+    <div class="ov-card">
+      <div class="lbl"><span class="ic ic-rose">🎁</span> Затраты на подарки
+        <span class="ov-q" title="Сумма себестоимости всех подарков, которые гости активировали за выбранный период. Считается по себестоимости подарка на момент активации.">?</span>
+      </div>
+      <div class="val c-rose ov-money">{{ totals.gift_cost|default:0|floatformat:0|intcomma }} ₽</div>
+    </div>
+    <div class="ov-card">
+      <div class="lbl"><span class="ic ic-slate">🧾</span> Стоимость обслуживания</div>
+      <div class="val c-slate ov-money">{{ totals.service_cost|default:0|floatformat:0|intcomma }} ₽</div>
+    </div>
+    <div class="ov-card">
+      <div class="lbl"><span class="ic ic-teal">💼</span> Общие затраты
+        <span class="ov-q" title="Стоимость обслуживания клиента за период + затраты на активированные подарки за этот же период.">?</span>
+      </div>
+      <div class="val c-teal ov-money">{{ totals.total_cost|default:0|floatformat:0|intcomma }} ₽</div>
+    </div>
+    <div class="ov-card">
+      <div class="lbl"><span class="ic ic-violet">📨</span> Цена подписочного контакта
+        <span class="ov-q" title="Общие затраты клиента за период делятся на сумму подписок на VK и подписок на рассылку. Если один гость подписался на два канала, это два подписочных контакта.">?</span>
+      </div>
+      <div class="val c-violet ov-money">{% if totals.cost_per_contact is None %}<span class="ov-nodata">Нет данных</span>{% else %}{{ totals.cost_per_contact|floatformat:2|intcomma }} ₽{% endif %}</div>
+    </div>
+    <div class="ov-card">
+      <div class="lbl"><span class="ic ic-green">🧑‍💻</span> Цена уник. оцифрованного
+        <span class="ov-q" title="Общие затраты клиента за период делятся на количество уникальных гостей, которые подписались хотя бы на один канал. Один гость считается один раз.">?</span>
+      </div>
+      <div class="val c-green ov-money">{% if totals.cost_per_unique is None %}<span class="ov-nodata">Нет данных</span>{% else %}{{ totals.cost_per_unique|floatformat:2|intcomma }} ₽{% endif %}</div>
+    </div>
+  </div>
+
+  <!-- Экономика по клиентам -->
+  <div class="ov-panel ov-econ" style="margin-bottom:26px;">
+    <h3>Экономика по клиентам</h3>
+    <table class="ov-tbl">
+      <thead>
+        <tr>
+          <th>Клиент</th>
+          <th>Подарки, ₽</th>
+          <th>Обслуж., ₽</th>
+          <th>Общие, ₽</th>
+          <th>Подп. контакты</th>
+          <th>Цена контакта</th>
+          <th>Уник. оцифр.</th>
+          <th>Цена уникального</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>
+            <div class="ov-client-cell">
+              {% if r.logo %}<img class="ov-avatar-img" src="{{ r.logo }}" alt="">{% else %}<span class="ov-avatar">{{ r.name|slice:":1"|upper }}</span>{% endif %}
+              <span class="ov-name-txt">{{ r.name }}</span>
+            </div>
+          </td>
+          <td class="ov-money">{{ r.gift_cost|default:0|floatformat:0|intcomma }}</td>
+          <td class="ov-money">{{ r.service_cost|default:0|floatformat:0|intcomma }}</td>
+          <td class="ov-money">{{ r.total_cost|default:0|floatformat:0|intcomma }}</td>
+          <td class="ov-money">{{ r.sub_contacts|intcomma }}</td>
+          <td class="ov-money">{% if r.cost_per_contact is None %}<span class="ov-nodata">—</span>{% else %}{{ r.cost_per_contact|floatformat:2|intcomma }} ₽{% endif %}</td>
+          <td class="ov-money">{{ r.unique_digitized|intcomma }}</td>
+          <td class="ov-money">{% if r.cost_per_unique is None %}<span class="ov-nodata">—</span>{% else %}{{ r.cost_per_unique|floatformat:2|intcomma }} ₽{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="ov-empty">Нет активных клиентов за период.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if rows %}
+      <tfoot>
+        <tr>
+          <td>Итого ({{ client_count }})</td>
+          <td class="ov-money">{{ totals.gift_cost|default:0|floatformat:0|intcomma }}</td>
+          <td class="ov-money">{{ totals.service_cost|default:0|floatformat:0|intcomma }}</td>
+          <td class="ov-money">{{ totals.total_cost|default:0|floatformat:0|intcomma }}</td>
+          <td class="ov-money">{{ totals.sub_contacts|intcomma }}</td>
+          <td class="ov-money">{% if totals.cost_per_contact is None %}—{% else %}{{ totals.cost_per_contact|floatformat:2|intcomma }} ₽{% endif %}</td>
+          <td class="ov-money">{{ totals.unique_digitized|intcomma }}</td>
+          <td class="ov-money">{% if totals.cost_per_unique is None %}—{% else %}{{ totals.cost_per_unique|floatformat:2|intcomma }} ₽{% endif %}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
   </div>
 
   <div class="ov-grid">

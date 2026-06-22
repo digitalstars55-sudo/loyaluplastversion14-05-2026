@@ -68,7 +68,7 @@ class ProductAdmin(admin.ModelAdmin):
     inlines = [ProductBranchInline]
     list_display = (
         'image_thumb', 'name', 'branches_display',
-        'price_badge', 'flags_badges', 'updated_at',
+        'price_badge', 'cost_badge', 'flags_badges', 'updated_at',
     )
     list_display_links = ('image_thumb', 'name')
     list_filter = ('is_archived', 'branches', 'is_super_prize', 'is_birthday_prize', 'is_story_prize')
@@ -89,7 +89,12 @@ class ProductAdmin(admin.ModelAdmin):
             'fields': ('image', 'image_preview'),
         }),
         ('Параметры', {
-            'fields': ('price',),
+            'fields': ('price', 'cost_price_rub'),
+            'description': (
+                '«Себестоимость, ₽» — реальная стоимость подарка для расчёта '
+                '«Экономики клиента». Учитывается по факту активации подарка '
+                'гостем (берётся снимок на момент активации).'
+            ),
         }),
         ('Сценарии выдачи', {
             'fields': ('is_super_prize', 'is_birthday_prize', 'is_story_prize'),
@@ -150,6 +155,12 @@ class ProductAdmin(admin.ModelAdmin):
         if obj.price == 0:
             return format_html('<span style="{}">Бесплатно</span>', _FREE_STYLE)
         return format_html('<span style="{}">{} ★</span>', _PRICE_STYLE, obj.price)
+
+    @admin.display(description='Себест.', ordering='cost_price_rub')
+    def cost_badge(self, obj):
+        if not obj.cost_price_rub:
+            return mark_safe('<span style="color:var(--body-quiet-color,#aaa);font-size:12px;">—</span>')
+        return format_html('<span style="{}">{} ₽</span>', _PRICE_STYLE, obj.cost_price_rub)
 
     @admin.display(description='Флаги')
     def flags_badges(self, obj):

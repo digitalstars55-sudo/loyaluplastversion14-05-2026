@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from apps.shared.base import TimeStampedModel
@@ -494,4 +494,93 @@ class StoryGiftEntry(TimeStampedModel):
             models.Index(fields=['received_at'],  name='story_received_idx'),
             models.Index(fields=['activated_at'], name='story_activated_idx'),
             models.Index(fields=['expires_at'],   name='story_expires_idx'),
+        ]
+
+
+# ── GiftCostEvent ─────────────────────────────────────────────────────────────
+
+class GiftCostEvent(models.Model):
+    """
+    Снимок себестоимости подарка на момент ФАКТИЧЕСКОЙ активации гостем.
+
+    Пишется один раз при активации InventoryItem или StoryGiftEntry. Хранит
+    КОПИЮ себестоимости (cost_rub) на тот момент — чтобы прошлые отчёты
+    «Экономики клиента» не менялись, если менеджер позже поправит себестоимость
+    в карточке подарка (ТЗ §3.2, §12). В расчёт затрат за период попадают только
+    события, activated_at которых входит в выбранный период. branch
+    денормализован для быстрой фильтрации затрат по точке.
+    """
+
+    class Kind(models.TextChoices):
+        INVENTORY = 'inventory', 'Приз гостя'
+        STORY     = 'story',     'Подарок из сториз'
+
+    client_branch = models.ForeignKey(
+        'branch.ClientBranch',
+        on_delete=models.CASCADE,
+        related_name='gift_cost_events',
+        verbose_name='Гость',
+    )
+    product = models.ForeignKey(
+        'catalog.Product',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='gift_cost_events',
+        verbose_name='Подарок',
+    )
+    branch = models.ForeignKey(
+        'branch.Branch',
+        on_delete=models.CASCADE,
+        related_name='gift_cost_events',
+        verbose_name='Точка',
+        help_text='Точка активации (для сетевого website-подарка — где забрали).',
+    )
+    kind = models.CharField(
+        max_length=16,
+        choices=Kind.choices,
+        verbose_name='Тип подарка',
+    )
+    cost_rub = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        verbose_name='Себестоимость на момент активации, ₽',
+    )
+    activated_at = models.DateTimeField(
+        db_index=True,
+        verbose_name='Активирован',
+    )
+
+    @classmethod
+    def record(cls, *, client_branch, product, branch, kind, activated_at=None):
+        """
+        Best-effort снимок затрат при активации подарка. Не должен ронять саму
+        активацию — оборачиваем в savepoint и глушим любые ошибки.
+        """
+        try:
+            cost = getattr(product, 'cost_price_rub', None) or 0
+            with transaction.atomic():
+                cls.objects.create(
+                    client_branch=client_branch,
+                    product=product,
+                    branch=branch,
+                    kind=kind,
+                    cost_rub=cost,
+                    activated_at=activated_at or timezone.now(),
+                )
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'GiftCostEvent.record failed (cb=%s, kind=%s)',
+                getattr(client_branch, 'pk', None), kind,
+            )
+
+    def __str__(self):
+        return f'{self.cost_rub}₽ — {self.client_branch} ({self.kind})'
+
+    class Meta:
+        verbose_name = 'Затрата на подарок'
+        verbose_name_plural = 'Затраты на подарки'
+        ordering = ['-activated_at']
+        indexes = [
+            models.Index(fields=['branch', 'activated_at'], name='giftcost_branch_act_idx'),
+            models.Index(fields=['activated_at'],           name='giftcost_act_idx'),
         ]
