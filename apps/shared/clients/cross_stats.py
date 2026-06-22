@@ -110,6 +110,16 @@ def _company_logo(company: Company) -> str:
     return ''
 
 
+def _conv_review_link(conv, kind: str, fallback: str) -> str:
+    """Ссылка отзыв-площадки для диалога: ссылки точки → фолбэк основной точки сети."""
+    br = getattr(conv, 'branch', None)
+    if br:
+        val = br.review_link_yandex if kind == 'yandex' else br.review_link_2gis
+        if val:
+            return val
+    return fallback or ''
+
+
 def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
     """Считает строку статистики + последние отзывы одного клиента (в его схеме)."""
     from apps.tenant.analytics.api.services import get_general_stats
@@ -135,8 +145,11 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
             )
             reviews = guest_msgs.values('conversation').distinct().count()
             pos = _cached_pos_guests(start, end)
+            # Ссылки на отзыв-площадки (для кнопки «Вставить ссылки» в мобилке)
+            from apps.tenant.branch.api.services import get_fallback_review_links
+            fb_ya, fb_gis = get_fallback_review_links()
             # последние 6 отзывов клиента (с классифицированной тональностью)
-            for m in guest_msgs.select_related('conversation').order_by('-created_at')[:6]:
+            for m in guest_msgs.select_related('conversation__branch').order_by('-created_at')[:6]:
                 meta = _SENTIMENT_FEED.get(m.conversation.sentiment)
                 if not meta or not (m.text or '').strip():
                     continue
@@ -149,6 +162,8 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
                     'created_at': m.created_at,
                     'sentiment_label': meta[0],
                     'sentiment_class': meta[1],
+                    'review_link_yandex': _conv_review_link(m.conversation, 'yandex', fb_ya),
+                    'review_link_2gis':   _conv_review_link(m.conversation, '2gis', fb_gis),
                 })
         qr = stats.get('qr_scans', 0) or 0
         row.update({
@@ -235,12 +250,14 @@ def get_cross_tenant_reviews(start: date, end: date, sentiment_filter: str = 'al
         domain = primary.domain if primary else ''
         try:
             with schema_context(c.schema_name):
+                from apps.tenant.branch.api.services import get_fallback_review_links
+                fb_ya, fb_gis = get_fallback_review_links()
                 qs = (
                     TestimonialMessage.objects
                     .filter(created_at__date__gte=start, created_at__date__lte=end)
                     .exclude(source=TestimonialMessage.Source.ADMIN_REPLY)
                     .filter(conversation__sentiment__in=sents)
-                    .select_related('conversation')
+                    .select_related('conversation__branch')
                     .order_by('-created_at')[:500]
                 )
                 for m in qs:
@@ -252,6 +269,8 @@ def get_cross_tenant_reviews(start: date, end: date, sentiment_filter: str = 'al
                         'conversation_id': m.conversation_id, 'text': m.text.strip(),
                         'created_at': m.created_at, 'rating': m.rating,
                         'sentiment_label': meta[0], 'sentiment_class': meta[1],
+                        'review_link_yandex': _conv_review_link(m.conversation, 'yandex', fb_ya),
+                        'review_link_2gis':   _conv_review_link(m.conversation, '2gis', fb_gis),
                     })
         except Exception:
             logger.exception('cross_stats reviews: tenant %s failed', c.schema_name)
