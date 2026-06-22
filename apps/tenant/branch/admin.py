@@ -17,6 +17,7 @@ from .models import (
     CoinTransaction, TransactionSource, TransactionType,
     Cooldown, CooldownFeature,
     DailyCode, DailyCodePurpose, Promotions,
+    QRCode, QRScan,
     TestimonialConversation, TestimonialMessage,
 )
 
@@ -1158,3 +1159,64 @@ class TestimonialConversationAdmin(admin.ModelAdmin):
     # ── Custom change_form template for reply button ──────────────────────────
 
     change_form_template = 'admin/branch/testimonialconversation/change_form.html'
+
+
+# ── QRCode admin («Точки контакта») ──────────────────────────────────────────
+
+@admin.register(QRCode, site=tenant_admin)
+class QRCodeAdmin(admin.ModelAdmin):
+    """
+    Конструктор отслеживаемых QR-кодов («точки контакта»).
+
+    Владелец создаёт QR под конкретное размещение, получает готовую ссылку
+    (…&src=<метка>) + картинку QR, и видит по нему охват (сканы / уник. гости).
+    Воронка конверсий по QR — Фаза 2.
+    """
+    list_display = ('name', 'branch', 'mode_badge', 'is_active', 'key', 'scans_total', 'scans_unique')
+    list_filter = ('branch', 'mode', 'is_active')
+    search_fields = ('name', 'key')
+    readonly_fields = ('key',)
+    fields = ('branch', 'name', 'mode', 'is_active', 'key')
+    change_form_template = 'admin/branch/qrcode/change_form.html'
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(
+            _scans_total=Count('scans'),
+            _scans_unique=Count('scans__client', distinct=True),
+        )
+
+    @admin.display(description='Сканы', ordering='_scans_total')
+    def scans_total(self, obj):
+        return getattr(obj, '_scans_total', 0)
+
+    @admin.display(description='Уник. гостей', ordering='_scans_unique')
+    def scans_unique(self, obj):
+        return getattr(obj, '_scans_unique', 0)
+
+    @admin.display(description='Тип')
+    def mode_badge(self, obj):
+        color = '#2e7d32' if obj.mode == 'delivery' else '#4a76a8'
+        return format_html(
+            '<span style="background:{};color:#fff;padding:2px 8px;border-radius:10px;'
+            'font-size:11px;font-weight:600;">{}</span>',
+            color, obj.get_mode_display(),
+        )
+
+    def change_view(self, request, object_id=None, form_url='', extra_context=None):
+        extra_context = extra_context or {}
+        if object_id:
+            obj = self.get_object(request, object_id)
+            if obj and obj.key:
+                tenant = getattr(request, 'tenant', None)
+                vk_app_id = getattr(settings, 'VK_MINI_APP_ID', '')
+                company_id = tenant.client_id if tenant else ''
+                suffix = ''
+                if obj.mode == 'delivery':
+                    suffix += '&delivery=true'
+                suffix += f'&src={obj.key}'
+                extra_context['qr_link'] = (
+                    f'https://vk.com/app{vk_app_id}/#/?company={company_id}'
+                    f'&branch={obj.branch.branch_id}{suffix}'
+                )
+                extra_context['qr_name'] = obj.name
+        return super().change_view(request, object_id, form_url, extra_context)

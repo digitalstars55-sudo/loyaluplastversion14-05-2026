@@ -7,6 +7,7 @@ from django.db.models.functions import Coalesce
 from apps.shared.guest.models import Client
 from ..models import (
     Branch, ClientBranch, ClientBranchVisit, ClientVKStatus, CoinTransaction, Promotions,
+    QRCode, QRScan,
     TestimonialConversation, TestimonialMessage,
 )
 
@@ -780,6 +781,7 @@ def register_or_get_client(
     birth_date=None,
     source: str = 'restaurant',
     invited_by_cb_id: int | None = None,
+    src: str = '',
 ) -> tuple[ClientBranch, bool]:
     """
     Atomically finds or creates a ClientBranch for the given guest.
@@ -855,6 +857,11 @@ def register_or_get_client(
     if source != 'delivery':
         ClientBranchVisit.record_visit(profile)
 
+    # Tracked QR («точка контакта»): лог скана + last-touch активная метка.
+    # Полностью best-effort — никогда не валит регистрацию гостя.
+    if src:
+        _attach_qr_scan(profile, src)
+
     # ── Link referrer from VK story (first-time only, even for existing profiles) ──
     if invited_by_cb_id and not profile.invited_by and invited_by_cb_id != profile.pk:
         try:
@@ -870,6 +877,32 @@ def register_or_get_client(
 
     # Re-fetch with all relations and fresh balance annotation
     return _profile_qs().get(pk=profile.pk), created
+
+
+def _attach_qr_scan(profile: ClientBranch, src: str) -> None:
+    """
+    Логирует скан отслеживаемого QR и проставляет его гостю как «активную
+    точку контакта» (last-touch). Best-effort: любые ошибки гасятся, чтобы
+    не сломать регистрацию гостя из-за неверной/чужой метки.
+    """
+    try:
+        qr = QRCode.objects.get(key=src, is_active=True)
+    except QRCode.DoesNotExist:
+        return
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('QR resolve failed for src=%s', src)
+        return
+
+    try:
+        QRScan.record_scan(qr, profile)
+        if profile.active_qr_id != qr.pk:
+            profile.active_qr = qr
+        profile.active_qr_at = timezone.now()
+        profile.save(update_fields=['active_qr', 'active_qr_at'])
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('QR scan record failed for src=%s', src)
 
 
 def _sync_vk_status_on_register(profile: ClientBranch) -> None:

@@ -118,6 +118,10 @@ class ClientRegistrationRequestSerializer(serializers.Serializer):
         choices=['restaurant', 'delivery'], required=False, default='restaurant',
     )
     invited_by_cb_id  = serializers.IntegerField(required=False, allow_null=True, default=None)
+    # Отслеживаемый QR («точка контакта»): src=<метка>. Необязательный.
+    src               = serializers.CharField(
+        required=False, allow_blank=True, default='', max_length=16,
+    )
 
 
 class ClientUpdateRequestSerializer(serializers.Serializer):

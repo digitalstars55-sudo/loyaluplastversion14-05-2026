@@ -1,0 +1,118 @@
+{% extends "admin/change_form.html" %}
+
+{% block after_related_objects %}
+{{ block.super }}
+
+{% if qr_link %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous"></script>
+
+<div style="
+  margin-top: 24px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,.05);
+">
+  <div style="
+    background: linear-gradient(135deg, #1a2744, #2d3a60);
+    color: #fff;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  ">
+    📍 Точка контакта · ссылка и QR
+  </div>
+
+  <div style="padding: 16px 20px;">
+    <div style="
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 16px;
+      background: #fafafa;
+      max-width: 480px;
+    ">
+      <div style="font-size:13px; font-weight:600; color:#444; margin-bottom:10px;">
+        «{{ qr_name }}»
+      </div>
+
+      <div
+        id="cp-link-display"
+        style="
+          font-size: 12px;
+          color: #1a2744;
+          background: #f0f0f0;
+          border: 1px solid #e0e0e0;
+          border-radius: 5px;
+          padding: 7px 10px;
+          margin-bottom: 12px;
+          word-break: break-all;
+        "
+      >{{ qr_link }}</div>
+
+      <div id="cp-qr-container" style="margin-bottom:12px;">
+        <div id="cp-qr-canvas"></div>
+      </div>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button
+          type="button"
+          onclick="cpCopyLink(this)"
+          style="background:#4a76a8;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;"
+        >📋 Копировать ссылку</button>
+
+        <button
+          type="button"
+          onclick="cpDownloadQr()"
+          style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;"
+        >📱 Скачать QR-код</button>
+      </div>
+
+      <div style="font-size:11px;color:#999;margin-top:10px;">
+        Сохрани после смены типа/точки — ссылка и QR пересоберутся.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var LINK = '{{ qr_link|escapejs }}';
+
+  var qrEl = document.getElementById('cp-qr-canvas');
+  new QRCode(qrEl, {
+    text: LINK,
+    width: 200,
+    height: 200,
+    colorDark: '#000',
+    colorLight: '#fff',
+    correctLevel: QRCode.CorrectLevel.M,
+  });
+
+  window.cpCopyLink = function (btn) {
+    navigator.clipboard.writeText(LINK).then(function () {
+      var orig = btn.textContent;
+      btn.textContent = '✓ Скопировано!';
+      setTimeout(function () { btn.textContent = orig; }, 1800);
+    }).catch(function () { prompt('Скопируйте ссылку вручную:', LINK); });
+  };
+
+  window.cpDownloadQr = function () {
+    var canvas = document.querySelector('#cp-qr-canvas canvas');
+    if (!canvas) { alert('QR-код ещё не сгенерирован.'); return; }
+    var a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = 'qr_contact_point.png';
+    a.click();
+  };
+})();
+</script>
+{% else %}
+<div style="margin-top:24px;padding:14px 18px;background:#fff7e6;border:1px solid #ffe0a3;border-radius:8px;font-size:13px;color:#8a6d3b;max-width:480px;">
+  💡 Заполни название и точку, затем <b>сохрани</b> — после этого здесь появится готовая ссылка и QR-код.
+</div>
+{% endif %}
+{% endblock %}

@@ -256,6 +256,24 @@ class ClientBranch(TimeStampedModel):
         verbose_name='Заметки',
         help_text='Внутренние заметки. Гость их не видит.',
     )
+    active_qr = models.ForeignKey(
+        'QRCode',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='active_for',
+        verbose_name='Активная точка контакта',
+        help_text=(
+            'Последний отслеживаемый QR-код («точка контакта»), по которому гость '
+            'вошёл. Используется для атрибуции событий воронки (модель last-touch).'
+        ),
+    )
+    active_qr_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name='Время последнего скана точки контакта',
+    )
 
     def save(self, *args, **kwargs):
         if self.birth_date and not self.birth_date_set_at:
@@ -353,6 +371,136 @@ class ClientBranchVisit(models.Model):
                 fields=['visited_at'],
                 name='visit_time_idx',
             ),
+        ]
+
+
+# ── QRCode / QRScan («Точки контакта») ──────────────────────────────────────────
+
+def _gen_qr_key() -> str:
+    """Короткая url-безопасная метка для отслеживаемого QR (src=<key>)."""
+    import secrets
+    return secrets.token_urlsafe(6)[:8]
+
+
+class QRCode(TimeStampedModel):
+    """
+    «Точка контакта» — именованный отслеживаемый QR-код.
+
+    Владелец создаёт QR под конкретное размещение (напр. «Детская зона —
+    листовка») и получает ссылку вида …&src=<key>. При входе гостя метка
+    src логируется (QRScan) и проставляется гостю как «активная точка
+    контакта» (ClientBranch.active_qr) — last-touch для атрибуции воронки.
+
+    Полностью аддитивно: без src вход работает как раньше.
+    """
+
+    class Mode(models.TextChoices):
+        CAFE = 'cafe', 'В кафе (на месте)'
+        DELIVERY = 'delivery', 'Доставка'
+
+    branch = models.ForeignKey(
+        Branch,
+        on_delete=models.CASCADE,
+        related_name='qr_codes',
+        verbose_name='Торговая точка',
+    )
+    name = models.CharField(
+        max_length=120,
+        verbose_name='Название',
+        help_text='Где размещён QR. Напр.: «Детская зона — листовка», «Флаер у кассы».',
+    )
+    key = models.CharField(
+        max_length=16,
+        unique=True,
+        editable=False,
+        db_index=True,
+        verbose_name='Метка (src)',
+        help_text='Автогенерируется. Передаётся в ссылке как src=<метка>.',
+    )
+    mode = models.CharField(
+        max_length=16,
+        choices=Mode.choices,
+        default=Mode.CAFE,
+        verbose_name='Тип ссылки',
+        help_text='«Доставка» добавляет в ссылку delivery=true.',
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name='Активен',
+        help_text='Выключенный QR не учитывает новые сканы (старая статистика сохраняется).',
+    )
+
+    def save(self, *args, **kwargs):
+        if not self.key:
+            for _ in range(10):
+                candidate = _gen_qr_key()
+                if not QRCode.objects.filter(key=candidate).exists():
+                    self.key = candidate
+                    break
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        verbose_name = 'Точка контакта (QR)'
+        verbose_name_plural = 'Точки контакта (QR)'
+        ordering = ['-created_at']
+
+
+class QRScan(models.Model):
+    """
+    Скан отслеживаемого QR-кода («точки контакта»).
+
+    Пишется при входе гостя с параметром src. Cooldown на пару (QR, гость)
+    отсекает фантомные повторные открытия миниаппа — по аналогии с
+    ClientBranchVisit. «Сканы» = записи QRScan, «уникальные гости» = distinct
+    client.
+    """
+
+    COOLDOWN_HOURS = 6
+
+    qr = models.ForeignKey(
+        QRCode,
+        on_delete=models.CASCADE,
+        related_name='scans',
+        verbose_name='Точка контакта',
+    )
+    client = models.ForeignKey(
+        ClientBranch,
+        on_delete=models.CASCADE,
+        related_name='qr_scans',
+        verbose_name='Гость',
+    )
+    scanned_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Время скана',
+    )
+
+    @classmethod
+    @transaction.atomic
+    def record_scan(cls, qr: 'QRCode', client_branch: 'ClientBranch') -> 'QRScan | None':
+        """
+        Атомарно записывает скан, если cooldown по (qr, гость) истёк.
+
+        Returns QRScan (новая запись) или None (cooldown ещё активен).
+        """
+        locked = ClientBranch.objects.select_for_update().get(pk=client_branch.pk)
+        threshold = timezone.now() - timedelta(hours=cls.COOLDOWN_HOURS)
+        if cls.objects.filter(qr=qr, client=locked, scanned_at__gte=threshold).exists():
+            return None
+        return cls.objects.create(qr=qr, client=locked)
+
+    def __str__(self):
+        return f'{self.qr} @ {self.scanned_at:%d.%m.%Y %H:%M}'
+
+    class Meta:
+        verbose_name = 'Скан точки контакта'
+        verbose_name_plural = 'Сканы точек контакта'
+        ordering = ['-scanned_at']
+        indexes = [
+            models.Index(fields=['qr', '-scanned_at'], name='qrscan_qr_time_idx'),
+            models.Index(fields=['scanned_at'], name='qrscan_time_idx'),
         ]
 
 
