@@ -97,7 +97,80 @@ class PublicAdminSite(AdminSite):
         return [
             path('overview/', self.admin_view(self._overview_view), name='cross_overview'),
             path('overview/reviews/', self.admin_view(self._overview_reviews_view), name='cross_overview_reviews'),
+            path('audit/', self.admin_view(self._audit_view), name='cross_audit'),
         ] + super().get_urls()
+
+    def _audit_view(self, request):
+        """
+        /superadmin/audit/ — журнал действий всех участников системы (кто/роль/
+        ник, какой клиент, что сделал, эндпоинт, время, IP). Фильтры + пагинация.
+        Только суперадмин (через self.admin_view → has_permission).
+        """
+        from datetime import date as _date
+        from django.core.paginator import Paginator
+        from django.db.models import Q
+        from django.template.response import TemplateResponse
+        from apps.shared.audit.models import AuditEvent
+
+        qs = AuditEvent.objects.select_related('actor').all()
+
+        f_actor  = (request.GET.get('actor') or '').strip()
+        f_tenant = (request.GET.get('tenant') or '').strip()
+        f_action = (request.GET.get('action') or '').strip()
+        f_q      = (request.GET.get('q') or '').strip()
+        f_start  = (request.GET.get('start') or '').strip()
+        f_end    = (request.GET.get('end') or '').strip()
+
+        if f_actor:
+            qs = qs.filter(actor_username=f_actor)
+        if f_tenant:
+            qs = qs.filter(tenant_schema=f_tenant)
+        if f_action:
+            qs = qs.filter(action=f_action)
+        if f_q:
+            qs = qs.filter(
+                Q(path__icontains=f_q) | Q(target__icontains=f_q)
+                | Q(ip__icontains=f_q) | Q(actor_username__icontains=f_q)
+            )
+        for raw, lookup in ((f_start, 'created_at__date__gte'), (f_end, 'created_at__date__lte')):
+            if raw:
+                try:
+                    qs = qs.filter(**{lookup: _date.fromisoformat(raw)})
+                except ValueError:
+                    pass
+
+        total = qs.count()
+        paginator = Paginator(qs, 60)
+        page_obj = paginator.get_page(request.GET.get('page'))
+
+        # Опции фильтров (distinct по журналу — на нашем масштабе дёшево).
+        actor_options = list(
+            AuditEvent.objects.exclude(actor_username='')
+            .values_list('actor_username', flat=True).distinct().order_by('actor_username')
+        )
+        tenant_options = list(
+            AuditEvent.objects.exclude(tenant_schema='')
+            .values_list('tenant_schema', 'tenant_name').distinct().order_by('tenant_schema')
+        )
+
+        # query-string без page (для ссылок пагинации).
+        params = request.GET.copy()
+        params.pop('page', None)
+        base_qs = params.urlencode()
+
+        ctx = self.each_context(request)
+        ctx.update({
+            'title': 'Журнал действий',
+            'page_obj': page_obj,
+            'total': total,
+            'action_choices': AuditEvent.Action.choices,
+            'actor_options': actor_options,
+            'tenant_options': tenant_options,
+            'f_actor': f_actor, 'f_tenant': f_tenant, 'f_action': f_action,
+            'f_q': f_q, 'f_start': f_start, 'f_end': f_end,
+            'base_qs': base_qs,
+        })
+        return TemplateResponse(request, 'admin/audit/audit.html', ctx)
 
     def _overview_view(self, request):
         """

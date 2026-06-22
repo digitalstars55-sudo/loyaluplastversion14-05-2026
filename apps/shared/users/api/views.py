@@ -59,10 +59,28 @@ class LoginAPIView(APIView):
                 user = None
 
         if user is None or not user.is_active:
+            try:
+                from apps.shared.audit.services import record_event
+                record_event(
+                    action='login_failed', request=request,
+                    actor_username=username or '', target='Вход в приложение',
+                    meta={'via': 'mobile'},
+                )
+            except Exception:
+                pass
             return Response(
                 {'detail': 'Неверный логин или пароль'},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
+
+        try:
+            from apps.shared.audit.services import record_event
+            record_event(
+                action='login', request=request, actor=user,
+                target='Вход в приложение', meta={'via': 'mobile'},
+            )
+        except Exception:
+            pass
 
         access = issue_access_token(user)
         refresh = issue_refresh_token(user)

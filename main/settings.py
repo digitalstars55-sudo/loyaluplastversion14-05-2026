@@ -62,6 +62,7 @@ SHARED_APPS = [
     'apps.shared.guest.apps.GuestConfig',
     'apps.shared.users.apps.UsersConfig',
     'apps.shared.leads.apps.LeadsConfig',
+    'apps.shared.audit.apps.AuditConfig',
 
     # Django built-ins
     'django.contrib.admin',
@@ -116,6 +117,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Журнал действий — последним, чтобы request.user уже был проставлен.
+    'apps.shared.audit.middleware.AuditMiddleware',
 ]
 
 # ---------------------------------------------------------------------------

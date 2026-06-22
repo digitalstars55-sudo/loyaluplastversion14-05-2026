@@ -1,0 +1,151 @@
+{% extends "admin/base_site.html" %}
+{% load humanize %}
+
+{% block nav-sidebar %}{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  #content { padding: 0 !important; }
+  .au-wrap { max-width: 1480px; margin: 0 auto; padding: 8px 18px 40px; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; }
+  .au-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin: 6px 0 2px; }
+  .au-title { font-size: 22px; font-weight: 800; color:#1f2937; display:flex; align-items:center; gap:10px; }
+  .au-sub { color:#8a93a3; font-size:13px; margin: 0 0 16px; }
+  /* filters */
+  .au-filter { display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin: 0 0 16px; background:#fff; border:1px solid #eef1f5; border-radius:14px; padding:14px 16px; box-shadow:0 1px 3px rgba(16,24,40,.04); }
+  .au-fld { display:flex; flex-direction:column; gap:4px; }
+  .au-fld label { font-size:11px; font-weight:700; color:#9aa3b2; text-transform:uppercase; letter-spacing:.4px; }
+  .au-fld input, .au-fld select { padding:7px 10px; border:1px solid #e3e7ee; border-radius:9px; font-size:13px; color:#465065; background:#fff; min-width:120px; }
+  .au-fld input[type=date]{ min-width:140px; }
+  .au-fld.q input { min-width:220px; }
+  .au-apply { padding:8px 18px; border-radius:9px; border:0; background:#7c3aed; color:#fff; font-weight:700; font-size:13px; cursor:pointer; }
+  .au-reset { padding:8px 14px; border-radius:9px; border:1px solid #e3e7ee; background:#fff; color:#6b7280; font-weight:600; font-size:13px; text-decoration:none; }
+  .au-count { color:#8a93a3; font-size:13px; margin:0 0 10px; }
+  /* table */
+  .au-panel { background:#fff; border:1px solid #eef1f5; border-radius:14px; overflow:hidden; box-shadow:0 1px 3px rgba(16,24,40,.04); }
+  table.au-tbl { width:100%; border-collapse:collapse; }
+  .au-tbl thead th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:#9aa3b2; font-weight:700; padding:10px 14px; border-bottom:1px solid #eef1f5; background:#fafbfc; position:sticky; top:0; }
+  .au-tbl tbody td { text-align:left; padding:9px 14px; font-size:13px; color:#384150; border-bottom:1px solid #f3f5f8; vertical-align:top; }
+  .au-tbl tbody tr:hover { background:#faf8ff; }
+  .au-tbl tbody tr:last-child td { border-bottom:0; }
+  .au-time { white-space:nowrap; color:#6b7280; font-variant-numeric:tabular-nums; }
+  .au-nick { font-weight:700; color:#1f2937; }
+  .au-role { font-size:10.5px; color:#9aa3b2; }
+  .au-path { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px; color:#6b7280; word-break:break-all; }
+  .au-ip { font-variant-numeric:tabular-nums; color:#9aa3b2; font-size:12px; white-space:nowrap; }
+  .chip { display:inline-block; font-size:10.5px; font-weight:700; padding:2px 9px; border-radius:20px; white-space:nowrap; }
+  .a-view{background:#eef2f7;color:#5b6470} .a-create{background:#e7f8ee;color:#16a34a} .a-update{background:#fff4dc;color:#b7791f}
+  .a-delete{background:#fde8e8;color:#dc2626} .a-login{background:#ede9fe;color:#7c3aed} .a-login_failed{background:#fde8e8;color:#dc2626} .a-logout{background:#eef2f7;color:#5b6470}
+  .m-badge{ display:inline-block; font-size:10px; font-weight:800; padding:1px 6px; border-radius:6px; background:#f1f5f9; color:#64748b; margin-right:6px; }
+  .au-empty { padding:48px; text-align:center; color:#aab2bf; }
+  /* pagination */
+  .au-pag { display:flex; align-items:center; gap:6px; justify-content:center; margin:18px 0 0; flex-wrap:wrap; }
+  .au-pag a, .au-pag span { padding:7px 12px; border-radius:9px; border:1px solid #e3e7ee; font-size:13px; color:#465065; text-decoration:none; background:#fff; }
+  .au-pag .cur { background:#7c3aed; border-color:#7c3aed; color:#fff; font-weight:700; }
+  .au-pag .disabled { color:#c2c8d2; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="au-wrap">
+
+  <div class="au-head">
+    <div class="au-title">🧾 Журнал действий</div>
+  </div>
+  <div class="au-sub">Прозрачная активность системы — кто, под каким ником, у какого клиента, что и во сколько делал.</div>
+
+  <!-- Фильтры -->
+  <form method="get" class="au-filter">
+    <div class="au-fld">
+      <label>Пользователь</label>
+      <select name="actor">
+        <option value="">Все</option>
+        {% for u in actor_options %}
+          <option value="{{ u }}" {% if u == f_actor %}selected{% endif %}>{{ u }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="au-fld">
+      <label>Клиент</label>
+      <select name="tenant">
+        <option value="">Все</option>
+        {% for schema, tname in tenant_options %}
+          <option value="{{ schema }}" {% if schema == f_tenant %}selected{% endif %}>{{ tname|default:schema }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="au-fld">
+      <label>Действие</label>
+      <select name="action">
+        <option value="">Все</option>
+        {% for code, label in action_choices %}
+          <option value="{{ code }}" {% if code == f_action %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="au-fld">
+      <label>С даты</label>
+      <input type="date" name="start" value="{{ f_start }}">
+    </div>
+    <div class="au-fld">
+      <label>По дату</label>
+      <input type="date" name="end" value="{{ f_end }}">
+    </div>
+    <div class="au-fld q">
+      <label>Поиск (путь / раздел / IP)</label>
+      <input type="text" name="q" value="{{ f_q }}" placeholder="например: broadcast, отзывы, 91.">
+    </div>
+    <button type="submit" class="au-apply">Показать</button>
+    <a href="{% url 'public_admin:cross_audit' %}" class="au-reset">Сбросить</a>
+  </form>
+
+  <div class="au-count">Найдено записей: <b>{{ total|intcomma }}</b></div>
+
+  <div class="au-panel">
+    <table class="au-tbl">
+      <thead>
+        <tr>
+          <th>Время</th>
+          <th>Пользователь</th>
+          <th>Клиент</th>
+          <th>Действие</th>
+          <th>Раздел / объект</th>
+          <th>Эндпоинт</th>
+          <th>IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in page_obj %}
+        <tr>
+          <td class="au-time">{{ e.created_at|date:"d.m.Y H:i:s" }}</td>
+          <td>
+            <div class="au-nick">{{ e.actor_username|default:"—" }}</div>
+            {% if e.actor_role %}<div class="au-role">{{ e.actor_role }}</div>{% endif %}
+          </td>
+          <td>{{ e.tenant_name|default:e.tenant_schema|default:"—" }}</td>
+          <td><span class="chip a-{{ e.action }}">{{ e.get_action_display }}</span></td>
+          <td>{{ e.target|default:"—" }}</td>
+          <td class="au-path">{% if e.method %}<span class="m-badge">{{ e.method }}</span>{% endif %}{{ e.path }}{% if e.status_code %} · {{ e.status_code }}{% endif %}</td>
+          <td class="au-ip">{{ e.ip|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="au-empty">Записей по выбранным фильтрам нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+  <div class="au-pag">
+    {% if page_obj.has_previous %}
+      <a href="?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ page_obj.previous_page_number }}">← Назад</a>
+    {% else %}<span class="disabled">← Назад</span>{% endif %}
+    <span class="cur">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}
+      <a href="?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ page_obj.next_page_number }}">Вперёд →</a>
+    {% else %}<span class="disabled">Вперёд →</span>{% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
