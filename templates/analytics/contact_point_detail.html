@@ -1,0 +1,87 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% block title %}{{ title }} — {{ block.super }}{% endblock %}
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Главная</a>
+  &rsaquo; <a href="{% url 'analytics-general' %}">Аналитика</a>
+  &rsaquo; <a href="{% url 'analytics-contact-points' %}?{{ period_qs }}">Точки контакта</a>
+  &rsaquo; {{ stage_label }}
+</div>
+{% endblock %}
+
+{% block extrastyle %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<style>
+  .avatar-img{width:34px;height:34px;border-radius:50%;object-fit:cover;}
+  .avatar-ph{width:34px;height:34px;border-radius:50%;background:#e5e7eb;display:flex;align-items:center;justify-content:center;font-weight:700;color:#6b7280;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="background:#f3f4f6;padding:18px 20px;border-radius:12px;">
+
+  <div class="mb-3">
+    <a href="{% url 'analytics-contact-points' %}?{{ period_qs }}" class="text-success small text-decoration-none">← Точки контакта</a>
+    <h5 class="fw-bold mt-1 mb-0" style="color:#1a2744;">{{ title }}</h5>
+    {% if qr %}<div class="text-muted small">{{ qr.branch.name }} · метка <code>{{ qr.key }}</code></div>{% endif %}
+  </div>
+
+  <p class="small text-muted mb-3">
+    <strong class="text-dark">{{ total }}</strong> гостей &nbsp;·&nbsp; {{ start_display }} — {{ end_display }}
+  </p>
+
+  <div class="card shadow-sm">
+    {% if clients %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+        <thead class="table-light">
+          <tr>
+            <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">Гость</th>
+            <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">Точка</th>
+            <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">VK ID</th>
+            <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">Сообщество</th>
+            <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">Рассылка</th>
+            <th class="text-uppercase text-muted fw-semibold" style="font-size:10px;letter-spacing:.4px;">Зарегистрирован</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cb in clients %}
+          <tr>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                {% if cb.client.photo_url %}
+                <img class="avatar-img" src="{{ cb.client.photo_url }}" alt="">
+                {% else %}
+                <div class="avatar-ph">{{ cb.client.first_name|first|upper|default:"?" }}</div>
+                {% endif %}
+                <div class="fw-semibold" style="color:#1a2744;">{{ cb.client.first_name }} {{ cb.client.last_name }}</div>
+              </div>
+            </td>
+            <td><span class="badge bg-light text-dark border">{{ cb.branch.name }}</span></td>
+            <td><span class="font-monospace small text-primary">{{ cb.client.vk_id }}</span></td>
+            <td>
+              {% if cb.vk_status.is_community_member %}
+                {% if cb.vk_status.community_via_app %}<span class="badge bg-success">✓ app</span>
+                {% else %}<span class="text-secondary small">✓ без app</span>{% endif %}
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td>
+              {% if cb.vk_status.is_newsletter_subscriber %}
+                {% if cb.vk_status.newsletter_via_app %}<span class="badge bg-success">✓ app</span>
+                {% else %}<span class="text-secondary small">✓ без app</span>{% endif %}
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td class="text-muted small">{{ cb.created_at|date:"d.m.Y" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">Нет гостей за выбранный период</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

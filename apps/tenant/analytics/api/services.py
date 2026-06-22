@@ -621,6 +621,36 @@ def get_contact_point_funnel(
     return rows
 
 
+def get_contact_point_clients(qr_id: int, stage: str, start_date: date, end_date: date):
+    """
+    Гости одной стадии воронки конкретной точки контакта (для drill-down).
+
+    stage='scan' → отсканировавшие (QRScan); иначе ContactPointEvent.stage.
+    Возвращает QuerySet[ClientBranch] с select_related для шаблона.
+    """
+    from apps.tenant.branch.models import QRScan, ContactPointEvent, ClientBranch
+
+    if stage == 'scan':
+        cb_ids = (
+            QRScan.objects
+            .filter(qr_id=qr_id, scanned_at__date__gte=start_date, scanned_at__date__lte=end_date)
+            .values_list('client_id', flat=True)
+        )
+    else:
+        cb_ids = (
+            ContactPointEvent.objects
+            .filter(qr_id=qr_id, stage=stage,
+                    created_at__date__gte=start_date, created_at__date__lte=end_date)
+            .values_list('client_id', flat=True)
+        )
+    return (
+        ClientBranch.objects
+        .filter(pk__in=set(cb_ids))
+        .select_related('client', 'branch', 'vk_status')
+        .order_by('-created_at')
+    )
+
+
 # ── Metric: Delivery activators ──────────────────────────────────────────────
 
 def get_delivery_activators_count(

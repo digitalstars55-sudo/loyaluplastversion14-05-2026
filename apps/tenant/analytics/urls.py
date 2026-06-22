@@ -5,13 +5,14 @@ from .views import (
     RFAnalysisView, RFMigrationView, StatsDetailView,
     SegmentExportSenlerView, SegmentCreateBroadcastView,
     CreateBroadcastForAllGuestsView,
-    LoyaltyReportView, ContactPointsView,
+    LoyaltyReportView, ContactPointsView, ContactPointDetailView,
 )
 
 urlpatterns = [
     path('',                  GeneralStatsView.as_view(),     name='analytics-general'),
     path('report/',           LoyaltyReportView.as_view(),    name='analytics-report'),
-    path('contact-points/',   ContactPointsView.as_view(),    name='analytics-contact-points'),
+    path('contact-points/',        ContactPointsView.as_view(),       name='analytics-contact-points'),
+    path('contact-points/detail/', ContactPointDetailView.as_view(),  name='analytics-contact-points-detail'),
     path('rf/',               RFAnalysisView.as_view(),       name='analytics-rf'),
     path('rf/migration/',     RFMigrationView.as_view(),      name='analytics-rf-migration'),
     path('rf/broadcast-all/', CreateBroadcastForAllGuestsView.as_view(), name='analytics-broadcast-all'),

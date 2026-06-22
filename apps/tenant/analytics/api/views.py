@@ -49,6 +49,45 @@ class GeneralStatsAPIView(APIView):
         })
 
 
+class ContactPointsAPIView(APIView):
+    """
+    GET /api/v1/analytics/contact-points/
+
+    Воронка по точкам контакта (отслеживаемым QR) для мобильного приложения.
+    Параметры как у GeneralStats: branch_ids / period / start / end.
+    """
+
+    @extend_schema(parameters=[StatsQuerySerializer], responses={200: OpenApiTypes.OBJECT})
+    def get(self, request):
+        ser = StatsQuerySerializer(data=request.query_params)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        branch_ids = ser.validated_data['branch_ids'] or None
+        start_date = ser.validated_data['start']
+        end_date   = ser.validated_data['end']
+
+        rows = services.get_contact_point_funnel(branch_ids, start_date, end_date)
+        totals = {
+            'scans':      sum(r['scans'] for r in rows),
+            'guests':     sum(r['guests'] for r in rows),
+            'subscribed': sum(r['subscribed'] for r in rows),
+            'played':     sum(r['played'] for r in rows),
+            'activated':  sum(r['activated'] for r in rows),
+        }
+        totals['conversion'] = round(totals['subscribed'] / totals['guests'] * 100) if totals['guests'] else 0
+
+        return Response({
+            'rows':   rows,
+            'totals': totals,
+            'meta': {
+                'start':      str(start_date),
+                'end':        str(end_date),
+                'branch_ids': branch_ids or [],
+            },
+        })
+
+
 class RFStatsAPIView(APIView):
     """
     GET /api/v1/analytics/rf/

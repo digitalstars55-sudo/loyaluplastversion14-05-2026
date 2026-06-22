@@ -7,7 +7,7 @@ from .views import (
     RFSegmentListAPIView,
     SendSegmentBroadcastAPIView, GenerateBroadcastTextAPIView,
     GenerateReportCommentAPIView, RFMigrationsListAPIView,
-    LoyaltyReportAPIView,
+    LoyaltyReportAPIView, ContactPointsAPIView,
 )
 
 urlpatterns = [
@@ -27,4 +27,5 @@ urlpatterns = [
     path('analytics/rf/generate-broadcast-text/', GenerateBroadcastTextAPIView.as_view(), name='analytics-rf-generate-text'),
     path('analytics/report/generate-comment/',    GenerateReportCommentAPIView.as_view(), name='analytics-report-generate-comment'),
     path('analytics/branches/',         BranchListAPIView.as_view(),   name='analytics-branches'),
+    path('analytics/contact-points/',   ContactPointsAPIView.as_view(), name='analytics-contact-points-api'),
 ]

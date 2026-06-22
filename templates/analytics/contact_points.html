@@ -28,6 +28,8 @@
   .cp-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;color:#fff;}
   .cp-conv{font-weight:800;}
   .cp-muted{color:#9ca3af;}
+  .cp-cell{color:#1a2744;font-weight:600;text-decoration:none;border-bottom:1px dashed #cbd5e1;}
+  .cp-cell:hover{color:#2e7d32;border-bottom-color:#2e7d32;}
   .cp-off{opacity:.5;}
   .cp-tot td{background:#f9fafb;font-weight:800;border-top:2px solid #e5e7eb;}
 </style>
@@ -102,11 +104,11 @@
         <td>{{ r.name }}{% if not r.is_active %} <span class="cp-muted">(выкл.)</span>{% endif %}</td>
         <td class="cp-muted">{{ r.branch }}</td>
         <td><span class="cp-badge" style="background:{% if r.mode == 'Доставка' %}#2e7d32{% else %}#4a76a8{% endif %};">{{ r.mode }}</span></td>
-        <td>{{ r.scans }}</td>
-        <td>{{ r.guests }}</td>
-        <td>{{ r.subscribed }}</td>
-        <td>{{ r.played }}</td>
-        <td>{{ r.activated }}</td>
+        <td>{% if r.scans %}<a class="cp-cell" href="{% url 'analytics-contact-points-detail' %}?qr={{ r.id }}&stage=scan&{{ period_qs }}">{{ r.scans }}</a>{% else %}0{% endif %}</td>
+        <td>{% if r.guests %}<a class="cp-cell" href="{% url 'analytics-contact-points-detail' %}?qr={{ r.id }}&stage=scan&{{ period_qs }}">{{ r.guests }}</a>{% else %}0{% endif %}</td>
+        <td>{% if r.subscribed %}<a class="cp-cell" href="{% url 'analytics-contact-points-detail' %}?qr={{ r.id }}&stage=subscribe&{{ period_qs }}">{{ r.subscribed }}</a>{% else %}0{% endif %}</td>
+        <td>{% if r.played %}<a class="cp-cell" href="{% url 'analytics-contact-points-detail' %}?qr={{ r.id }}&stage=play&{{ period_qs }}">{{ r.played }}</a>{% else %}0{% endif %}</td>
+        <td>{% if r.activated %}<a class="cp-cell" href="{% url 'analytics-contact-points-detail' %}?qr={{ r.id }}&stage=activate&{{ period_qs }}">{{ r.activated }}</a>{% else %}0{% endif %}</td>
         <td class="cp-conv" style="color:{% if r.conversion >= 30 %}#16a34a{% elif r.conversion > 0 %}#d97706{% else %}#9ca3af{% endif %};">{{ r.conversion }}%</td>
       </tr>
       {% endfor %}

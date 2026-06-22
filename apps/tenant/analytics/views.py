@@ -22,6 +22,7 @@ from apps.tenant.analytics.api.services import (
     get_rf_stats,
     get_migration_history,
     get_contact_point_funnel,
+    get_contact_point_clients,
 )
 
 PERIOD_CHOICES = [
@@ -213,6 +214,51 @@ class ContactPointsView(View):
             'end_display':       end.strftime('%d.%m.%Y'),
             'qr_admin_url':      qr_admin_url,
             'qr_add_url':        qr_add_url,
+        }
+        return render(request, self.template_name, context)
+
+
+_CP_STAGE_LABELS = {
+    'scan':      'Сканировали',
+    'subscribe': 'Подписались',
+    'play':      'Сыграли',
+    'activate':  'Активировали подарок',
+}
+
+
+@method_decorator(staff_member_required, name='dispatch')
+class ContactPointDetailView(View):
+    """Drill-down: список гостей одной стадии воронки конкретной точки контакта."""
+    template_name = 'analytics/contact_point_detail.html'
+
+    def get(self, request):
+        from apps.tenant.branch.models import QRCode
+
+        start, end, active_period = _parse_period(request)
+        try:
+            qr_id = int(request.GET.get('qr', '0'))
+        except ValueError:
+            qr_id = 0
+        stage = request.GET.get('stage', 'scan')
+        if stage not in _CP_STAGE_LABELS:
+            stage = 'scan'
+
+        qr = QRCode.objects.filter(pk=qr_id).select_related('branch').first()
+        clients = get_contact_point_clients(qr_id, stage, start, end) if qr else []
+
+        context = {
+            'qr':            qr,
+            'stage':         stage,
+            'stage_label':   _CP_STAGE_LABELS[stage],
+            'title':         f'{_CP_STAGE_LABELS[stage]} · {qr.name}' if qr else 'Точка контакта',
+            'clients':       clients,
+            'total':         clients.count() if qr else 0,
+            'active_period': active_period,
+            'period_qs':     _period_qs(active_period, start, end),
+            'start':         start.isoformat(),
+            'end':           end.isoformat(),
+            'start_display': start.strftime('%d.%m.%Y'),
+            'end_display':   end.strftime('%d.%m.%Y'),
         }
         return render(request, self.template_name, context)
 
