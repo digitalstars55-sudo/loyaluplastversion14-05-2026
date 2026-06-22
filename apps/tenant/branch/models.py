@@ -662,6 +662,7 @@ class SubscriptionSource(models.TextChoices):
     CAFE = 'cafe', 'Кафе'
     DELIVERY = 'delivery', 'Доставка'
     STORY = 'story', 'Сториз'
+    WEBSITE = 'website', 'Сайт'
 
 
 class ClientVKStatus(models.Model):

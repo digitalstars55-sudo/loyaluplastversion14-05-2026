@@ -376,11 +376,28 @@ class StoryGiftEntry(TimeStampedModel):
         verbose_name='Выдан сотрудником',
     )
 
-    # ── Источник/кампания (на будущее, для аналитики) ───────────────────────
+    # ── Источник/кампания (для аналитики по источникам) ─────────────────────
+    source = models.CharField(
+        max_length=16,
+        default='story',
+        db_index=True,
+        verbose_name='Источник входа',
+        help_text='story — вход из сториз; website — вход по QR с сайта клиента.',
+    )
     campaign_key = models.CharField(
         max_length=64, blank=True, default='',
-        verbose_name='Ключ кампании/сториз',
-        help_text='Опционально: идентификатор кампании или сториз для аналитики.',
+        verbose_name='Метка источника/сайта',
+        help_text='Для website — метка сайта (напр. tula), чтобы различать сайты в аналитике.',
+    )
+    # ── Сетевой подарок: где фактически забрали (website) ───────────────────
+    activated_branch = models.ForeignKey(
+        'branch.Branch',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='story_gifts_activated_here',
+        verbose_name='Точка активации (сетевой подарок)',
+        help_text='Для website-подарка: точка, где забрали по её коду дня. '
+                  'Для сториз — пусто (забирают на точке входа).',
     )
 
     # ── Computed state ──────────────────────────────────────────────────────
@@ -434,10 +451,13 @@ class StoryGiftEntry(TimeStampedModel):
         self.save(update_fields=['product', 'min_order_amount', 'duration', 'selected_at', 'received_at'])
         return True
 
-    def activate(self) -> bool:
+    def activate(self, activated_branch=None) -> bool:
         """
         Фактическая активация в кафе (после проверки кода дня в сервисе).
         Возвращает False, если ещё не получен или уже активирован.
+
+        activated_branch — точка, где забрали (для website-подарка, который
+        активируется по коду дня любой точки сети). Для сториз — None.
         """
         if self.status != StoryStatus.WAITING_CAFE_VISIT:
             return False
@@ -447,7 +467,11 @@ class StoryGiftEntry(TimeStampedModel):
             if self.duration
             else None
         )
-        self.save(update_fields=['activated_at', 'expires_at'])
+        update_fields = ['activated_at', 'expires_at']
+        if activated_branch is not None:
+            self.activated_branch = activated_branch
+            update_fields.append('activated_branch')
+        self.save(update_fields=update_fields)
         return True
 
     def mark_used(self) -> bool:

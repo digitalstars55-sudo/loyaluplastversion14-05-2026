@@ -249,10 +249,18 @@ def get_story_access(vk_id: int, branch_id: int) -> dict:
 
 
 @transaction.atomic
-def play_story_game(vk_id: int, branch_id: int) -> StoryGiftEntry:
+def play_story_game(
+    vk_id: int, branch_id: int,
+    source: str = 'story', source_ref: str = '',
+) -> StoryGiftEntry:
     """
     Пользователь играет в игру через сториз (одноразово на VK ID на точку).
     По логике ТЗ пользователь всегда выигрывает — далее выбирает подарок.
+
+    source/source_ref — источник входа: 'story' (сториз, по умолчанию) или
+    'website' (QR с сайта клиента). source_ref — метка сайта для аналитики.
+    Для website-входа подарок «сетевой»: забирается в любой точке сети по её
+    коду дня (см. activate_story_gift).
 
     Raises:
         ClientNotFound     — нет профиля
@@ -276,7 +284,10 @@ def play_story_game(vk_id: int, branch_id: int) -> StoryGiftEntry:
     if not _story_gifts_qs(cb.branch).exists():
         raise NoStoryGifts
 
-    entry, _created = StoryGiftEntry.objects.get_or_create(client_branch=cb)
+    entry, _created = StoryGiftEntry.objects.get_or_create(
+        client_branch=cb,
+        defaults={'source': source or 'story', 'campaign_key': source_ref or ''},
+    )
     if entry.played_at:
         raise StoryAlreadyPlayed
     entry.mark_played()
@@ -353,17 +364,22 @@ def select_story_gift(vk_id: int, branch_id: int, product_id: int) -> StoryGiftE
     from datetime import timedelta
     from django.utils import timezone
     from apps.tenant.branch.models import ClientVKStatus, SubscriptionSource
+    # Источник подписки = website для входа с сайта, иначе story.
+    sub_source = (
+        SubscriptionSource.WEBSITE if entry.source == 'website'
+        else SubscriptionSource.STORY
+    )
     vk = ClientVKStatus.objects.filter(client=cb).first()
     if vk:
         recent = timezone.now() - timedelta(minutes=10)
         fields = []
         if (vk.community_via_app and vk.community_source in (None, SubscriptionSource.CAFE)
                 and vk.community_joined_at and vk.community_joined_at >= recent):
-            vk.community_source = SubscriptionSource.STORY
+            vk.community_source = sub_source
             fields.append('community_source')
         if (vk.newsletter_via_app and vk.newsletter_source in (None, SubscriptionSource.CAFE)
                 and vk.newsletter_joined_at and vk.newsletter_joined_at >= recent):
-            vk.newsletter_source = SubscriptionSource.STORY
+            vk.newsletter_source = sub_source
             fields.append('newsletter_source')
         if fields:
             vk.save(update_fields=fields)
@@ -392,6 +408,30 @@ def _validate_game_code(branch, code: str | None) -> None:
     ).first()
     if not daily or daily.code != code.upper().strip():
         raise StoryActivationDenied(reason='bad_code')
+
+
+def _validate_game_code_network(code: str | None):
+    """
+    Валидация кода дня для СЕТЕВОГО подарка (вход с сайта): принимает код дня
+    ЛЮБОЙ активной точки сети и возвращает эту точку. Так гость, сыгравший на
+    сайте, забирает подарок в любой из точек по её коду дня.
+    """
+    if not code:
+        raise StoryActivationDenied(reason='need_code')
+    daily = (
+        DailyCode.objects
+        .filter(
+            purpose=DailyCodePurpose.GAME,
+            valid_date=current_code_date(),
+            code=code.upper().strip(),
+            branch__is_active=True,
+        )
+        .select_related('branch')
+        .first()
+    )
+    if not daily:
+        raise StoryActivationDenied(reason='bad_code')
+    return daily.branch
 
 
 @transaction.atomic
@@ -435,9 +475,14 @@ def activate_story_gift(vk_id: int, branch_id: int, code: str | None = None) -> 
         raise StoryGiftNotFound
 
     settings = _resolve_story_settings(cb)
+    activated_branch = None
     if settings['require_cafe_visit']:
         try:
-            _validate_game_code(cb.branch, code)
+            if entry.source == 'website':
+                # Сетевой подарок: код дня любой точки сети → она и есть точка забора.
+                activated_branch = _validate_game_code_network(code)
+            else:
+                _validate_game_code(cb.branch, code)
         except StoryActivationDenied as denied:
             denied.instruction_text = render_story_text(
                 settings['activation_text'],
@@ -447,5 +492,5 @@ def activate_story_gift(vk_id: int, branch_id: int, code: str | None = None) -> 
             )
             raise denied
 
-    entry.activate()
+    entry.activate(activated_branch=activated_branch)
     return entry

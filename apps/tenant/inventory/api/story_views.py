@@ -49,8 +49,12 @@ class StoryPlayView(APIView):
     def post(self, request: Request) -> Response:
         s = StoryRequestSerializer(data=request.data)
         s.is_valid(raise_exception=True)
+        # Источник входа: 'website' (QR с сайта) или 'story' (по умолчанию).
+        # Метка сайта (source_ref) — для аналитики по сайтам.
+        source = 'website' if request.data.get('source') == 'website' else 'story'
+        source_ref = str(request.data.get('source_ref') or '')[:64]
         try:
-            svc.play_story_game(**s.validated_data)
+            svc.play_story_game(**s.validated_data, source=source, source_ref=source_ref)
         except svc.ClientNotFound:
             return _not_found()
         except svc.StoryDisabled:
