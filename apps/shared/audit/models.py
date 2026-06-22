@@ -56,8 +56,8 @@ class AuditEvent(models.Model):
         verbose_name_plural = 'Журнал действий'
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['-created_at'],              name='audit_created_idx'),
-            models.Index(fields=['actor', '-created_at'],     name='audit_actor_created_idx'),
-            models.Index(fields=['tenant_schema', '-created_at'], name='audit_tenant_created_idx'),
-            models.Index(fields=['action', '-created_at'],    name='audit_action_created_idx'),
+            models.Index(fields=['-created_at'],                  name='auditevt_created_idx'),
+            models.Index(fields=['actor', '-created_at'],         name='auditevt_actor_created_idx'),
+            models.Index(fields=['tenant_schema', '-created_at'], name='auditevt_tenant_created_idx'),
+            models.Index(fields=['action', '-created_at'],        name='auditevt_action_created_idx'),
         ]
