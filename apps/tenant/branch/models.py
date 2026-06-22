@@ -504,6 +504,81 @@ class QRScan(models.Model):
         ]
 
 
+class ContactPointEvent(models.Model):
+    """
+    Событие воронки, атрибутированное точке контакта (модель B / last-touch).
+
+    Пишется в момент события (подписка / игра / активация подарка) с QR,
+    который на тот момент был «активным» у гостя (ClientBranch.active_qr).
+    Прошлые события не переписываются — у каждого свой снимок QR.
+
+    Дедуп по (qr, client, stage): для воронки считаем уникальных гостей,
+    одной записи на стадию-гостя-QR достаточно. Если у гостя нет активной
+    точки (никогда не сканировал отслеживаемый QR) — событие не пишется.
+    """
+
+    class Stage(models.TextChoices):
+        SUBSCRIBE = 'subscribe', 'Подписался'
+        PLAY = 'play', 'Сыграл'
+        ACTIVATE = 'activate', 'Активировал подарок'
+
+    qr = models.ForeignKey(
+        QRCode,
+        on_delete=models.CASCADE,
+        related_name='events',
+        verbose_name='Точка контакта',
+    )
+    client = models.ForeignKey(
+        ClientBranch,
+        on_delete=models.CASCADE,
+        related_name='cp_events',
+        verbose_name='Гость',
+    )
+    stage = models.CharField(
+        max_length=16,
+        choices=Stage.choices,
+        verbose_name='Стадия воронки',
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Время события',
+    )
+
+    @classmethod
+    def record(cls, client_branch: 'ClientBranch', stage: str) -> None:
+        """
+        Best-effort стэмпинг события активной точкой контакта гостя.
+
+        Никогда не валит вызывающий код: работает в savepoint (nested atomic),
+        чтобы сбой не отравил внешнюю транзакцию. No-op, если у гостя нет
+        активной точки контакта.
+        """
+        qr_id = getattr(client_branch, 'active_qr_id', None)
+        if not qr_id:
+            return
+        try:
+            with transaction.atomic():
+                cls.objects.get_or_create(qr_id=qr_id, client=client_branch, stage=stage)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'ContactPointEvent.record failed (stage=%s, cb=%s)', stage, client_branch.pk
+            )
+
+    def __str__(self):
+        return f'{self.qr} · {self.get_stage_display()}'
+
+    class Meta:
+        verbose_name = 'Событие точки контакта'
+        verbose_name_plural = 'События точек контакта'
+        ordering = ['-created_at']
+        unique_together = ('qr', 'client', 'stage')
+        indexes = [
+            models.Index(fields=['qr', 'stage', 'created_at'], name='cpevent_qr_stage_idx'),
+            models.Index(fields=['created_at'], name='cpevent_time_idx'),
+        ]
+
+
 # ── DailyCode ─────────────────────────────────────────────────────────────────
 
 # Кодовые сутки начинаются в 03:00 MSK — в это же время cron перегенерирует коды.
@@ -1034,6 +1109,11 @@ class ClientVKStatus(models.Model):
 
         if update_fields:
             self.save(update_fields=update_fields)
+
+        # Атрибуция воронки точкам контакта (модель B): фиксируем «подписался»
+        # активной точкой гостя только при свежей via_app-подписке.
+        if ('community_via_app' in update_fields) or ('newsletter_via_app' in update_fields):
+            ContactPointEvent.record(self.client, ContactPointEvent.Stage.SUBSCRIBE)
 
     @transaction.atomic
     def mark_story_uploaded(self) -> bool:

@@ -21,6 +21,7 @@ from apps.tenant.analytics.api.services import (
     get_chart_data,
     get_rf_stats,
     get_migration_history,
+    get_contact_point_funnel,
 )
 
 PERIOD_CHOICES = [
@@ -168,6 +169,50 @@ class GeneralStatsView(View):
             'end':               end.isoformat(),
             'start_display':     start.strftime('%d.%m.%Y'),
             'end_display':       end.strftime('%d.%m.%Y'),
+        }
+        return render(request, self.template_name, context)
+
+
+@method_decorator(staff_member_required, name='dispatch')
+class ContactPointsView(View):
+    """Дашборд «Точки контакта» — воронка конверсии по каждому QR (модель B)."""
+    template_name = 'analytics/contact_points.html'
+
+    def get(self, request):
+        start, end, active_period = _parse_period(request)
+        branches, branch_ids, active_branches = _branches_context(request)
+
+        rows = get_contact_point_funnel(branch_ids, start, end)
+        totals = {
+            'scans':      sum(r['scans'] for r in rows),
+            'guests':     sum(r['guests'] for r in rows),
+            'subscribed': sum(r['subscribed'] for r in rows),
+            'played':     sum(r['played'] for r in rows),
+            'activated':  sum(r['activated'] for r in rows),
+        }
+        totals['conversion'] = round(totals['subscribed'] / totals['guests'] * 100) if totals['guests'] else 0
+
+        try:
+            qr_admin_url = reverse('tenant_admin:branch_qrcode_changelist')
+            qr_add_url   = reverse('tenant_admin:branch_qrcode_add')
+        except Exception:
+            qr_admin_url = qr_add_url = ''
+
+        context = {
+            'rows':              rows,
+            'totals':            totals,
+            'branches':          branches,
+            'active_branch_ids': branch_ids or [],
+            'active_branches':   active_branches,
+            'active_period':     active_period,
+            'period_choices':    PERIOD_CHOICES,
+            'period_qs':         _period_qs(active_period, start, end),
+            'start':             start.isoformat(),
+            'end':               end.isoformat(),
+            'start_display':     start.strftime('%d.%m.%Y'),
+            'end_display':       end.strftime('%d.%m.%Y'),
+            'qr_admin_url':      qr_admin_url,
+            'qr_add_url':        qr_add_url,
         }
         return render(request, self.template_name, context)
 

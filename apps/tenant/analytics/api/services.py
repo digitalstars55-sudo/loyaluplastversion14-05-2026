@@ -552,6 +552,75 @@ def get_website_gift_activators(
     return qs.values('client_branch__client_id').distinct().count()
 
 
+# ── Metric: Contact points (QR) funnel ───────────────────────────────────────
+
+def get_contact_point_funnel(
+    branch_ids: list[int] | None, start_date: date, end_date: date
+) -> list[dict]:
+    """
+    Воронка по каждой точке контакта (отслеживаемому QR) за период.
+
+    Возвращает список строк (по одной на QR), отсортированный по сканам:
+        {id, name, branch, mode, scans, guests, subscribed, played,
+         activated, conversion} — conversion = подписки / уник.гости, %.
+
+    Модель B: подписки/игры/активации берутся из ContactPointEvent (стэмп
+    активной точкой на момент события). Сканы/гости — из QRScan.
+    """
+    from apps.tenant.branch.models import QRCode, QRScan, ContactPointEvent
+
+    qrs = QRCode.objects.all()
+    if branch_ids:
+        qrs = qrs.filter(branch__in=branch_ids)
+    qrs = list(qrs.select_related('branch').order_by('-created_at'))
+    if not qrs:
+        return []
+
+    qr_ids = [q.pk for q in qrs]
+
+    # Сканы / уникальные гости (QRScan) за период, сгруппировано по QR.
+    scan_rows = (
+        QRScan.objects
+        .filter(qr_id__in=qr_ids, scanned_at__date__gte=start_date, scanned_at__date__lte=end_date)
+        .values('qr_id')
+        .annotate(total=Count('id'), guests=Count('client__client_id', distinct=True))
+    )
+    scans = {r['qr_id']: (r['total'], r['guests']) for r in scan_rows}
+
+    # События воронки (ContactPointEvent) за период: уник. гости по (QR, стадия).
+    ev_rows = (
+        ContactPointEvent.objects
+        .filter(qr_id__in=qr_ids, created_at__date__gte=start_date, created_at__date__lte=end_date)
+        .values('qr_id', 'stage')
+        .annotate(guests=Count('client__client_id', distinct=True))
+    )
+    events: dict[tuple, int] = {(r['qr_id'], r['stage']): r['guests'] for r in ev_rows}
+
+    rows = []
+    for q in qrs:
+        total, guests = scans.get(q.pk, (0, 0))
+        subscribed = events.get((q.pk, 'subscribe'), 0)
+        played = events.get((q.pk, 'play'), 0)
+        activated = events.get((q.pk, 'activate'), 0)
+        conversion = round(subscribed / guests * 100) if guests else 0
+        rows.append({
+            'id': q.pk,
+            'name': q.name,
+            'branch': q.branch.name,
+            'mode': q.get_mode_display(),
+            'is_active': q.is_active,
+            'scans': total,
+            'guests': guests,
+            'subscribed': subscribed,
+            'played': played,
+            'activated': activated,
+            'conversion': conversion,
+        })
+
+    rows.sort(key=lambda r: (r['scans'], r['guests']), reverse=True)
+    return rows
+
+
 # ── Metric: Delivery activators ──────────────────────────────────────────────
 
 def get_delivery_activators_count(

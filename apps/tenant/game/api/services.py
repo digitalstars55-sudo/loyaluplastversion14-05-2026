@@ -318,6 +318,10 @@ def claim_game(session_token: str, employee_id: int | None = None, delivery: boo
     )
     _activate_game_cooldown(client_branch)
 
+    # Атрибуция воронки точкам контакта (модель B): «сыграл» активной точкой.
+    from apps.tenant.branch.models import ContactPointEvent
+    ContactPointEvent.record(client_branch, ContactPointEvent.Stage.PLAY)
+
     # Гасим использованный delivery-код: ставим expires_at=now, чтобы он больше
     # не давал бонусы (одноразовость для пост-активационных привилегий).
     if active_delivery is not None:

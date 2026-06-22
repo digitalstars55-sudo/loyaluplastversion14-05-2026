@@ -325,6 +325,10 @@ def activate_item(
         item.activate()
         _activate_inventory_cooldown(cb)
 
+    # Атрибуция воронки точкам контакта (модель B): «активировал подарок».
+    from apps.tenant.branch.models import ContactPointEvent
+    ContactPointEvent.record(cb, ContactPointEvent.Stage.ACTIVATE)
+
     return InventoryItem.objects.select_related('product').get(pk=item.pk)
 
 
