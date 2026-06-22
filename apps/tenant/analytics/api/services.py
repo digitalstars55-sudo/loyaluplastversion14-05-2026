@@ -468,6 +468,7 @@ def get_story_gift_receivers(
     from apps.tenant.inventory.models import StoryGiftEntry
 
     qs = StoryGiftEntry.objects.filter(
+        source='story',
         received_at__date__gte=start_date,
         received_at__date__lte=end_date,
     )
@@ -487,9 +488,66 @@ def get_story_gift_activators(
     from apps.tenant.inventory.models import StoryGiftEntry
 
     qs = StoryGiftEntry.objects.filter(
+        source='story',
         activated_at__date__gte=start_date,
         activated_at__date__lte=end_date,
     )
+    qs = _branch_filter(qs, branch_ids, 'client_branch__branch__in')
+    return qs.values('client_branch__client_id').distinct().count()
+
+
+# ── Metrics: Website (QR с сайта) funnel ─────────────────────────────────────
+
+def get_website_gift_players(
+    branch_ids: list[int] | None, start_date: date, end_date: date,
+    site_ref: str | None = None,
+) -> int:
+    """«Сыграли с сайта»: уник. гости, сыгравшие website-игру (source='website',
+    played_at в периоде). site_ref — опц. фильтр по метке сайта (campaign_key)."""
+    from apps.tenant.inventory.models import StoryGiftEntry
+    qs = StoryGiftEntry.objects.filter(
+        source='website',
+        played_at__date__gte=start_date,
+        played_at__date__lte=end_date,
+    )
+    if site_ref:
+        qs = qs.filter(campaign_key=site_ref)
+    qs = _branch_filter(qs, branch_ids, 'client_branch__branch__in')
+    return qs.values('client_branch__client_id').distinct().count()
+
+
+def get_website_gift_receivers(
+    branch_ids: list[int] | None, start_date: date, end_date: date,
+    site_ref: str | None = None,
+) -> int:
+    """«Получили подарок с сайта»: уник. гости, сохранившие website-подарок
+    (source='website', received_at в периоде)."""
+    from apps.tenant.inventory.models import StoryGiftEntry
+    qs = StoryGiftEntry.objects.filter(
+        source='website',
+        received_at__date__gte=start_date,
+        received_at__date__lte=end_date,
+    )
+    if site_ref:
+        qs = qs.filter(campaign_key=site_ref)
+    qs = _branch_filter(qs, branch_ids, 'client_branch__branch__in')
+    return qs.values('client_branch__client_id').distinct().count()
+
+
+def get_website_gift_activators(
+    branch_ids: list[int] | None, start_date: date, end_date: date,
+    site_ref: str | None = None,
+) -> int:
+    """«Активировали подарок с сайта»: уник. гости, забравшие website-подарок в
+    кафе (source='website', activated_at в периоде — после кода дня любой точки)."""
+    from apps.tenant.inventory.models import StoryGiftEntry
+    qs = StoryGiftEntry.objects.filter(
+        source='website',
+        activated_at__date__gte=start_date,
+        activated_at__date__lte=end_date,
+    )
+    if site_ref:
+        qs = qs.filter(campaign_key=site_ref)
     qs = _branch_filter(qs, branch_ids, 'client_branch__branch__in')
     return qs.values('client_branch__client_id').distinct().count()
 
@@ -721,9 +779,11 @@ def get_general_stats(
     community_cafe     = get_community_subs_by_source(branch_ids, start_date, end_date, 'cafe')
     community_delivery = get_community_subs_by_source(branch_ids, start_date, end_date, 'delivery')
     community_story    = get_community_subs_by_source(branch_ids, start_date, end_date, 'story')
+    community_website  = get_community_subs_by_source(branch_ids, start_date, end_date, 'website')
     newsletter_cafe     = get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'cafe')
     newsletter_delivery = get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'delivery')
     newsletter_story    = get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'story')
+    newsletter_website  = get_newsletter_subs_by_source(branch_ids, start_date, end_date, 'website')
 
     return {
         'qr_scans':                  scans,
@@ -737,12 +797,14 @@ def get_general_stats(
         'community_subs_cafe':       community_cafe,
         'community_subs_delivery':   community_delivery,
         'community_subs_story':      community_story,
-        'community_subs_other':      max(0, new_community - community_cafe - community_delivery - community_story),
+        'community_subs_website':    community_website,
+        'community_subs_other':      max(0, new_community - community_cafe - community_delivery - community_story - community_website),
         # #7 — подписки по источникам (рассылка)
         'newsletter_subs_cafe':      newsletter_cafe,
         'newsletter_subs_delivery':  newsletter_delivery,
         'newsletter_subs_story':     newsletter_story,
-        'newsletter_subs_other':     max(0, new_newsletter - newsletter_cafe - newsletter_delivery - newsletter_story),
+        'newsletter_subs_website':   newsletter_website,
+        'newsletter_subs_other':     max(0, new_newsletter - newsletter_cafe - newsletter_delivery - newsletter_story - newsletter_website),
         'total_vk_subscribers':      get_total_vk_subscribers(branch_ids),
         'new_group_with_gift':       get_new_group_with_first_gift(branch_ids, start_date, end_date),
         'repeat_game_players':       get_repeat_game_players(branch_ids, start_date, end_date),
@@ -761,6 +823,10 @@ def get_general_stats(
         'stories_referrals':         get_stories_referrals(branch_ids, start_date, end_date),
         'story_gift_receivers':      get_story_gift_receivers(branch_ids, start_date, end_date),
         'story_gift_activators':     get_story_gift_activators(branch_ids, start_date, end_date),
+        # Воронка «с сайта» (QR на сайте клиента) — отдельные метрики
+        'website_gift_players':      get_website_gift_players(branch_ids, start_date, end_date),
+        'website_gift_receivers':    get_website_gift_receivers(branch_ids, start_date, end_date),
+        'website_gift_activators':   get_website_gift_activators(branch_ids, start_date, end_date),
         'pos_guests':                pos,
         'scan_index':                scan_index,
     }
@@ -2403,7 +2469,7 @@ def get_stat_clients(
         return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_id')))
 
     # Подписки по источникам (cafe/delivery/story) — drilldown в список гостей
-    if metric in ('community_subs_cafe', 'community_subs_delivery', 'community_subs_story'):
+    if metric in ('community_subs_cafe', 'community_subs_delivery', 'community_subs_story', 'community_subs_website'):
         src = metric.rsplit('_', 1)[1]
         qs = ClientVKStatus.objects.filter(
             community_via_app=True,
@@ -2415,7 +2481,7 @@ def get_stat_clients(
             qs = qs.filter(client__branch__in=branch_ids)
         return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_id')))
 
-    if metric in ('newsletter_subs_cafe', 'newsletter_subs_delivery', 'newsletter_subs_story'):
+    if metric in ('newsletter_subs_cafe', 'newsletter_subs_delivery', 'newsletter_subs_story', 'newsletter_subs_website'):
         src = metric.rsplit('_', 1)[1]
         qs = ClientVKStatus.objects.filter(
             newsletter_via_app=True,
@@ -2455,10 +2521,12 @@ def get_stat_clients(
             qs = qs.filter(client_branch__branch__in=branch_ids)
         return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_branch_id')))
 
-    if metric == 'story_gift_receivers':
+    if metric in ('story_gift_receivers', 'website_gift_receivers'):
         from apps.tenant.inventory.models import StoryGiftEntry
 
+        src = 'website' if metric == 'website_gift_receivers' else 'story'
         qs = StoryGiftEntry.objects.filter(
+            source=src,
             received_at__date__gte=start_date,
             received_at__date__lte=end_date,
         )
@@ -2466,12 +2534,26 @@ def get_stat_clients(
             qs = qs.filter(client_branch__branch__in=branch_ids)
         return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_branch_id')))
 
-    if metric == 'story_gift_activators':
+    if metric in ('story_gift_activators', 'website_gift_activators'):
+        from apps.tenant.inventory.models import StoryGiftEntry
+
+        src = 'website' if metric == 'website_gift_activators' else 'story'
+        qs = StoryGiftEntry.objects.filter(
+            source=src,
+            activated_at__date__gte=start_date,
+            activated_at__date__lte=end_date,
+        )
+        if branch_ids:
+            qs = qs.filter(client_branch__branch__in=branch_ids)
+        return _dedup_cb_by_client(base.filter(pk__in=qs.values('client_branch_id')))
+
+    if metric == 'website_gift_players':
         from apps.tenant.inventory.models import StoryGiftEntry
 
         qs = StoryGiftEntry.objects.filter(
-            activated_at__date__gte=start_date,
-            activated_at__date__lte=end_date,
+            source='website',
+            played_at__date__gte=start_date,
+            played_at__date__lte=end_date,
         )
         if branch_ids:
             qs = qs.filter(client_branch__branch__in=branch_ids)

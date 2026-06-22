@@ -394,15 +394,20 @@ _METRIC_LABELS = {
     'community_subs_cafe':       'В сообщество — кафе',
     'community_subs_delivery':   'В сообщество — доставка',
     'community_subs_story':      'В сообщество — сториз',
+    'community_subs_website':    'В сообщество — сайт',
     'newsletter_subs_cafe':      'На рассылку — кафе',
     'newsletter_subs_delivery':  'На рассылку — доставка',
     'newsletter_subs_story':     'На рассылку — сториз',
+    'newsletter_subs_website':   'На рассылку — сайт',
     'first_gift_receivers':      'Получили первый подарок',
     'gift_activators':           'Активировали подарок',
     'birthday_celebrants':       'Пришли на день рождения',
     'vk_stories_publishers':     'Опубликовали истории в ВК',
     'story_gift_receivers':      'Получили подарок через сториз',
     'story_gift_activators':     'Активировали подарок через сториз',
+    'website_gift_players':      'Сыграли с сайта',
+    'website_gift_receivers':    'Получили подарок с сайта',
+    'website_gift_activators':   'Активировали подарок с сайта',
 }
 
 
