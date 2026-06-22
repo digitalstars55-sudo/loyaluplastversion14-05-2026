@@ -59,6 +59,8 @@ class StoryGiftSerializer(serializers.Serializer):
     id                  = serializers.IntegerField()
     status              = serializers.CharField()        # computed @property
     status_label        = serializers.CharField()        # computed @property
+    source              = serializers.CharField(default='story')   # 'story' | 'website'
+    campaign_key        = serializers.CharField(default='', allow_blank=True)  # метка сайта (web=<метка>)
     product_id          = serializers.IntegerField(source='product.pk', allow_null=True, default=None)
     product_name        = serializers.CharField(source='product.name', allow_null=True, default=None)
     product_description = serializers.CharField(source='product.description', allow_null=True, default=None)
