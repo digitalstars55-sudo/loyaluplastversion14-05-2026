@@ -65,11 +65,13 @@ class Domain(DomainMixin):
 
 # ── ServiceCostPeriod ─────────────────────────────────────────────────────────
 
-# Базис проренки: дневная ставка = месячная стоимость / 30. 30-дневный период
-# при таком базисе стоит ровно одну месячную плату — интуитивно для дефолтного
-# вида «30 дней» в сводной статистике (ТЗ §4, рекомендованный пропорциональный
-# расчёт по дням).
-_PRORATE_DAYS_IN_MONTH = Decimal(30)
+# Средняя длина месяца — для перевода длины периода в число месяцев. Стоимость
+# обслуживания считается ПОМЕСЯЧНО фиксированной (а не пропорционально по дням),
+# чтобы суммы оставались ровными: «30 дней» и «май» = ровно один месячный тариф,
+# а не 25 000 vs 25 833. По периоду «пляшет» только себестоимость подарков
+# (правка по запросу владельца: фиксированное обслуживание, чтобы цифры по
+# клиентам сходились и не зависели от того, что у всех разные периоды оплаты).
+_AVG_DAYS_IN_MONTH = 30.44
 
 
 class ServiceCostPeriod(models.Model):
@@ -105,34 +107,44 @@ class ServiceCostPeriod(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     @classmethod
-    def cost_for(cls, company, start: _date, end: _date) -> Decimal:
+    def monthly_rate_at(cls, company, as_of: _date) -> Decimal:
         """
-        Прорейтенная стоимость обслуживания клиента за период [start, end]
-        (включительно) по истории тарифов. Дневная ставка = месячная / 30.
-
-        Складывает проренку по каждому тарифному интервалу, пересекающему период.
-        Если истории нет — фолбэк на текущий Company.plan_price_rub (тоже проренка),
-        чтобы показатель работал до того, как менеджер заведёт историю.
+        Месячная ставка тарифа, действующего на дату as_of. Если нет покрывающего
+        периода — берём последний по дате начала. Если истории нет вообще — фолбэк
+        на Company.plan_price_rub.
         """
         periods = list(company.service_cost_periods.all())
-        if not periods:
-            monthly = Decimal(company.plan_price_rub or 0)
-            days = (end - start).days + 1
-            if days <= 0:
-                return Decimal('0.00')
-            return (monthly / _PRORATE_DAYS_IN_MONTH * Decimal(days)).quantize(Decimal('0.01'))
-
-        total = Decimal('0')
         for p in periods:
-            p_start = p.start_date
-            p_end = p.end_date or end  # открытый период тянем до конца запроса
-            o_start = max(start, p_start)
-            o_end = min(end, p_end)
-            days = (o_end - o_start).days + 1
-            if days <= 0:
-                continue
-            total += p.monthly_rub / _PRORATE_DAYS_IN_MONTH * Decimal(days)
-        return total.quantize(Decimal('0.01'))
+            if p.start_date <= as_of and (p.end_date is None or as_of <= p.end_date):
+                return Decimal(p.monthly_rub)
+        if periods:
+            return Decimal(max(periods, key=lambda p: p.start_date).monthly_rub)
+        return Decimal(company.plan_price_rub or 0)
+
+    @classmethod
+    def months_in_period(cls, start: _date, end: _date) -> int:
+        """Число целых месяцев в периоде [start, end] (округлённо, минимум 1)."""
+        days = (end - start).days + 1
+        if days <= 0:
+            return 0
+        return max(1, round(days / _AVG_DAYS_IN_MONTH))
+
+    @classmethod
+    def cost_for(cls, company, start: _date, end: _date) -> Decimal:
+        """
+        Стоимость обслуживания за период [start, end]: ФИКСИРОВАННАЯ месячная
+        ставка × число целых месяцев в периоде (округлённо, минимум 1).
+
+        Так показатель не «пляшет» от длины периода и не дробится: «30 дней» и
+        «май» = ровно месячный тариф (например 25 000, а не 25 833), а за «всё
+        время» — накопительно (ставка × число месяцев). Ставку берём действующую
+        на конец периода (история тарифов сохраняется для записи и редактирования).
+        """
+        months = cls.months_in_period(start, end)
+        if months <= 0:
+            return Decimal('0.00')
+        monthly = cls.monthly_rate_at(company, end)
+        return (monthly * Decimal(months)).quantize(Decimal('0.01'))
 
     def __str__(self):
         tail = self.end_date.isoformat() if self.end_date else '…'
