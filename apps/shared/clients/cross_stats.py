@@ -26,13 +26,19 @@ from apps.shared.clients.models import Company
 logger = logging.getLogger(__name__)
 
 
-# Пресеты периода для обзора (вчера/сегодня/7д/30д + произвольный диапазон).
+# Пресеты периода для обзора (вчера/сегодня/7д/30д/всё время + произвольный диапазон).
 OVERVIEW_PERIODS = [
     ('yesterday', 'Вчера'),
     ('today',     'Сегодня'),
     ('7d',        '7 дней'),
     ('30d',       '30 дней'),
+    ('all',       'Всё время'),
 ]
+
+# Начало «всего времени» — заведомо раньше старта платформы. Метрики по датам
+# фильтруются по периоду, данных раньше нет; стоимость обслуживания всё равно
+# считается только с даты начала тарифа (cost_for клампит по start_date тарифа).
+_ALL_TIME_START = date(2020, 1, 1)
 
 
 def parse_overview_period(request) -> tuple[date, date, str]:
@@ -50,6 +56,7 @@ def parse_overview_period(request) -> tuple[date, date, str]:
         'yesterday': (yday, yday),
         '7d':        (today - timedelta(days=6), today),
         '30d':       (today - timedelta(days=29), today),
+        'all':       (_ALL_TIME_START, today),
     }
     start, end = presets.get(preset, presets['30d'])
     return start, end, preset
