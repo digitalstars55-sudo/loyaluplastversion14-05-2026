@@ -1213,6 +1213,9 @@ class QRCodeAdmin(admin.ModelAdmin):
                 suffix = ''
                 if obj.mode == 'delivery':
                     suffix += '&delivery=true'
+                elif obj.mode == 'website':
+                    # Игра с сайта (сетевой подарок) — web=<метка>; src=<метка> даёт воронку.
+                    suffix += f'&web={obj.key}'
                 suffix += f'&src={obj.key}'
                 extra_context['qr_link'] = (
                     f'https://vk.com/app{vk_app_id}/#/?company={company_id}'

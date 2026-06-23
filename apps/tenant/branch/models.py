@@ -397,6 +397,7 @@ class QRCode(TimeStampedModel):
     class Mode(models.TextChoices):
         CAFE = 'cafe', 'В кафе (на месте)'
         DELIVERY = 'delivery', 'Доставка'
+        WEBSITE = 'website', 'С сайта (сетевой подарок)'
 
     branch = models.ForeignKey(
         Branch,
@@ -422,7 +423,8 @@ class QRCode(TimeStampedModel):
         choices=Mode.choices,
         default=Mode.CAFE,
         verbose_name='Тип ссылки',
-        help_text='«Доставка» добавляет в ссылку delivery=true.',
+        help_text='«Доставка» добавляет delivery=true. «С сайта» добавляет web=<метка> '
+                  '(игра с сайта → сетевой подарок, забор в любой точке по её коду дня).',
     )
     is_active = models.BooleanField(
         default=True,
