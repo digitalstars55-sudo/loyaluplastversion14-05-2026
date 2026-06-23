@@ -331,12 +331,24 @@ def handle_vk_callback(data: dict) -> None:
         code = config.vk_callback_confirmation if config else 'ok'
         raise VKCallbackConfirmation(code)
 
-    config = SenlerConfig.objects.filter(vk_group_id=group_id).first()
-    if not config:
+    # Может быть несколько SenlerConfig на одну группу (исторические дубли с
+    # РАЗНЫМИ секретами). VK шлёт ровно один секрет — принимаем событие, если он
+    # совпал с секретом ЛЮБОГО конфига группы. Раньше .first() сверял только один
+    # конфиг и давал 403 на все события → VK авто-отключал callback (инцидент).
+    configs = list(SenlerConfig.objects.filter(vk_group_id=group_id))
+    if not configs:
         return
 
-    if config.vk_callback_secret and secret != config.vk_callback_secret:
+    secrets = [c.vk_callback_secret for c in configs if c.vk_callback_secret]
+    if secrets and secret not in secrets:
         raise VKCallbackForbidden
+
+    # Для обработки берём конфиг с совпавшим секретом, иначе первый с токеном.
+    config = (
+        next((c for c in configs if c.vk_callback_secret and c.vk_callback_secret == secret), None)
+        or next((c for c in configs if c.vk_community_token), None)
+        or configs[0]
+    )
 
     if event == 'message_new':
         msg_obj     = data.get('object', {})
