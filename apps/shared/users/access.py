@@ -87,6 +87,32 @@ def user_allowed_branches(user, schema_name: str) -> set[int] | None:
     return None
 
 
+def user_allowed_features(user) -> set[str] | None:
+    """
+    Какие разделы (фичи) доступны user'у.
+
+    Возвращает:
+      None       — без ограничений по разделам (все, что даёт роль) — дефолт
+      set(keys)  — пользователь видит ТОЛЬКО эти разделы (User.feature_access непустой)
+
+    SU (is_superuser) — None (видит всё). Анонимы — пустое множество.
+    """
+    if not user or not user.is_authenticated:
+        return set()
+    if user.is_superuser:
+        return None
+    feats = getattr(user, 'feature_access', None) or []
+    if isinstance(feats, list) and feats:
+        return {str(f) for f in feats}
+    return None  # пусто = без ограничений
+
+
+def user_can_feature(user, feature_key: str) -> bool:
+    """Доступен ли конкретный раздел. None-ограничение = да."""
+    allowed = user_allowed_features(user)
+    return allowed is None or feature_key in allowed
+
+
 def filter_branches_qs(qs, user, schema_name: str):
     """
     Удобный helper для применения branch-фильтра к queryset Branch / любому

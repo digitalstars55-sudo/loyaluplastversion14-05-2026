@@ -2,6 +2,31 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 
+# Каталог разделов приложения для тонкого разграничения доступа (feature_access).
+# Ключи стабильны (мобилка/веб гейтят по ним); порядок = как в меню.
+FEATURE_CHOICES = [
+    ('home',            'Главная'),
+    ('analytics',       'Аналитика (RF-сегменты)'),
+    ('reviews',         'Отзывы'),
+    ('chat',            'Чат с поддержкой'),
+    ('broadcasts',      'Рассылки'),
+    ('guests',          'Гости (база)'),
+    ('general_stats',   'Общая статистика'),
+    ('contact_points',  'Точки контакта'),
+    ('reports',         'Отчёты (PDF)'),
+    ('catalog',         'Подарки / каталог'),
+    ('quests',          'Квесты'),
+    ('promotions',      'Промоакции'),
+    ('daily_codes',     'Коды дня'),
+    ('birthdays',       'Дни рождения гостей'),
+    ('staff',           'Персонал'),
+    ('auto_reply',      'Автоответы на отзывы'),
+    ('cross_overview',  'Сводная по клиентам (платформа)'),
+    ('audit_log',       'Журнал действий'),
+]
+FEATURE_KEYS = [k for k, _ in FEATURE_CHOICES]
+
+
 class User(AbstractUser):
     """
     Иерархия ролей:
@@ -70,6 +95,19 @@ class User(AbstractUser):
     push_prefs = models.JSONField(
         'Настройки push', default=dict, blank=True,
         help_text='Какие пуши и с каких тенантов получать. Подробнее см. модель.',
+    )
+
+    # Тонкое разграничение по РАЗДЕЛАМ (фичам). Список ключей из FEATURE_CHOICES.
+    # Пусто [] = все разделы, доступные роли (как было). Непустой список = пользователь
+    # видит ТОЛЬКО эти разделы (напр. ['daily_codes'] — только «Коды дня»).
+    # Комбинируется с branch_access: можно дать «только код дня и только одну точку».
+    # SU (is_superuser) игнорирует — видит всё.
+    feature_access = models.JSONField(
+        'Доступ к разделам', default=list, blank=True,
+        help_text=(
+            'Пусто = все разделы, доступные роли. Если отметить разделы — пользователь '
+            'видит ТОЛЬКО их (напр. только «Коды дня»). Работает вместе с доступом к точкам.'
+        ),
     )
 
     @property

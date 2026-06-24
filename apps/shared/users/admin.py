@@ -1,5 +1,7 @@
+from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 from django.http import HttpResponseRedirect
 from django.shortcuts import render, get_object_or_404
 from django.urls import path, reverse
@@ -7,13 +9,53 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 from apps.shared.config.admin_sites import public_admin
-from .models import User
+from .models import User, FEATURE_CHOICES
+
+
+# ── Формы с тонким разграничением по разделам (feature_access) ─────────────────
+
+class _FeatureAccessMixin(forms.ModelForm):
+    """Рендерит feature_access (JSON-список) чекбоксами разделов и надёжно сохраняет."""
+    feature_access = forms.MultipleChoiceField(
+        choices=FEATURE_CHOICES,
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label='Доступ к разделам',
+        help_text='Пусто = все разделы, доступные роли. Отметить — ограничить пользователя '
+                  'ТОЛЬКО этими разделами (напр. только «Коды дня»). Работает вместе с доступом к точкам.',
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        inst = getattr(self, 'instance', None)
+        if inst is not None and inst.pk and inst.feature_access:
+            self.initial['feature_access'] = list(inst.feature_access)
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        obj.feature_access = list(self.cleaned_data.get('feature_access') or [])
+        if commit:
+            obj.save()
+            self.save_m2m()
+        return obj
+
+
+class UserAccessChangeForm(_FeatureAccessMixin, UserChangeForm):
+    class Meta(UserChangeForm.Meta):
+        model = User
+
+
+class UserAccessAddForm(_FeatureAccessMixin, UserCreationForm):
+    class Meta(UserCreationForm.Meta):
+        model = User
 
 
 @admin.register(User, site=public_admin)
 class UserPublicAdmin(BaseUserAdmin):
     """Управление всеми пользователями платформы — только для суперадмина."""
-    list_display = ('username', 'email', 'role', 'get_companies', 'branch_access_link', 'is_active')
+    form = UserAccessChangeForm
+    add_form = UserAccessAddForm
+    list_display = ('username', 'email', 'role', 'get_companies', 'branch_access_link', 'feature_access_badge', 'is_active')
     list_filter = ('role', 'is_active')
     search_fields = ('username', 'email')
     # Переопределяем fieldsets полностью: убираем groups/user_permissions/is_staff,
@@ -21,12 +63,19 @@ class UserPublicAdmin(BaseUserAdmin):
     fieldsets = (
         (None, {'fields': ('username', 'password')}),
         ('Личные данные', {'fields': ('first_name', 'last_name', 'email', 'phone', 'city', 'birthday', 'birthday_set_at')}),
-        ('Роль и доступ', {'fields': ('role', 'companies', 'branch_access_summary', 'is_active', 'is_superuser')}),
+        ('Роль и доступ', {
+            'fields': ('role', 'companies', 'branch_access_summary', 'feature_access', 'is_active', 'is_superuser'),
+            'description': 'Тонкое разграничение: «Доступ к точкам» (какие точки) + «Доступ к разделам» '
+                           '(какие экраны). Можно дать «только Коды дня и только одну точку».',
+        }),
         ('Даты', {'fields': ('last_login', 'date_joined')}),
     )
     add_fieldsets = (
         (None, {'classes': ('wide',), 'fields': ('username', 'password1', 'password2')}),
-        ('Роль и доступ', {'fields': ('role', 'companies')}),
+        ('Роль и доступ', {
+            'fields': ('role', 'companies', 'feature_access'),
+            'description': 'Разделы можно ограничить уже здесь. Точки — на странице пользователя после сохранения.',
+        }),
     )
     readonly_fields = ('last_login', 'date_joined', 'branch_access_summary')
 
@@ -40,6 +89,18 @@ class UserPublicAdmin(BaseUserAdmin):
     @admin.display(description='Компании')
     def get_companies(self, obj):
         return ', '.join(obj.companies.values_list('name', flat=True)) or '—'
+
+    @admin.display(description='Доступ к разделам')
+    def feature_access_badge(self, obj):
+        # Django 6: format_html без плейсхолдеров = TypeError. Используем placeholder.
+        if obj.is_superuser:
+            return mark_safe('<span style="color:#999">все (SU)</span>')
+        feats = obj.feature_access or []
+        if not feats:
+            return mark_safe('<span style="color:#999">все (по роли)</span>')
+        labels = dict(FEATURE_CHOICES)
+        names = ', '.join(labels.get(f, f) for f in feats)
+        return format_html('<span style="color:#7c3aed;font-weight:600;">{}</span>', names)
 
     @admin.display(description='Доступ к точкам')
     def branch_access_link(self, obj):

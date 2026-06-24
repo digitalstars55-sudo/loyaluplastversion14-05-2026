@@ -45,6 +45,9 @@ class ProfileSerializer(serializers.ModelSerializer):
             'avatar_url', 'branch_ids',
             'tenant_domain', 'tenant_name', 'companies',
             'push_prefs', 'is_superadmin',
+            # Тонкое разграничение: список разрешённых разделов. Пусто = все по роли.
+            # Мобилка/веб скрывают разделы, которых тут нет (если список непустой).
+            'feature_access',
         ]
         read_only_fields = fields
 
