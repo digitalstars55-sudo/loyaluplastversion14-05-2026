@@ -297,10 +297,19 @@ class TenantAdminSite(AdminSite):
         except Exception:
             logger.exception('Tenant admin: failed to compute billing status')
 
+        # Тонкое разграничение: доступные точки (branch_access) + разделы (feature_access).
+        from apps.shared.users.access import (
+            user_allowed_branches, user_can_feature, current_schema_name,
+        )
+        schema = current_schema_name()
+        allowed_branches = user_allowed_branches(request.user, schema)  # None=все
+
         try:
             from apps.tenant.branch.models import Branch, DailyCode, current_code_date
             today = current_code_date()  # кодовые сутки начинаются в 03:00 MSK
             branches = Branch.objects.filter(is_active=True).order_by('name')
+            if allowed_branches is not None:
+                branches = branches.filter(pk__in=allowed_branches)
             codes_qs = DailyCode.objects.filter(valid_date=today).select_related('branch')
 
             codes_map = {}
@@ -321,6 +330,15 @@ class TenantAdminSite(AdminSite):
         except Exception:
             ctx['daily_code_rows'] = []
             ctx['daily_code_date'] = None
+
+        # Флаги разделов для шаблона (feature_access). SU/без ограничений → всё True.
+        ctx['can_daily_codes']    = user_can_feature(request.user, 'daily_codes')
+        ctx['can_general_stats']  = user_can_feature(request.user, 'general_stats')
+        ctx['can_analytics']      = user_can_feature(request.user, 'analytics')
+        ctx['can_contact_points'] = user_can_feature(request.user, 'contact_points')
+        ctx['show_analytics'] = (
+            ctx['can_general_stats'] or ctx['can_analytics'] or ctx['can_contact_points']
+        )
         return ctx
 
     # ── Custom admin URLs ──────────────────────────────────────────────────────

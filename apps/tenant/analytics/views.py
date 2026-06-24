@@ -100,13 +100,49 @@ def _parse_branch_ids(request) -> list[int]:
 
 
 def _branches_context(request):
-    branches   = list(Branch.objects.filter(is_active=True).values('id', 'name').order_by('name'))
+    # Фильтр по доступным пользователю точкам (branch_access). None = все.
+    from apps.shared.users.access import user_allowed_branches, current_schema_name
+    allowed = user_allowed_branches(request.user, current_schema_name())
+
+    qs = Branch.objects.filter(is_active=True)
+    if allowed is not None:
+        qs = qs.filter(pk__in=allowed)
+    branches = list(qs.values('id', 'name').order_by('name'))
+
     branch_ids = _parse_branch_ids(request)
-    active     = [b for b in branches if b['id'] in branch_ids] if branch_ids else []
+    if allowed is not None:
+        if not allowed:
+            branch_ids = [0]  # нет доступа ни к одной точке → пустой результат
+        elif branch_ids:
+            branch_ids = [b for b in branch_ids if b in allowed] or list(allowed)
+        else:
+            branch_ids = list(allowed)  # расчёт только по разрешённым точкам
+
+    active = [b for b in branches if b['id'] in branch_ids] if branch_ids else []
     return branches, branch_ids or None, active
 
 
+def feature_required(feature_key: str):
+    """
+    Гейт раздела по User.feature_access. Нет доступа → назад на главную админки.
+    Применять method_decorator'ом на dispatch (вместе со staff_member_required).
+    """
+    from functools import wraps
+    from django.shortcuts import redirect
+    from apps.shared.users.access import user_can_feature
+
+    def deco(view_func):
+        @wraps(view_func)
+        def wrapped(request, *args, **kwargs):
+            if not user_can_feature(request.user, feature_key):
+                return redirect('/admin/')
+            return view_func(request, *args, **kwargs)
+        return wrapped
+    return deco
+
+
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('general_stats'), name='dispatch')
 class GeneralStatsView(View):
     template_name = 'analytics/general_stats.html'
 
@@ -175,6 +211,7 @@ class GeneralStatsView(View):
 
 
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('contact_points'), name='dispatch')
 class ContactPointsView(View):
     """Дашборд «Точки контакта» — воронка конверсии по каждому QR (модель B)."""
     template_name = 'analytics/contact_points.html'
@@ -227,6 +264,7 @@ _CP_STAGE_LABELS = {
 
 
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('contact_points'), name='dispatch')
 class ContactPointDetailView(View):
     """Drill-down: список гостей одной стадии воронки конкретной точки контакта."""
     template_name = 'analytics/contact_point_detail.html'
@@ -264,6 +302,7 @@ class ContactPointDetailView(View):
 
 
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('analytics'), name='dispatch')
 class RFAnalysisView(View):
     template_name = 'analytics/rf_analysis.html'
 
@@ -338,6 +377,7 @@ class RFAnalysisView(View):
 
 
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('analytics'), name='dispatch')
 class RFMigrationView(View):
     template_name = 'analytics/rf_migration.html'
 
@@ -372,6 +412,7 @@ class RFMigrationView(View):
 
 
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('reviews'), name='dispatch')
 class ReviewsAnalyticsView(View):
     template_name = 'analytics/reviews.html'
 
@@ -503,6 +544,7 @@ _METRIC_LABELS = {
 
 
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('general_stats'), name='dispatch')
 class StatsDetailView(View):
     template_name = 'analytics/stats_detail.html'
 
@@ -535,6 +577,7 @@ class StatsDetailView(View):
 
 
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('reviews'), name='dispatch')
 class ReviewsReplyView(View):
     def post(self, request):
         import json as _json
@@ -568,6 +611,7 @@ class ReviewsReplyView(View):
 
 
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('reviews'), name='dispatch')
 class ReviewsAIReplyView(View):
     def post(self, request):
         import json as _json
@@ -659,6 +703,7 @@ class ReviewsAIReplyView(View):
 
 
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('reviews'), name='dispatch')
 class ReviewsDetailView(View):
     template_name = 'analytics/reviews_detail.html'
 
@@ -728,6 +773,7 @@ class ReviewsDetailView(View):
 # ── Segment actions (from RF dashboard) ──────────────────────────────────────
 
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('analytics'), name='dispatch')
 class SegmentExportSenlerView(View):
     """
     GET /analytics/rf/segment/<segment_id>/export-senler/
@@ -768,6 +814,7 @@ class SegmentExportSenlerView(View):
 
 
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('analytics'), name='dispatch')
 class SegmentCreateBroadcastView(View):
     """
     GET /analytics/rf/segment/<segment_id>/create-broadcast/
@@ -810,6 +857,7 @@ class SegmentCreateBroadcastView(View):
 
 
 @method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('analytics'), name='dispatch')
 class CreateBroadcastForAllGuestsView(View):
     """
     GET /analytics/rf/broadcast-all/
@@ -851,6 +899,7 @@ class CreateBroadcastForAllGuestsView(View):
         return HttpResponseRedirect(request.META.get('HTTP_REFERER', '/analytics/rf/'))
 
 
+@method_decorator(feature_required('reports'), name='dispatch')
 class LoyaltyReportView(View):
     """
     GET /analytics/report/

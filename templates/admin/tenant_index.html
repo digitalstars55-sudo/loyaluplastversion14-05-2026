@@ -64,6 +64,7 @@
   </div>
   {% endif %}
 
+  {% if can_daily_codes %}
   <div class="lv-panel">
     <div class="lv-panel-head">Коды дня на сегодня ({{ daily_code_date|date:"d.m.Y" }})</div>
     {% if daily_code_rows %}
@@ -91,22 +92,31 @@
     <p style="padding:20px;color:#999;text-align:center;">Коды на сегодня не сгенерированы</p>
     {% endif %}
   </div>
+  {% endif %}
 
+  {% if show_analytics %}
   <div class="lv-panel">
     <div class="lv-panel-head analytics">Аналитика</div>
+    {% if can_general_stats %}
     <div class="lv-row">
       <span class="lv-row-label">Общая Аналитика</span>
       <a href="{% url 'analytics-general' %}" class="lv-btn">Перейти</a>
     </div>
+    {% endif %}
+    {% if can_analytics %}
     <div class="lv-row">
       <span class="lv-row-label">RF Аналитика</span>
       <a href="{% url 'analytics-rf' %}" class="lv-btn">Перейти</a>
     </div>
+    {% endif %}
+    {% if can_contact_points %}
     <div class="lv-row">
       <span class="lv-row-label">Точки контакта (QR + конверсия)</span>
       <a href="{% url 'analytics-contact-points' %}" class="lv-btn">Перейти</a>
     </div>
+    {% endif %}
   </div>
+  {% endif %}
 
 </div>
 {% endblock %}
