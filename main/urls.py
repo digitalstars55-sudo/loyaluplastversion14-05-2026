@@ -41,6 +41,7 @@ urlpatterns = [
     # Юридические страницы (App Store / Google Play, VK).
     path('privacy', TemplateView.as_view(template_name='legal/privacy.html'), name='privacy'),
     path('terms', TemplateView.as_view(template_name='legal/terms.html'), name='terms'),
+    path('support', TemplateView.as_view(template_name='legal/support.html'), name='support'),
 
     # API Docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
