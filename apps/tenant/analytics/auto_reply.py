@@ -15,7 +15,25 @@ import logging
 import os
 from typing import Optional
 
+from django.utils import timezone
+
 logger = logging.getLogger(__name__)
+
+# Тихие часы для пушей об отзывах (по TIME_ZONE проекта = Europe/Moscow):
+# с 22:00 до 09:00 push не шлём, чтобы не будить владельца ночью пачками.
+# Запись в журнал уведомлений ОСТАЁТСЯ — владелец увидит отзыв утром в приложении.
+REVIEW_PUSH_QUIET_START_HOUR = int(os.getenv('REVIEW_PUSH_QUIET_START', '22'))  # включительно
+REVIEW_PUSH_QUIET_END_HOUR = int(os.getenv('REVIEW_PUSH_QUIET_END', '9'))       # до этого часа
+
+
+def _in_review_quiet_hours() -> bool:
+    """True, если сейчас тихие часы (МСК) — пуш об отзыве слать не нужно."""
+    hour = timezone.localtime().hour
+    start, end = REVIEW_PUSH_QUIET_START_HOUR, REVIEW_PUSH_QUIET_END_HOUR
+    if start <= end:
+        return start <= hour < end
+    # окно через полночь (22..9): тихо, если час >= start ИЛИ < end
+    return hour >= start or hour < end
 
 
 def maybe_generate_auto_draft(conversation_id: int) -> Optional[str]:
@@ -231,6 +249,10 @@ def push_draft_ready(schema_name: str, tenant_name: str, conversation_id: int) -
     from apps.shared.users.push import send_expo_push, log_notification
     log_notification(admin_users, 'draft_ready', title, body, data)
 
+    # Тихие часы: тоже относится к отзывам — ночью не будим (журнал остаётся).
+    if _in_review_quiet_hours():
+        return {'sent': 0, 'reason': 'quiet_hours'}
+
     if not tokens:
         return {'sent': 0, 'reason': 'no_tokens'}
 
@@ -284,6 +306,10 @@ def push_review_new(
 
     from apps.shared.users.push import send_expo_push, log_notification
     log_notification(admin_users, 'review_new', title, body, data)
+
+    # Тихие часы: запись в журнал уже сделана, но ночью владельца не будим.
+    if _in_review_quiet_hours():
+        return {'sent': 0, 'reason': 'quiet_hours'}
 
     if not tokens:
         return {'sent': 0, 'reason': 'no_tokens'}
