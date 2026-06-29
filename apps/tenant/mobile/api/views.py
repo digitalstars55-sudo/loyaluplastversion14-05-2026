@@ -1377,6 +1377,42 @@ def _can_manage_role(actor, target_mobile_role: str) -> bool:
     return actor_rank > target_rank
 
 
+def _branch_ids_for_display(user) -> list[int]:
+    """
+    branch_ids сотрудника для отображения/паритета — из ПРИОРИТЕТНОГО источника
+    User.branch_access (тот же, что и enforcement user_allowed_branches), а НЕ из
+    StaffProfile.branch_access (он только fallback). Иначе мобильный StaffScreen
+    показывал бы не то, что реально применяется (расхождение с веб «Доступ к точкам»).
+    None (нет ограничений) → все точки тенанта (все тумблеры ON).
+    """
+    from apps.shared.users.access import user_allowed_branches, current_schema_name
+    from apps.tenant.branch.models import Branch
+    all_ids = set(Branch.objects.values_list('pk', flat=True))
+    allowed = user_allowed_branches(user, current_schema_name())
+    if allowed is None:
+        return sorted(all_ids)
+    return sorted(allowed & all_ids)
+
+
+def _write_branch_access(user, profile, ids) -> None:
+    """
+    Двусторонний паритет с вебом: пишем доступ к точкам в User.branch_access[schema]
+    (приоритетный источник — его читает и веб «Доступ к точкам», и enforcement) +
+    зеркалим в StaffProfile.branch_access (fallback). Если выбраны ВСЕ точки → 'all'
+    (включая будущие, как master-чекбокс веба).
+    """
+    from apps.shared.users.access import current_schema_name
+    from apps.tenant.branch.models import Branch
+    schema = current_schema_name()
+    all_ids = set(Branch.objects.values_list('pk', flat=True))
+    existing = {int(x) for x in ids} & all_ids
+    access = dict(getattr(user, 'branch_access', None) or {})
+    access[schema] = 'all' if (all_ids and existing == all_ids) else sorted(existing)
+    user.branch_access = access
+    user.save(update_fields=['branch_access'])
+    profile.branch_access.set(existing)  # зеркало в fallback-источник
+
+
 def _serialize_staff(user) -> dict:
     profile = _get_or_create_staff_profile(user)
     mob_role = _BACKEND_ROLE_TO_MOBILE.get(user.role, 'viewer')
@@ -1389,7 +1425,7 @@ def _serialize_staff(user) -> dict:
         'phone':         profile.phone or '',
         'active':        bool(user.is_active),
         'permissions':   _merge_permissions(profile.permissions, mob_role),
-        'branch_ids':    list(profile.branch_access.values_list('pk', flat=True)),
+        'branch_ids':    _branch_ids_for_display(user),
         'invited_at':    user.date_joined.isoformat() if user.date_joined else '',
         'last_active_at': (profile.last_active_at or user.last_login).isoformat()
                           if (profile.last_active_at or user.last_login) else None,
@@ -1476,7 +1512,7 @@ class StaffDetailAPIView(APIView):
             'is_active': user.is_active,
             'permissions': dict(profile.permissions or {}),
             'phone': profile.phone,
-            'branch_ids': list(profile.branch_access.values_list('pk', flat=True)),
+            'branch_ids': _branch_ids_for_display(user),
         }
 
         mob_role = request.data.get('role')
@@ -1536,8 +1572,7 @@ class StaffDetailAPIView(APIView):
             except (TypeError, ValueError):
                 return Response({'error': 'branch_ids должен содержать числа'},
                                 status=status.HTTP_400_BAD_REQUEST)
-            existing = set(Branch.objects.filter(pk__in=ids).values_list('pk', flat=True))
-            profile.branch_access.set(existing)
+            _write_branch_access(user, profile, ids)
             m2m_changed = True
 
         if changed_user_fields:
@@ -1563,7 +1598,7 @@ class StaffDetailAPIView(APIView):
                         'is_active': user.is_active,
                         'permissions': profile.permissions,
                         'phone': profile.phone,
-                        'branch_ids': list(profile.branch_access.values_list('pk', flat=True)),
+                        'branch_ids': _branch_ids_for_display(user),
                     },
                 },
             )
@@ -1721,7 +1756,7 @@ class StaffInviteAPIView(APIView):
                 invitation_token=invitation_token,
             )
             if valid_branch_ids:
-                profile.branch_access.set(valid_branch_ids)
+                _write_branch_access(user, profile, valid_branch_ids)
 
         from apps.tenant.branch.audit import log_audit
         log_audit(
@@ -1825,7 +1860,7 @@ class StaffLinkExistingAPIView(APIView):
             # его ещё нет → создаём с дефолтами роли.
             profile = _get_or_create_staff_profile(user)
             if valid_branch_ids:
-                profile.branch_access.set(valid_branch_ids)
+                _write_branch_access(user, profile, valid_branch_ids)
             profile.save()
 
         from apps.tenant.branch.audit import log_audit
