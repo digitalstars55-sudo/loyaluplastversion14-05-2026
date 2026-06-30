@@ -103,11 +103,7 @@ def list_cities() -> list[dict]:
             ).exists()
             if not has_gift:
                 continue
-            branches = list(
-                Branch.objects.filter(is_active=True)
-                .order_by('name')
-                .values('branch_id', 'name', 'address', 'yandex_map', 'gis_map')
-            )
+            branches = _branches_payload()
         if not branches:
             continue
         result.append({
@@ -212,13 +208,24 @@ def _serialize_gift(company, city, branch, entry, settings, branches) -> dict:
     }
 
 
+def _branch_dict(b):
+    # address/телефон/карты живут на BranchConfig (relation 'config'), не на Branch.
+    cfg = getattr(b, 'config', None)
+    return {
+        'branch_id': b.branch_id,
+        'name': b.name,
+        'address': getattr(cfg, 'address', '') or '',
+        'yandex_map': getattr(cfg, 'yandex_map', '') or '',
+        'gis_map': getattr(cfg, 'gis_map', '') or '',
+    }
+
+
 def _branches_payload():
     from apps.tenant.branch.models import Branch
-    return list(
-        Branch.objects.filter(is_active=True)
-        .order_by('name')
-        .values('branch_id', 'name', 'address', 'yandex_map', 'gis_map')
-    )
+    return [
+        _branch_dict(b)
+        for b in Branch.objects.filter(is_active=True).select_related('config').order_by('name')
+    ]
 
 
 # ── Claim (choose city) ───────────────────────────────────────────────────────
