@@ -199,6 +199,7 @@ def _serialize_gift(company, city, branch, entry, settings, branches) -> dict:
         'city': city,
         'company_name': company.name,
         'client_id': company.client_id,
+        'home_branch_id': branch.branch_id,
         'gift_name': gift_name,
         'min_order_amount': settings['min_order_amount'],
         'duration_minutes': settings['activation_minutes'],
@@ -286,7 +287,8 @@ def status(vk_id: int) -> dict:
         )
         if not branch or not entry:
             return {'claimed': True, 'city': claim_obj.city, 'company_name': company.name,
-                    'client_id': company.client_id, 'status': 'unknown'}
+                    'client_id': company.client_id, 'home_branch_id': claim_obj.home_branch_id,
+                    'status': 'unknown'}
         settings = _resolve_story_settings(entry.client_branch)
         branches = _branches_payload()
         return _serialize_gift(company, claim_obj.city, branch, entry, settings, branches)
