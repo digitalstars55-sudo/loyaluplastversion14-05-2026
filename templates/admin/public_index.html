@@ -87,6 +87,7 @@
       </div>
       <div style="display:flex;gap:10px;align-items:center;">
         <a href="{% url 'public_admin:cross_overview' %}" class="inf-btn" style="background:#16a34a;">📊 Сводная статистика</a>
+        <a href="{% url 'public_admin:cross_discovery' %}" class="inf-btn" style="background:#0ea5e9;">🌐 Сетевой вход (VK)</a>
         <a href="{% url 'public_admin:cross_audit' %}" class="inf-btn" style="background:#7c3aed;">🧾 Журнал действий</a>
         {% if request.user.is_superuser %}<a href="{% url 'public_admin:clients_company_add' %}" class="inf-btn">+ Новый клиент</a>{% endif %}
       </div>

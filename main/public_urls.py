@@ -28,6 +28,9 @@ urlpatterns = [
     path('api/v1/orders/daily/', PublicDailyOrdersIngest.as_view(), name='public-daily-orders-ingest'),
     path('api/v1/internal/support/', include('apps.shared.relay.urls')),
 
+    # Сетевой вход из каталога VK (новичок без QR) — публичная схема.
+    path('api/v1/', include('apps.shared.discovery.api.urls')),
+
     # Мобильное API на public-схеме: auth (JWT) + lead-онбординг.
     path('api/v1/', include('apps.shared.users.api.urls')),
     path('api/v1/', include('apps.shared.leads.api.urls')),

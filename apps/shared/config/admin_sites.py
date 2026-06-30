@@ -98,6 +98,7 @@ class PublicAdminSite(AdminSite):
             path('overview/', self.admin_view(self._overview_view), name='cross_overview'),
             path('overview/reviews/', self.admin_view(self._overview_reviews_view), name='cross_overview_reviews'),
             path('audit/', self.admin_view(self._audit_view), name='cross_audit'),
+            path('discovery/', self.admin_view(self._discovery_view), name='cross_discovery'),
         ] + super().get_urls()
 
     def _audit_view(self, request):
@@ -171,6 +172,86 @@ class PublicAdminSite(AdminSite):
             'base_qs': base_qs,
         })
         return TemplateResponse(request, 'admin/audit/audit.html', ctx)
+
+    def _discovery_view(self, request):
+        """
+        /superadmin/discovery/ — воронка сетевого входа из каталога VK
+        (open → play → «Забрать» → выбрал город → активировал на кассе) +
+        разбивка по городам. Кросс-тенантно из публичной схемы (без обхода схем).
+        Только суперадмин (через self.admin_view → has_permission).
+        """
+        from django.db.models import Count
+        from django.template.response import TemplateResponse
+        from apps.shared.clients.cross_stats import (
+            parse_overview_period, OVERVIEW_PERIODS, overview_period_qs,
+        )
+        from apps.shared.discovery.models import (
+            DiscoveryEvent, DiscoveryStage, DiscoveryClaim,
+        )
+
+        start, end, active_period = parse_overview_period(request)
+
+        def _ev(stage):
+            return DiscoveryEvent.objects.filter(
+                stage=stage, created_at__date__gte=start, created_at__date__lte=end,
+            ).count()
+
+        opens   = _ev(DiscoveryStage.OPEN)
+        plays   = _ev(DiscoveryStage.PLAY)
+        claim_opens = _ev(DiscoveryStage.CLAIM_OPEN)
+        uniq_open = (
+            DiscoveryEvent.objects
+            .filter(stage=DiscoveryStage.OPEN, created_at__date__gte=start, created_at__date__lte=end)
+            .values('vk_id').distinct().count()
+        )
+        chosen = DiscoveryClaim.objects.filter(
+            created_at__date__gte=start, created_at__date__lte=end,
+        ).count()
+        redeemed = DiscoveryClaim.objects.filter(
+            redeemed_at__date__gte=start, redeemed_at__date__lte=end,
+        ).count()
+
+        def _pct(a, b):
+            return round(a * 100 / b) if b else 0
+
+        funnel = [
+            {'label': 'Заходов из каталога', 'value': opens, 'hint': f'{uniq_open} уник.', 'cls': 'c-blue', 'ic': 'ic-blue', 'emoji': '👀'},
+            {'label': 'Сыграли', 'value': plays, 'hint': f'{_pct(plays, opens)}% от заходов', 'cls': 'c-violet', 'ic': 'ic-violet', 'emoji': '🎰'},
+            {'label': 'Нажали «Забрать»', 'value': claim_opens, 'hint': f'{_pct(claim_opens, plays)}% от сыгравших', 'cls': 'c-amber', 'ic': 'ic-amber', 'emoji': '🎁'},
+            {'label': 'Выбрали город', 'value': chosen, 'hint': f'{_pct(chosen, claim_opens)}% от нажавших', 'cls': 'c-orange', 'ic': 'ic-orange', 'emoji': '📍'},
+            {'label': 'Активировали на кассе', 'value': redeemed, 'hint': f'{_pct(redeemed, chosen)}% дошли в офлайн', 'cls': 'c-green', 'ic': 'ic-green', 'emoji': '✅'},
+        ]
+
+        by_city = list(
+            DiscoveryClaim.objects
+            .filter(created_at__date__gte=start, created_at__date__lte=end)
+            .values('city').annotate(chosen=Count('id')).order_by('-chosen')
+        )
+        redeemed_map = dict(
+            DiscoveryClaim.objects
+            .filter(redeemed_at__date__gte=start, redeemed_at__date__lte=end)
+            .values_list('city').annotate(c=Count('id'))
+        )
+        cities = []
+        for row in by_city:
+            city = row['city'] or '—'
+            ch = row['chosen']
+            rd = redeemed_map.get(row['city'], 0)
+            cities.append({'city': city, 'chosen': ch, 'redeemed': rd, 'conv': _pct(rd, ch)})
+
+        ctx = self.each_context(request)
+        ctx.update({
+            'title': 'Сетевой вход (VK-каталог)',
+            'funnel': funnel,
+            'cities': cities,
+            'conv_online_offline': _pct(redeemed, chosen),
+            'period_choices': OVERVIEW_PERIODS,
+            'active_period': active_period,
+            'period_qs': overview_period_qs(active_period, start, end),
+            'start': start,
+            'end': end,
+        })
+        return TemplateResponse(request, 'admin/discovery/funnel.html', ctx)
 
     def _overview_view(self, request):
         """

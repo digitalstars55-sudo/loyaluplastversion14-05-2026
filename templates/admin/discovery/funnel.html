@@ -1,0 +1,108 @@
+{% extends "admin/base_site.html" %}
+
+{% block nav-sidebar %}{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  #content { padding: 0 !important; }
+  .ov-wrap { max-width: 1100px; margin: 0 auto; padding: 8px 18px 40px; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; }
+  .ov-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin: 6px 0 4px; }
+  .ov-title { font-size: 22px; font-weight: 800; color:#1f2937; display:flex; align-items:center; gap:10px; }
+  .ov-sub { color:#8a93a3; font-size:13px; margin: 0 0 18px; }
+  .ov-filter { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin: 0 0 22px; }
+  .ov-chip { padding:8px 16px; border-radius:10px; border:1px solid #e3e7ee; background:#fff; color:#465065; font-size:13px; font-weight:600; text-decoration:none; transition:.15s; }
+  .ov-chip:hover { border-color:#86efac; }
+  .ov-chip.active { background:#16a34a; border-color:#16a34a; color:#fff; }
+  .ov-filter form { display:flex; align-items:center; gap:8px; margin:0; }
+  .ov-filter input[type=date] { padding:7px 10px; border:1px solid #e3e7ee; border-radius:10px; font-size:13px; color:#465065; }
+  .ov-apply { padding:8px 18px; border-radius:10px; border:0; background:#16a34a; color:#fff; font-weight:700; font-size:13px; cursor:pointer; }
+  /* funnel steps */
+  .fn { display:flex; flex-direction:column; gap:10px; margin: 0 0 26px; }
+  .fn-step { background:#fff; border:1px solid #eef1f5; border-radius:16px; padding:16px 20px; box-shadow:0 1px 3px rgba(16,24,40,.04); display:flex; align-items:center; gap:16px; }
+  .fn-ic { width:42px;height:42px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto; }
+  .ic-blue{background:#e8f0ff} .ic-violet{background:#f3ebff} .ic-green{background:#e7f8ee} .ic-orange{background:#fdeede} .ic-amber{background:#fcf4dc}
+  .fn-body { flex:1 1 auto; min-width:0; }
+  .fn-lbl { color:#465065; font-size:14px; font-weight:600; }
+  .fn-hint { color:#9aa3b2; font-size:12px; margin-top:2px; }
+  .fn-val { font-size:30px; font-weight:800; letter-spacing:-.5px; font-variant-numeric: tabular-nums; }
+  .c-blue{color:#2563eb} .c-violet{color:#7c3aed} .c-green{color:#16a34a} .c-orange{color:#ea7a17} .c-amber{color:#d4a017}
+  .fn-bar { height:6px; border-radius:6px; background:#eef1f5; margin-top:8px; overflow:hidden; }
+  .fn-bar > span { display:block; height:100%; background:#16a34a; }
+  /* table */
+  .ov-panel { background:#fff; border:1px solid #eef1f5; border-radius:18px; padding:6px 4px 4px; box-shadow:0 1px 3px rgba(16,24,40,.04); }
+  .ov-panel h3 { font-size:15px; font-weight:800; color:#1f2937; margin:14px 18px 8px; }
+  table.ov-tbl { width:100%; border-collapse:collapse; }
+  .ov-tbl thead th { text-align:right; font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:#9aa3b2; font-weight:700; padding:10px 16px; border-bottom:1px solid #eef1f5; }
+  .ov-tbl thead th:first-child { text-align:left; }
+  .ov-tbl tbody td { text-align:right; padding:14px 16px; font-size:14px; color:#384150; border-bottom:1px solid #f3f5f8; font-variant-numeric: tabular-nums; }
+  .ov-tbl tbody td:first-child { text-align:left; font-weight:700; color:#1f2937; }
+  .ov-tbl tbody tr:last-child td { border-bottom:0; }
+  .ov-empty { padding:40px; text-align:center; color:#9aa3b2; }
+  .pill { padding:3px 9px; border-radius:8px; font-size:13px; font-weight:700; }
+  .pill-green { color:#16a34a; background:#e7f8ee; }
+  .pill-grey { color:#8a93a3; background:#f1f3f6; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ov-wrap">
+
+  <div class="ov-head">
+    <div class="ov-title">🌐 Сетевой вход из каталога VK</div>
+  </div>
+  <div class="ov-sub">Новички, зашедшие в мини-приложение из каталога VK без QR: воронка «онлайн → визит в кафе»</div>
+
+  <!-- Фильтр по дате -->
+  <div class="ov-filter">
+    {% for code, label in period_choices %}
+      <a class="ov-chip {% if active_period == code %}active{% endif %}" href="?period={{ code }}">{{ label }}</a>
+    {% endfor %}
+    <form method="get" style="margin-left:6px;">
+      <input type="date" name="start" value="{{ start|date:'Y-m-d' }}">
+      <span style="color:#9aa3b2;">—</span>
+      <input type="date" name="end" value="{{ end|date:'Y-m-d' }}">
+      <button type="submit" class="ov-apply">Применить</button>
+    </form>
+  </div>
+
+  <!-- Воронка -->
+  <div class="fn">
+    {% for step in funnel %}
+    <div class="fn-step">
+      <div class="fn-ic {{ step.ic }}">{{ step.emoji }}</div>
+      <div class="fn-body">
+        <div class="fn-lbl">{{ step.label }}</div>
+        {% if step.hint %}<div class="fn-hint">{{ step.hint }}</div>{% endif %}
+      </div>
+      <div class="fn-val {{ step.cls }}">{{ step.value }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- По городам -->
+  <div class="ov-panel">
+    <h3>По городам</h3>
+    {% if cities %}
+    <table class="ov-tbl">
+      <thead>
+        <tr><th>Город</th><th>Выбрали город</th><th>Активировали</th><th>Конверсия в визит</th></tr>
+      </thead>
+      <tbody>
+        {% for c in cities %}
+        <tr>
+          <td>{{ c.city }}</td>
+          <td>{{ c.chosen }}</td>
+          <td>{{ c.redeemed }}</td>
+          <td><span class="pill {% if c.conv %}pill-green{% else %}pill-grey{% endif %}">{{ c.conv }}%</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="ov-empty">За выбранный период никто не выбрал город.</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

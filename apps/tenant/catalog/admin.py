@@ -71,7 +71,7 @@ class ProductAdmin(admin.ModelAdmin):
         'price_badge', 'cost_badge', 'flags_badges', 'updated_at',
     )
     list_display_links = ('image_thumb', 'name')
-    list_filter = ('is_archived', 'branches', 'is_super_prize', 'is_birthday_prize', 'is_story_prize')
+    list_filter = ('is_archived', 'branches', 'is_super_prize', 'is_birthday_prize', 'is_story_prize', 'is_vk_catalog_welcome')
     search_fields = ('name', 'description')
     actions = [
         'mark_super_prize', 'unmark_super_prize',
@@ -97,12 +97,15 @@ class ProductAdmin(admin.ModelAdmin):
             ),
         }),
         ('Сценарии выдачи', {
-            'fields': ('is_super_prize', 'is_birthday_prize', 'is_story_prize'),
+            'fields': ('is_super_prize', 'is_birthday_prize', 'is_story_prize', 'is_vk_catalog_welcome'),
             'description': (
                 'Флаги не взаимоисключающие. '
                 'Товар без флагов доступен только для покупки за баллы. '
                 '«Подарок для игры через сториз» — отдельный набор для внешних '
-                'пользователей, не смешивается с супер-призами основной игры.'
+                'пользователей, не смешивается с супер-призами основной игры. '
+                '«Приветственный подарок новичка (VK-каталог)» — что получает '
+                'новичок, зашедший из каталога VK и выбравший этот город '
+                '(используется первый активный подарок с этим флагом).'
             ),
         }),
         ('Архив', {
@@ -173,6 +176,8 @@ class ProductAdmin(admin.ModelAdmin):
             badges.append(f'<span style="{_BDAY_STYLE}">🎂 День рождения</span>')
         if obj.is_story_prize:
             badges.append(f'<span style="{_STORY_STYLE}">📱 Сториз</span>')
+        if obj.is_vk_catalog_welcome:
+            badges.append(f'<span style="{_STORY_STYLE}">🎁 Новичок VK</span>')
         if badges:
             return mark_safe('&nbsp;'.join(badges))
         return mark_safe(

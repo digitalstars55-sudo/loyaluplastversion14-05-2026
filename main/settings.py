@@ -63,6 +63,7 @@ SHARED_APPS = [
     'apps.shared.users.apps.UsersConfig',
     'apps.shared.leads.apps.LeadsConfig',
     'apps.shared.audit.apps.AuditConfig',
+    'apps.shared.discovery.apps.DiscoveryConfig',
 
     # Django built-ins
     'django.contrib.admin',

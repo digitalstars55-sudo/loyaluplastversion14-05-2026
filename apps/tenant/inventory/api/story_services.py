@@ -478,8 +478,9 @@ def activate_story_gift(vk_id: int, branch_id: int, code: str | None = None) -> 
     activated_branch = None
     if settings['require_cafe_visit']:
         try:
-            if entry.source == 'website':
-                # Сетевой подарок: код дня любой точки сети → она и есть точка забора.
+            if entry.source in ('website', 'vk_catalog'):
+                # Сетевой подарок (сайт / каталог VK): код дня любой точки сети →
+                # она и есть точка забора.
                 activated_branch = _validate_game_code_network(code)
             else:
                 _validate_game_code(cb.branch, code)
