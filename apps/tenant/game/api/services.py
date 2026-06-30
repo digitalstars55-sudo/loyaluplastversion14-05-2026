@@ -170,8 +170,15 @@ def start_game(vk_id: int, branch_id: int, code: str | None = None, delivery: bo
     # бы крутить в кафе-режиме (delivery=false), где claim код НЕ гасит → фарм монет.
     # Начисление всё равно требует активный одноразовый код (claim → needs_delivery_code),
     # так что фарма по флагу нет. Кафе-сканы (delivery=false) остаются под кулдауном.
+    # Доставка обходит 18ч game-кулдаун ТОЛЬКО пока есть активный (непогашенный)
+    # одноразовый delivery-код. После первого приза код гасится (claim → expires_at=now),
+    # поэтому повторная крутка по тому же заказу попадает под кулдаун (как в кафе) — без
+    # тупика «колесо встало, а начисления нет» (Вариант А: 1 доставочный заказ = 1 игра).
+    # Анти-фарм сохранён: для кафе-сканов (delivery=false) поведение не меняется, а условие
+    # требует И флаг delivery, И активный код → крутить в кафе-режиме по коду нельзя.
     cooldown = _get_game_cooldown(client_branch)
-    if cooldown and cooldown.is_active and not delivery:
+    delivery_bypass = delivery and has_active_delivery
+    if cooldown and cooldown.is_active and not delivery_bypass:
         raise GameCooldownActive(cooldown)
 
     attempt_count = ClientAttempt.objects.filter(client=client_branch).count()
