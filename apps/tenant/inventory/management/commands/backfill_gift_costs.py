@@ -36,7 +36,7 @@ class Command(BaseCommand):
         commit = opts['commit']
         only_schema = opts['schema']
 
-        companies = Company.objects.all()
+        companies = Company.objects.exclude(schema_name='public')
         if only_schema:
             companies = companies.filter(schema_name=only_schema)
 
