@@ -31,31 +31,63 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--commit', action='store_true', help='Записать (иначе dry-run).')
         parser.add_argument('--schema', type=str, default=None, help='Только один тенант (schema_name).')
+        parser.add_argument(
+            '--refill-zeros', action='store_true',
+            help='Пересчитать УЖЕ существующие события с cost_rub=0 по текущей '
+                 'себестоимости товара (после того как владелец заполнил cost_price_rub). '
+                 'Обновляет только события, у которых товар теперь имеет ненулевую цену.',
+        )
 
     def handle(self, *args, **opts):
         commit = opts['commit']
         only_schema = opts['schema']
+        refill_zeros = opts['refill_zeros']
 
         companies = Company.objects.exclude(schema_name='public')
         if only_schema:
             companies = companies.filter(schema_name=only_schema)
 
-        grand_inv = grand_story = 0
+        grand_inv = grand_story = grand_refill = 0
         for company in companies:
             try:
                 inv_n, story_n = self._backfill_tenant(company, commit)
+                refill_n = self._refill_zeros_tenant(company, commit) if refill_zeros else 0
             except Exception as e:  # noqa: BLE001 — один битый тенант не должен ронять остальные
                 self.stderr.write(f'  {company.schema_name}: ОШИБКА {e!r}')
                 continue
-            if inv_n or story_n:
-                self.stdout.write(f'  {company.schema_name}: inventory +{inv_n}, story +{story_n}')
+            if inv_n or story_n or refill_n:
+                extra = f', refill-zeros ~{refill_n}' if refill_zeros else ''
+                self.stdout.write(f'  {company.schema_name}: inventory +{inv_n}, story +{story_n}{extra}')
             grand_inv += inv_n
             grand_story += story_n
+            grand_refill += refill_n
 
         mode = 'ЗАПИСАНО' if commit else 'DRY-RUN (ничего не записано)'
+        refill_msg = f', обновлено нулевых {grand_refill}' if refill_zeros else ''
         self.stdout.write(self.style.SUCCESS(
-            f'{mode}: всего inventory +{grand_inv}, story +{grand_story}'
+            f'{mode}: всего inventory +{grand_inv}, story +{grand_story}{refill_msg}'
         ))
+
+    def _refill_zeros_tenant(self, company, commit) -> int:
+        """
+        Обновляет существующие GiftCostEvent с cost_rub=0 → текущая cost_price_rub
+        товара (только где товар теперь имеет ненулевую себестоимость). Для
+        пересчёта истории после того, как владелец заполнил себестоимость.
+        """
+        from apps.tenant.inventory.models import GiftCostEvent
+        with tenant_context(company):
+            zeros = (
+                GiftCostEvent.objects
+                .filter(cost_rub=0, product__isnull=False, product__cost_price_rub__gt=0)
+                .select_related('product')
+            )
+            to_update = []
+            for e in zeros.iterator():
+                e.cost_rub = e.product.cost_price_rub
+                to_update.append(e)
+            if commit and to_update:
+                GiftCostEvent.objects.bulk_update(to_update, ['cost_rub'], batch_size=500)
+            return len(to_update)
 
     def _backfill_tenant(self, company, commit) -> tuple[int, int]:
         from apps.tenant.inventory.models import (
