@@ -99,7 +99,42 @@ class PublicAdminSite(AdminSite):
             path('overview/reviews/', self.admin_view(self._overview_reviews_view), name='cross_overview_reviews'),
             path('audit/', self.admin_view(self._audit_view), name='cross_audit'),
             path('discovery/', self.admin_view(self._discovery_view), name='cross_discovery'),
+            path('sync-gift-costs/', self.admin_view(self._sync_gift_costs_view), name='sync_gift_costs'),
         ] + super().get_urls()
+
+    def _sync_gift_costs_view(self, request):
+        """
+        POST /superadmin/sync-gift-costs/ — пересчёт затрат на подарки без кода:
+        бэкфилл недостающих событий + обновление нулевых по текущей себестоимости.
+        Кнопка «Синхронизировать» в блоке «Экономика клиента». Только суперадмин.
+        """
+        from io import StringIO
+        import re
+        from urllib.parse import urlencode
+        from django.core.management import call_command
+        from django.shortcuts import redirect
+        from django.urls import reverse
+
+        base = reverse('public_admin:cross_overview')
+        if request.method != 'POST':
+            return redirect(base)
+
+        period_qs = (request.POST.get('period_qs') or '').strip()
+        n = 0
+        ok = True
+        try:
+            buf = StringIO()
+            call_command('backfill_gift_costs', commit=True, refill_zeros=True, stdout=buf)
+            m = re.search(r'inventory \+(\d+), story \+(\d+), обновлено нулевых (\d+)', buf.getvalue())
+            if m:
+                n = int(m.group(1)) + int(m.group(2)) + int(m.group(3))
+        except Exception:
+            logger.exception('Public admin: sync gift costs failed')
+            ok = False
+
+        parts = [period_qs] if period_qs else []
+        parts.append(urlencode({'gift_synced': n if ok else -1}))
+        return redirect(f'{base}?' + '&'.join(parts))
 
     def _audit_view(self, request):
         """

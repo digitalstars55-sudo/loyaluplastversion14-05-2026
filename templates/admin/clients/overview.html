@@ -89,6 +89,12 @@
 {% block content %}
 <div class="ov-wrap">
 
+  {% if request.GET.gift_synced == '-1' %}
+    <div style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:12px;padding:12px 16px;margin:0 0 16px;font-size:14px;font-weight:600;">⚠️ Не удалось пересчитать затраты. Попробуйте ещё раз.</div>
+  {% elif request.GET.gift_synced %}
+    <div style="background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:12px;padding:12px 16px;margin:0 0 16px;font-size:14px;font-weight:600;">✅ Затраты на подарки пересчитаны{% if request.GET.gift_synced != '0' %} — обновлено записей: {{ request.GET.gift_synced }}{% else %} (всё уже актуально){% endif %}.</div>
+  {% endif %}
+
   <div class="ov-head">
     <div class="ov-title">📊 Сводная статистика</div>
   </div>
@@ -117,7 +123,17 @@
   </div>
 
   <!-- ───────────── Экономика клиента ───────────── -->
-  <div class="ov-sec-title">💰 Экономика клиента</div>
+  <div class="ov-sec-title" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <span>💰 Экономика клиента</span>
+    <form method="post" action="{% url 'public_admin:sync_gift_costs' %}" style="margin:0;"
+          onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Синхронизация…';">
+      {% csrf_token %}
+      <input type="hidden" name="period_qs" value="{{ period_qs }}">
+      <button type="submit"
+              style="padding:7px 16px;border-radius:10px;border:1px solid #a7f3d0;background:#ecfdf5;color:#047857;font-size:13px;font-weight:700;cursor:pointer;"
+              title="Пересчитать затраты на подарки: создать недостающие записи и обновить нулевые по текущей себестоимости товаров. Нажимайте после заполнения себестоимости.">🔄 Синхронизировать затраты</button>
+    </form>
+  </div>
   <div class="ov-cards">
     <div class="ov-card">
       <div class="lbl"><span class="ic ic-rose">🎁</span> Затраты на подарки
