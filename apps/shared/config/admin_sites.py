@@ -125,7 +125,7 @@ class PublicAdminSite(AdminSite):
         w = csv.writer(buf, delimiter=';')
         w.writerow(['Период', f'{start.isoformat()} — {end.isoformat()}'])
         w.writerow([])
-        w.writerow(['Клиент', 'Тариф, ₽/мес', 'Подарки, ₽', 'Обслуживание, ₽',
+        w.writerow(['Клиент', 'Подарки, ₽', 'Обслуживание (выручка), ₽',
                     'Общие, ₽', 'Подп. контакты', 'Цена контакта, ₽',
                     'Уник. оцифр.', 'Цена уникального, ₽', 'Товаров без себестоимости'])
 
@@ -135,7 +135,6 @@ class PublicAdminSite(AdminSite):
         for r in data.get('rows', []):
             w.writerow([
                 r.get('name', ''),
-                r.get('plan_price', 0),
                 round(r.get('gift_cost', 0)),
                 round(r.get('service_cost', 0)),
                 round(r.get('total_cost', 0)),
@@ -148,7 +147,7 @@ class PublicAdminSite(AdminSite):
         t = data.get('totals', {})
         w.writerow([])
         w.writerow([
-            'ИТОГО', t.get('mrr', 0), round(t.get('gift_cost', 0) or 0),
+            'ИТОГО', round(t.get('gift_cost', 0) or 0),
             round(t.get('service_cost', 0) or 0), round(t.get('total_cost', 0) or 0),
             t.get('sub_contacts', 0), _num(t.get('cost_per_contact')),
             t.get('unique_digitized', 0), _num(t.get('cost_per_unique')),

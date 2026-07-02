@@ -170,8 +170,7 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
         'gift_breakdown': [], 'gift_breakdown_title': 'За период нет активированных подарков',
         'sub_contacts': 0, 'unique_digitized': 0,
         'cost_per_contact': None, 'cost_per_unique': None,
-        # Дополнительно: тариф (для выручки/MRR), незаполненная себестоимость, классы подсветки
-        'plan_price': int(getattr(company, 'plan_price_rub', 0) or 0),
+        # Дополнительно: незаполненная себестоимость + классы подсветки выбросов
         'no_cost_products': 0, 'no_cost_title': '',
         'cpc_class': '', 'cpu_class': '',
     }
@@ -315,8 +314,7 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
         m['unit'] = round(m['total'] / m['qty'], 2) if m['qty'] else 0.0
     totals['gift_breakdown_title'] = _fmt_gift_breakdown(merged)
 
-    # Выручка платформы (MRR = сумма месячных тарифов) + суммарно незаполненная себес.
-    totals['mrr'] = sum(r.get('plan_price', 0) for r in rows)
+    # Суммарно незаполненная себестоимость (по всем клиентам).
     totals['no_cost_products'] = sum(r.get('no_cost_products', 0) for r in rows)
 
     # Подсветка выбросов: дорогой контакт/уник (красный) и дешёвый (зелёный)

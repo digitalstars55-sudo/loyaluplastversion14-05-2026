@@ -151,13 +151,7 @@
     </form>
     <a class="ov-exp" href="{% url 'public_admin:overview_export' %}?{{ period_qs }}">⬇️ Выгрузить в Excel</a>
   </div>
-  <div class="ov-cards ov-cards6">
-    <div class="ov-card">
-      <div class="lbl"><span class="ic ic-amber">🏦</span> Выручка платформы (в мес)
-        <span class="ov-q" title="Суммарный месячный тариф всех активных клиентов (MRR) — сколько платформа выставляет в месяц. Не зависит от выбранного периода.">?</span>
-      </div>
-      <div class="val c-amber ov-money">{{ totals.mrr|default:0|floatformat:0|intcomma }} ₽</div>
-    </div>
+  <div class="ov-cards">
     <div class="ov-card">
       <div class="lbl"><span class="ic ic-rose">🎁</span> Затраты на подарки
         <span class="ov-q" title="Сумма себестоимости всех подарков, которые гости активировали за выбранный период. Считается по себестоимости подарка на момент активации.">?</span>
@@ -215,7 +209,6 @@
                   <span class="ov-name-txt">{{ r.name }}</span>
                   {% if r.no_cost_products %}<span class="nc-badge gc">⚠️ {{ r.no_cost_products }} без себеса<span class="gc-box">{{ r.no_cost_title }}</span></span>{% endif %}
                 </div>
-                {% if r.plan_price %}<div class="ov-tariff">Тариф: {{ r.plan_price|intcomma }} ₽/мес</div>{% endif %}
               </div>
             </div>
           </td>
