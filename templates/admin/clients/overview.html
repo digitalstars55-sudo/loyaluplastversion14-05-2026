@@ -99,6 +99,11 @@
   .ov-tbl th.sortable:hover { color:#16a34a; }
   .ov-tbl th.sortable .arw { opacity:.45; font-size:9px; margin-left:3px; }
   .ov-exp { padding:7px 16px; border-radius:10px; border:1px solid #cfe0ff; background:#eef4ff; color:#1d4ed8; font-size:13px; font-weight:700; text-decoration:none; }
+  /* мгновенная подсказка «?» на карточках и заголовках */
+  .ov-q { position:relative; }
+  .ov-tip { display:none; position:absolute; z-index:70; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%); width:300px; max-width:78vw; background:#1f2937; color:#fff; font-size:12px; font-weight:500; line-height:1.5; padding:10px 12px; border-radius:10px; box-shadow:0 10px 30px rgba(16,24,40,.28); white-space:normal; text-align:left; pointer-events:none; }
+  .ov-q:hover .ov-tip { display:block; }
+  th .ov-q { color:#9aa3b2; }
 </style>
 {% endblock %}
 
@@ -131,11 +136,11 @@
 
   <!-- Тоталы по всем клиентам -->
   <div class="ov-cards">
-    <div class="ov-card"><div class="lbl"><span class="ic ic-blue">📲</span> Сканирования QR</div><div class="val c-blue">{{ totals.total_scans|default:0|intcomma }}</div></div>
-    <div class="ov-card"><div class="lbl"><span class="ic ic-violet">👥</span> Подписки в группу VK</div><div class="val c-violet">{{ totals.new_community|default:0|intcomma }}</div></div>
-    <div class="ov-card"><div class="lbl"><span class="ic ic-green">✉️</span> Подписки в рассылку</div><div class="val c-green">{{ totals.new_newsletter|default:0|intcomma }}</div></div>
-    <div class="ov-card"><div class="lbl"><span class="ic ic-orange">📸</span> Сделали stories</div><div class="val c-orange">{{ totals.stories|default:0|intcomma }}</div></div>
-    <div class="ov-card"><div class="lbl"><span class="ic ic-amber">⭐</span> Новые отзывы</div><div class="val c-amber">{{ totals.reviews|default:0|intcomma }}</div></div>
+    <div class="ov-card"><div class="lbl"><span class="ic ic-blue">📲</span> Сканирования QR <span class="ov-q">?<span class="ov-tip">Сколько раз гости отсканировали QR-код за период — суммарно по всем клиентам (кафе + доставка). Один гость считается не чаще раза в 6 часов. Это первый контакт гостя с системой.</span></span></div><div class="val c-blue">{{ totals.total_scans|default:0|intcomma }}</div></div>
+    <div class="ov-card"><div class="lbl"><span class="ic ic-violet">👥</span> Подписки в группу VK <span class="ov-q">?<span class="ov-tip">Сколько гостей за период подписались на сообщество VK через наше приложение. Считаются только новые подписки через приложение — тех, кто был подписан заранее, не учитываем.</span></span></div><div class="val c-violet">{{ totals.new_community|default:0|intcomma }}</div></div>
+    <div class="ov-card"><div class="lbl"><span class="ic ic-green">✉️</span> Подписки в рассылку <span class="ov-q">?<span class="ov-tip">Сколько гостей за период разрешили рассылку (личные сообщения) VK через приложение. Именно этим людям можно слать сообщения.</span></span></div><div class="val c-green">{{ totals.new_newsletter|default:0|intcomma }}</div></div>
+    <div class="ov-card"><div class="lbl"><span class="ic ic-orange">📸</span> Сделали stories <span class="ov-q">?<span class="ov-tip">Сколько гостей за период опубликовали историю (stories) о заведении в VK через приложение.</span></span></div><div class="val c-orange">{{ totals.stories|default:0|intcomma }}</div></div>
+    <div class="ov-card"><div class="lbl"><span class="ic ic-amber">⭐</span> Новые отзывы <span class="ov-q">?<span class="ov-tip">Сколько новых отзывов от гостей поступило за период (суммарно по всем клиентам).</span></span></div><div class="val c-amber">{{ totals.reviews|default:0|intcomma }}</div></div>
   </div>
 
   <!-- ───────────── Экономика клиента ───────────── -->
@@ -154,29 +159,31 @@
   <div class="ov-cards">
     <div class="ov-card">
       <div class="lbl"><span class="ic ic-rose">🎁</span> Затраты на подарки
-        <span class="ov-q" title="Сумма себестоимости всех подарков, которые гости активировали за выбранный период. Считается по себестоимости подарка на момент активации.">?</span>
+        <span class="ov-q">?<span class="ov-tip">Себестоимость всех подарков, которые гости получили (активировали) за период — суммарно по всем клиентам. Наведи на цифру подарков у клиента в таблице ниже — покажет, из каких товаров и в каком количестве складывается сумма.</span></span>
       </div>
       <div class="val c-rose ov-money gc">{{ totals.gift_cost|default:0|floatformat:0|intcomma }} ₽<span class="gc-box">{{ totals.gift_breakdown_title }}</span></div>
     </div>
     <div class="ov-card">
-      <div class="lbl"><span class="ic ic-slate">🧾</span> Стоимость обслуживания</div>
+      <div class="lbl"><span class="ic ic-slate">🧾</span> Стоимость обслуживания
+        <span class="ov-q">?<span class="ov-tip">Сумма тарифов всех клиентов за период — сколько платформа выставляет к оплате. По сути это ваша выручка от клиентов. Фиксированный месячный тариф (не дробится по дням в пределах месяца).</span></span>
+      </div>
       <div class="val c-slate ov-money">{{ totals.service_cost|default:0|floatformat:0|intcomma }} ₽</div>
     </div>
     <div class="ov-card">
       <div class="lbl"><span class="ic ic-teal">💼</span> Общие затраты
-        <span class="ov-q" title="Стоимость обслуживания клиента за период + затраты на активированные подарки за этот же период.">?</span>
+        <span class="ov-q">?<span class="ov-tip">Полные затраты клиента за период: стоимость обслуживания (его тариф) + себестоимость выданных гостям подарков. Во сколько клиенту обходится программа лояльности целиком.</span></span>
       </div>
       <div class="val c-teal ov-money">{{ totals.total_cost|default:0|floatformat:0|intcomma }} ₽</div>
     </div>
     <div class="ov-card">
       <div class="lbl"><span class="ic ic-violet">📨</span> Цена подписочного контакта
-        <span class="ov-q" title="Общие затраты клиента за период делятся на сумму подписок на VK и подписок на рассылку. Если один гость подписался на два канала, это два подписочных контакта.">?</span>
+        <span class="ov-q">?<span class="ov-tip">Общие затраты ÷ число подписочных контактов (подписки в группу + в рассылку). Если гость подписался на оба канала — это два контакта. Во сколько обходится один канал связи с гостем.</span></span>
       </div>
       <div class="val c-violet ov-money">{% if totals.cost_per_contact is None %}<span class="ov-nodata">Нет данных</span>{% else %}{{ totals.cost_per_contact|floatformat:2|intcomma }} ₽{% endif %}</div>
     </div>
     <div class="ov-card">
       <div class="lbl"><span class="ic ic-green">🧑‍💻</span> Цена уник. оцифрованного
-        <span class="ov-q" title="Общие затраты клиента за период делятся на количество уникальных гостей, которые подписались хотя бы на один канал. Один гость считается один раз.">?</span>
+        <span class="ov-q">?<span class="ov-tip">Общие затраты ÷ число уникальных гостей, подписавшихся хотя бы на один канал (каждый гость считается один раз, даже если подписался на оба). Реальная цена одного оцифрованного гостя.</span></span>
       </div>
       <div class="val c-green ov-money">{% if totals.cost_per_unique is None %}<span class="ov-nodata">Нет данных</span>{% else %}{{ totals.cost_per_unique|floatformat:2|intcomma }} ₽{% endif %}</div>
     </div>
@@ -189,13 +196,13 @@
       <thead>
         <tr>
           <th class="sortable" data-col="0" data-type="text">Клиент<span class="arw">↕</span></th>
-          <th class="sortable" data-col="1">Подарки, ₽<span class="arw">↕</span></th>
-          <th class="sortable" data-col="2">Обслуж., ₽<span class="arw">↕</span></th>
-          <th class="sortable" data-col="3">Общие, ₽<span class="arw">↕</span></th>
-          <th class="sortable" data-col="4">Подп. контакты<span class="arw">↕</span></th>
-          <th class="sortable" data-col="5">Цена контакта<span class="arw">↕</span></th>
-          <th class="sortable" data-col="6">Уник. оцифр.<span class="arw">↕</span></th>
-          <th class="sortable" data-col="7">Цена уникального<span class="arw">↕</span></th>
+          <th class="sortable" data-col="1">Подарки, ₽ <span class="ov-q">?<span class="ov-tip">Себестоимость выданных гостям подарков за период. Наведи на цифру в строке — расшифровка по товарам (что и сколько).</span></span><span class="arw">↕</span></th>
+          <th class="sortable" data-col="2">Обслуж., ₽ <span class="ov-q">?<span class="ov-tip">Тариф клиента за период (стоимость обслуживания). Для платформы это выручка с клиента.</span></span><span class="arw">↕</span></th>
+          <th class="sortable" data-col="3">Общие, ₽ <span class="ov-q">?<span class="ov-tip">Обслуживание (тариф) + себестоимость подарков за период.</span></span><span class="arw">↕</span></th>
+          <th class="sortable" data-col="4">Подп. контакты <span class="ov-q">?<span class="ov-tip">Подписки в группу VK + в рассылку за период. Гость на два канала = два контакта.</span></span><span class="arw">↕</span></th>
+          <th class="sortable" data-col="5">Цена контакта <span class="ov-q">?<span class="ov-tip">Общие затраты ÷ подписочные контакты. Красным — дорого, зелёным — дёшево относительно среднего.</span></span><span class="arw">↕</span></th>
+          <th class="sortable" data-col="6">Уник. оцифр. <span class="ov-q">?<span class="ov-tip">Уникальные гости, подписавшиеся хотя бы на один канал за период (без двойного счёта).</span></span><span class="arw">↕</span></th>
+          <th class="sortable" data-col="7">Цена уникального <span class="ov-q">?<span class="ov-tip">Общие затраты ÷ уникальные оцифрованные гости. Реальная цена одного оцифрованного гостя.</span></span><span class="arw">↕</span></th>
         </tr>
       </thead>
       <tbody>
