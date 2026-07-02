@@ -1452,6 +1452,55 @@ def _write_branch_access(user, profile, ids) -> None:
     profile.branch_access.set(existing)  # зеркало в fallback-источник
 
 
+# Разделы (feature_access), редактируемые владельцем/управляющим у сотрудника.
+# 'home' всегда доступен (иначе сломается навигация); платформенные разделы
+# (сводная по клиентам, журнал) редактируются только на уровне суперадмина.
+_ALWAYS_FEATURES = {'home'}
+_PLATFORM_ONLY_FEATURES = {'cross_overview', 'audit_log'}
+
+
+def _editable_feature_keys() -> list[str]:
+    from apps.shared.users.models import FEATURE_CHOICES
+    return [k for k, _ in FEATURE_CHOICES
+            if k not in _ALWAYS_FEATURES and k not in _PLATFORM_ONLY_FEATURES]
+
+
+def _feature_choices_for_ui() -> list[dict]:
+    from apps.shared.users.models import FEATURE_CHOICES
+    return [{'key': k, 'label': lbl} for k, lbl in FEATURE_CHOICES
+            if k not in _ALWAYS_FEATURES and k not in _PLATFORM_ONLY_FEATURES]
+
+
+def _feature_keys_for_display(user) -> list[str]:
+    """
+    Разделы сотрудника для отображения/паритета — из ПРИОРИТЕТНОГО источника
+    User.feature_access (его же читает enforcement user_allowed_features и веб-админка).
+    Нет ограничений (feature_access пуст) → все редактируемые разделы (все тумблеры ON).
+    """
+    from apps.shared.users.access import user_allowed_features
+    editable = _editable_feature_keys()
+    allowed = user_allowed_features(user)  # None = без ограничений (все разделы)
+    if allowed is None:
+        return list(editable)
+    return [k for k in editable if k in allowed]
+
+
+def _write_feature_access(user, keys) -> None:
+    """
+    Двусторонний паритет с вебом по разделам: пишем в User.feature_access —
+    единый источник, который читает и веб-админка, и enforcement, и мобилка.
+    Выбраны ВСЕ разделы → [] (без ограничений, включая будущие). Иначе — список
+    выбранных + всегда 'home' (чтобы навигация не ломалась).
+    """
+    editable = set(_editable_feature_keys())
+    chosen = {str(k) for k in keys} & editable
+    if chosen >= editable:
+        user.feature_access = []  # все разделы (в т.ч. будущие)
+    else:
+        user.feature_access = sorted(chosen | _ALWAYS_FEATURES)
+    user.save(update_fields=['feature_access'])
+
+
 def _serialize_staff(user) -> dict:
     profile = _get_or_create_staff_profile(user)
     mob_role = _BACKEND_ROLE_TO_MOBILE.get(user.role, 'viewer')
@@ -1464,6 +1513,7 @@ def _serialize_staff(user) -> dict:
         'phone':         profile.phone or '',
         'active':        bool(user.is_active),
         'permissions':   _merge_permissions(profile.permissions, mob_role),
+        'feature_access': _feature_keys_for_display(user),
         'branch_ids':    _branch_ids_for_display(user),
         'invited_at':    user.date_joined.isoformat() if user.date_joined else '',
         'last_active_at': (profile.last_active_at or user.last_login).isoformat()
@@ -1500,6 +1550,7 @@ class StaffListAPIView(APIView):
             'staff': [_serialize_staff(u) for u in qs],
             'actor_role': _actor_mobile_role(request.user),
             'manageable_roles': manageable,
+            'feature_choices': _feature_choices_for_ui(),
         })
 
 
@@ -1550,6 +1601,7 @@ class StaffDetailAPIView(APIView):
             'role': user.role,
             'is_active': user.is_active,
             'permissions': dict(profile.permissions or {}),
+            'feature_access': _feature_keys_for_display(user),
             'phone': profile.phone,
             'branch_ids': _branch_ids_for_display(user),
         }
@@ -1614,14 +1666,25 @@ class StaffDetailAPIView(APIView):
             _write_branch_access(user, profile, ids)
             m2m_changed = True
 
+        # Разделы (feature_access) — единый источник правды, паритет с веб-админкой.
+        feature_access = request.data.get('feature_access')
+        fa_changed = False
+        if feature_access is not None:
+            if not isinstance(feature_access, list):
+                return Response({'error': 'feature_access должен быть списком'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            _write_feature_access(user, feature_access)  # сам сохраняет user.feature_access
+            fa_changed = True
+
         if changed_user_fields:
             user.save(update_fields=changed_user_fields)
         if changed_profile_fields:
             profile.save(update_fields=changed_profile_fields + ['updated_at'])
 
-        if changed_user_fields or changed_profile_fields or m2m_changed:
+        if changed_user_fields or changed_profile_fields or m2m_changed or fa_changed:
             from apps.tenant.branch.audit import log_audit
-            if 'role' in changed_user_fields or 'permissions' in changed_profile_fields or m2m_changed:
+            if ('role' in changed_user_fields or 'permissions' in changed_profile_fields
+                    or m2m_changed or fa_changed):
                 action = 'STAFF_PERMS'
             else:
                 action = 'STAFF_TOGGLE'
@@ -1636,6 +1699,7 @@ class StaffDetailAPIView(APIView):
                         'role': user.role,
                         'is_active': user.is_active,
                         'permissions': profile.permissions,
+                        'feature_access': _feature_keys_for_display(user),
                         'phone': profile.phone,
                         'branch_ids': _branch_ids_for_display(user),
                     },
@@ -1796,6 +1860,9 @@ class StaffInviteAPIView(APIView):
             )
             if valid_branch_ids:
                 _write_branch_access(user, profile, valid_branch_ids)
+            fa = request.data.get('feature_access')
+            if isinstance(fa, list):
+                _write_feature_access(user, fa)
 
         from apps.tenant.branch.audit import log_audit
         log_audit(
@@ -1900,6 +1967,9 @@ class StaffLinkExistingAPIView(APIView):
             profile = _get_or_create_staff_profile(user)
             if valid_branch_ids:
                 _write_branch_access(user, profile, valid_branch_ids)
+            fa = request.data.get('feature_access')
+            if isinstance(fa, list):
+                _write_feature_access(user, fa)
             profile.save()
 
         from apps.tenant.branch.audit import log_audit
