@@ -135,6 +135,33 @@ def filter_branches_qs(qs, user, schema_name: str):
     return qs.filter(pk__in=allowed)
 
 
+def effective_branch_ids(user, schema_name: str, requested):
+    """
+    Эффективный список branch_id (PK) для аналитики/сервисов с учётом доступа.
+
+    `requested` — список PK из запроса (?branch_ids), может быть None/пустым.
+
+    Возвращает список PK для передачи в сервисы статистики:
+      - нет ограничений (allowed=None): вернуть requested как есть (None/[] = все точки);
+      - ограничен набором точек: пересечение requested с allowed; если запрошены
+        только чужие точки (пересечение пусто) ИЛИ доступа нет вовсе — вернуть [-1]
+        (несуществующая точка → сервисы вернут нули, а не «все»).
+
+    Так исключён обход: сотрудник без параметра или с чужими branch_ids НЕ получает
+    данные по всей сети.
+    """
+    allowed = user_allowed_branches(user, schema_name)
+    if allowed is None:
+        return list(requested) if requested else requested
+    if not allowed:
+        return [-1]
+    if requested:
+        eff = [int(b) for b in requested if int(b) in allowed]
+    else:
+        eff = sorted(allowed)
+    return eff or [-1]
+
+
 def current_schema_name() -> str:
     """
     Текущая schema из django_tenants connection. Если public — пустая строка.

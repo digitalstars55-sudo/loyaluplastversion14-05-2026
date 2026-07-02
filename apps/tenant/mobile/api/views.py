@@ -302,12 +302,18 @@ class GuestBirthdaysAPIView(APIView):
         today = date.today()
         this_year = today.year
 
+        from apps.shared.users.access import user_allowed_branches, current_schema_name
+        allowed = user_allowed_branches(request.user, current_schema_name())
+
         cbs = (
             ClientBranch.objects
             .filter(birth_date__isnull=False, is_employee=False)
             .select_related('client', 'branch')
             .order_by('client_id', '-created_at')
         )
+        # Разграничение по точкам: ДР только гостей доступных точек.
+        if allowed is not None:
+            cbs = cbs.filter(branch_id__in=allowed)
 
         # Соберём один CB на client_id (самый свежий — он первый в order_by).
         chosen: dict[int, ClientBranch] = {}
@@ -427,10 +433,14 @@ class GuestListAPIView(APIView):
         except (TypeError, ValueError):
             limit, offset = 10000, 0
 
-        # Все гости тенанта (с ClientBranch), сортировка по алфавиту — как в Django-админе
-        all_client_ids = list(
-            ClientBranch.objects.values_list('client_id', flat=True).distinct()
-        )
+        # Все гости тенанта (с ClientBranch), сортировка по алфавиту — как в Django-админе.
+        # Разграничение по точкам: сотрудник видит только гостей своих точек.
+        from apps.shared.users.access import user_allowed_branches, current_schema_name
+        allowed = user_allowed_branches(request.user, current_schema_name())
+        cb_qs = ClientBranch.objects.all()
+        if allowed is not None:
+            cb_qs = cb_qs.filter(branch_id__in=allowed)
+        all_client_ids = list(cb_qs.values_list('client_id', flat=True).distinct())
         qs = Client.objects.filter(pk__in=all_client_ids)
         if search:
             qs = qs.filter(
@@ -544,6 +554,13 @@ class GuestDetailAPIView(APIView):
             ClientBranch.objects.select_related('branch').filter(client=client)
         )
         if not cbs:
+            return Response({'detail': 'Гость не найден в этой сети'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Разграничение по точкам: гость виден, только если состоит хотя бы в одной
+        # доступной сотруднику точке.
+        from apps.shared.users.access import user_allowed_branches, current_schema_name
+        allowed = user_allowed_branches(request.user, current_schema_name())
+        if allowed is not None and not ({cb.branch_id for cb in cbs} & allowed):
             return Response({'detail': 'Гость не найден в этой сети'}, status=status.HTTP_404_NOT_FOUND)
 
         cb_ids = [cb.pk for cb in cbs]
@@ -718,6 +735,14 @@ class AdjustGuestCoinsAPIView(APIView):
         )
         if not cbs:
             return Response({'detail': 'Гость не найден в этой сети'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Разграничение по точкам: корректировать баланс можно только гостю
+        # доступной сотруднику точки.
+        from apps.shared.users.access import user_allowed_branches, current_schema_name
+        allowed = user_allowed_branches(request.user, current_schema_name())
+        if allowed is not None and not ({cb.branch_id for cb in cbs} & allowed):
+            return Response({'detail': 'Нет доступа к этому гостю'}, status=status.HTTP_403_FORBIDDEN)
+
         cb_ids = [cb.pk for cb in cbs]
 
         with transaction.atomic():
@@ -799,6 +824,7 @@ class DailyCodesListAPIView(APIView):
         from datetime import timedelta
         from django.utils import timezone
         from apps.tenant.branch.models import DailyCode
+        from apps.shared.users.access import user_allowed_branches, current_schema_name
 
         # Самовосстановление: если коды на сегодня не сгенерированы (например,
         # celery-beat пропустил тик 03:00 из-за read-only Redis) — создаём их
@@ -816,6 +842,11 @@ class DailyCodesListAPIView(APIView):
             .select_related('branch')
             .order_by('-valid_date', 'branch__name', 'purpose')
         )
+        # Разграничение по точкам: сотрудник видит коды дня ТОЛЬКО своих точек
+        # (None — без ограничений; set() — нет доступа ни к одной точке).
+        allowed = user_allowed_branches(request.user, current_schema_name())
+        if allowed is not None:
+            qs = qs.filter(branch_id__in=allowed)
         return Response({'codes': [_serialize_daily_code(dc) for dc in qs]})
 
 
@@ -859,6 +890,12 @@ class GenerateDailyCodeAPIView(APIView):
                 {'error': 'Точка не найдена'},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        # Разграничение по точкам: нельзя генерировать код чужой точки.
+        from apps.shared.users.access import user_allowed_branches, current_schema_name
+        allowed = user_allowed_branches(request.user, current_schema_name())
+        if allowed is not None and branch.pk not in allowed:
+            return Response({'error': 'Нет доступа к этой точке'}, status=status.HTTP_403_FORBIDDEN)
 
         today = current_code_date()
         new_code = f'{random.randint(0, 99999):05d}'
@@ -982,6 +1019,8 @@ class RegenerateReviewDraftAPIView(APIView):
 
     def post(self, request, review_id: int):
         conv = get_object_or_404(TestimonialConversation, pk=review_id)
+        if not _check_conv_access(request, conv):
+            return Response({'detail': 'Нет доступа к этому отзыву'}, status=status.HTTP_403_FORBIDDEN)
         text, code = _call_claude_for_draft(conv)
         if code != 200:
             return Response({'error': text}, status=code)

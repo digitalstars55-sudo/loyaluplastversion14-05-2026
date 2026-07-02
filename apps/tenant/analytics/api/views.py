@@ -12,6 +12,7 @@ from drf_spectacular.types import OpenApiTypes
 
 from .serializers import StatsQuerySerializer, RFQuerySerializer
 from . import services
+from apps.shared.users.access import effective_branch_ids, current_schema_name
 
 
 class GeneralStatsAPIView(APIView):
@@ -31,7 +32,7 @@ class GeneralStatsAPIView(APIView):
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        branch_ids = ser.validated_data['branch_ids'] or None
+        branch_ids = effective_branch_ids(request.user, current_schema_name(), ser.validated_data.get('branch_ids'))
         start_date = ser.validated_data['start']
         end_date   = ser.validated_data['end']
 
@@ -63,7 +64,7 @@ class ContactPointsAPIView(APIView):
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        branch_ids = ser.validated_data['branch_ids'] or None
+        branch_ids = effective_branch_ids(request.user, current_schema_name(), ser.validated_data.get('branch_ids'))
         start_date = ser.validated_data['start']
         end_date   = ser.validated_data['end']
 
@@ -106,7 +107,7 @@ class RFStatsAPIView(APIView):
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        branch_ids = ser.validated_data['branch_ids'] or None
+        branch_ids = effective_branch_ids(request.user, current_schema_name(), ser.validated_data.get('branch_ids'))
         mode       = ser.validated_data['mode']
         trend_days = ser.validated_data['trend_days']
         r_score    = ser.validated_data.get('r_score')
@@ -176,7 +177,7 @@ class RFMigrationsListAPIView(APIView):
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        branch_ids = ser.validated_data['branch_ids'] or None
+        branch_ids = effective_branch_ids(request.user, current_schema_name(), ser.validated_data.get('branch_ids'))
         mode       = ser.validated_data['mode']
         trend_days = ser.validated_data['trend_days']
 
@@ -215,7 +216,7 @@ class LoyaltyReportAPIView(APIView):
         ser = StatsQuerySerializer(data=request.query_params)
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
-        branch_ids = ser.validated_data['branch_ids'] or None
+        branch_ids = effective_branch_ids(request.user, current_schema_name(), ser.validated_data.get('branch_ids'))
         start_date = ser.validated_data['start']
         end_date   = ser.validated_data['end']
 
@@ -314,7 +315,7 @@ class RecalculateRFView(APIView):
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        branch_ids = ser.validated_data['branch_ids'] or None
+        branch_ids = effective_branch_ids(request.user, current_schema_name(), ser.validated_data.get('branch_ids'))
         mode       = ser.validated_data['mode']
 
         result = services.recalculate_rf_scores(branch_ids=branch_ids, mode=mode)
@@ -919,7 +920,7 @@ class SlowStatsAPIView(APIView):
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        branch_ids = ser.validated_data['branch_ids'] or None
+        branch_ids = effective_branch_ids(request.user, current_schema_name(), ser.validated_data.get('branch_ids'))
         start_date = ser.validated_data['start']
         end_date   = ser.validated_data['end']
 
