@@ -88,6 +88,17 @@
   .gc-box { display:none; position:absolute; z-index:60; top:calc(100% + 6px); left:0; width:340px; max-width:70vw; background:#1f2937; color:#fff; font-size:12px; font-weight:500; padding:11px 13px; border-radius:10px; line-height:1.55; white-space:pre-line; text-align:left; box-shadow:0 10px 30px rgba(16,24,40,.28); pointer-events:none; }
   .gc:hover .gc-box { display:block; }
   .ov-tbl tbody td.gc:hover { overflow:visible; }
+  /* улучшения сводки */
+  .ov-cards6 { grid-template-columns: repeat(6, 1fr); }
+  @media (max-width:1100px){ .ov-cards6 { grid-template-columns: repeat(2, 1fr); } }
+  .ov-tbl td.cost-hi { color:#dc2626; font-weight:800; }
+  .ov-tbl td.cost-lo { color:#16a34a; font-weight:700; }
+  .nc-badge { position:relative; display:inline-flex; align-items:center; gap:3px; margin-left:8px; padding:2px 8px; border-radius:999px; background:#fef3c7; color:#b45309; font-size:11px; font-weight:800; cursor:help; }
+  .ov-tariff { font-size:11.5px; color:#9aa3b2; font-weight:600; margin-top:2px; }
+  .ov-tbl th.sortable { cursor:pointer; user-select:none; white-space:nowrap; }
+  .ov-tbl th.sortable:hover { color:#16a34a; }
+  .ov-tbl th.sortable .arw { opacity:.45; font-size:9px; margin-left:3px; }
+  .ov-exp { padding:7px 16px; border-radius:10px; border:1px solid #cfe0ff; background:#eef4ff; color:#1d4ed8; font-size:13px; font-weight:700; text-decoration:none; }
 </style>
 {% endblock %}
 
@@ -138,8 +149,15 @@
               style="padding:7px 16px;border-radius:10px;border:1px solid #a7f3d0;background:#ecfdf5;color:#047857;font-size:13px;font-weight:700;cursor:pointer;"
               title="Пересчитать затраты на подарки: создать недостающие записи и обновить нулевые по текущей себестоимости товаров. Нажимайте после заполнения себестоимости.">🔄 Синхронизировать затраты</button>
     </form>
+    <a class="ov-exp" href="{% url 'public_admin:overview_export' %}?{{ period_qs }}">⬇️ Выгрузить в Excel</a>
   </div>
-  <div class="ov-cards">
+  <div class="ov-cards ov-cards6">
+    <div class="ov-card">
+      <div class="lbl"><span class="ic ic-amber">🏦</span> Выручка платформы (в мес)
+        <span class="ov-q" title="Суммарный месячный тариф всех активных клиентов (MRR) — сколько платформа выставляет в месяц. Не зависит от выбранного периода.">?</span>
+      </div>
+      <div class="val c-amber ov-money">{{ totals.mrr|default:0|floatformat:0|intcomma }} ₽</div>
+    </div>
     <div class="ov-card">
       <div class="lbl"><span class="ic ic-rose">🎁</span> Затраты на подарки
         <span class="ov-q" title="Сумма себестоимости всех подарков, которые гости активировали за выбранный период. Считается по себестоимости подарка на момент активации.">?</span>
@@ -176,32 +194,38 @@
     <table class="ov-tbl">
       <thead>
         <tr>
-          <th>Клиент</th>
-          <th>Подарки, ₽</th>
-          <th>Обслуж., ₽</th>
-          <th>Общие, ₽</th>
-          <th>Подп. контакты</th>
-          <th>Цена контакта</th>
-          <th>Уник. оцифр.</th>
-          <th>Цена уникального</th>
+          <th class="sortable" data-col="0" data-type="text">Клиент<span class="arw">↕</span></th>
+          <th class="sortable" data-col="1">Подарки, ₽<span class="arw">↕</span></th>
+          <th class="sortable" data-col="2">Обслуж., ₽<span class="arw">↕</span></th>
+          <th class="sortable" data-col="3">Общие, ₽<span class="arw">↕</span></th>
+          <th class="sortable" data-col="4">Подп. контакты<span class="arw">↕</span></th>
+          <th class="sortable" data-col="5">Цена контакта<span class="arw">↕</span></th>
+          <th class="sortable" data-col="6">Уник. оцифр.<span class="arw">↕</span></th>
+          <th class="sortable" data-col="7">Цена уникального<span class="arw">↕</span></th>
         </tr>
       </thead>
       <tbody>
         {% for r in rows %}
         <tr>
-          <td>
+          <td data-v="{{ r.name }}">
             <div class="ov-client-cell">
               {% if r.logo %}<img class="ov-avatar-img" src="{{ r.logo }}" alt="">{% else %}<span class="ov-avatar">{{ r.name|slice:":1"|upper }}</span>{% endif %}
-              <span class="ov-name-txt">{{ r.name }}</span>
+              <div style="min-width:0;">
+                <div style="display:flex;align-items:center;flex-wrap:wrap;">
+                  <span class="ov-name-txt">{{ r.name }}</span>
+                  {% if r.no_cost_products %}<span class="nc-badge gc">⚠️ {{ r.no_cost_products }} без себеса<span class="gc-box">{{ r.no_cost_title }}</span></span>{% endif %}
+                </div>
+                {% if r.plan_price %}<div class="ov-tariff">Тариф: {{ r.plan_price|intcomma }} ₽/мес</div>{% endif %}
+              </div>
             </div>
           </td>
-          <td class="ov-money gc">{{ r.gift_cost|default:0|floatformat:0|intcomma }}<span class="gc-box">{{ r.gift_breakdown_title }}</span></td>
-          <td class="ov-money">{{ r.service_cost|default:0|floatformat:0|intcomma }}</td>
-          <td class="ov-money">{{ r.total_cost|default:0|floatformat:0|intcomma }}</td>
-          <td class="ov-money">{{ r.sub_contacts|intcomma }}</td>
-          <td class="ov-money">{% if r.cost_per_contact is None %}<span class="ov-nodata">—</span>{% else %}{{ r.cost_per_contact|floatformat:2|intcomma }} ₽{% endif %}</td>
-          <td class="ov-money">{{ r.unique_digitized|intcomma }}</td>
-          <td class="ov-money">{% if r.cost_per_unique is None %}<span class="ov-nodata">—</span>{% else %}{{ r.cost_per_unique|floatformat:2|intcomma }} ₽{% endif %}</td>
+          <td class="ov-money gc" data-v="{{ r.gift_cost|default:0 }}">{{ r.gift_cost|default:0|floatformat:0|intcomma }}<span class="gc-box">{{ r.gift_breakdown_title }}</span></td>
+          <td class="ov-money" data-v="{{ r.service_cost|default:0 }}">{{ r.service_cost|default:0|floatformat:0|intcomma }}</td>
+          <td class="ov-money" data-v="{{ r.total_cost|default:0 }}">{{ r.total_cost|default:0|floatformat:0|intcomma }}</td>
+          <td class="ov-money" data-v="{{ r.sub_contacts|default:0 }}">{{ r.sub_contacts|intcomma }}</td>
+          <td class="ov-money {% if r.cpc_class == 'hi' %}cost-hi{% elif r.cpc_class == 'lo' %}cost-lo{% endif %}" data-v="{% if r.cost_per_contact is None %}-1{% else %}{{ r.cost_per_contact }}{% endif %}">{% if r.cost_per_contact is None %}<span class="ov-nodata">—</span>{% else %}{{ r.cost_per_contact|floatformat:2|intcomma }} ₽{% endif %}</td>
+          <td class="ov-money" data-v="{{ r.unique_digitized|default:0 }}">{{ r.unique_digitized|intcomma }}</td>
+          <td class="ov-money {% if r.cpu_class == 'hi' %}cost-hi{% elif r.cpu_class == 'lo' %}cost-lo{% endif %}" data-v="{% if r.cost_per_unique is None %}-1{% else %}{{ r.cost_per_unique }}{% endif %}">{% if r.cost_per_unique is None %}<span class="ov-nodata">—</span>{% else %}{{ r.cost_per_unique|floatformat:2|intcomma }} ₽{% endif %}</td>
         </tr>
         {% empty %}
         <tr><td colspan="8" class="ov-empty">Нет активных клиентов за период.</td></tr>
@@ -303,7 +327,31 @@
 
   </div>
 
-  <div class="ov-foot-note">Показатели рассчитаны за выбранный период · сканирования = кафе + доставка · индекс = уник. гости со сканом / гостей в POS · клик по клиенту → его дашборд.</div>
+  <div class="ov-foot-note">Показатели рассчитаны за выбранный период · сканирования = кафе + доставка · индекс = уник. гости со сканом / гостей в POS.</div>
 
 </div>
+
+<script>
+(function(){
+  var tbl = document.querySelector('.ov-econ .ov-tbl'); if(!tbl) return;
+  var tb = tbl.querySelector('tbody'); if(!tb) return;
+  var ths = tbl.querySelectorAll('th.sortable'); var dir = {};
+  ths.forEach(function(th){
+    th.addEventListener('click', function(){
+      var col = +th.dataset.col, type = th.dataset.type || 'num';
+      var asc = dir[col] = !dir[col];
+      var rows = Array.prototype.slice.call(tb.querySelectorAll('tr')).filter(function(r){ return r.children.length > 1; });
+      rows.sort(function(a,b){
+        var av = a.children[col] ? (a.children[col].getAttribute('data-v')||'') : '';
+        var bv = b.children[col] ? (b.children[col].getAttribute('data-v')||'') : '';
+        if(type==='text'){ return asc ? (''+av).localeCompare(''+bv,'ru') : (''+bv).localeCompare(''+av,'ru'); }
+        return asc ? (parseFloat(av)||0)-(parseFloat(bv)||0) : (parseFloat(bv)||0)-(parseFloat(av)||0);
+      });
+      rows.forEach(function(r){ tb.appendChild(r); });
+      ths.forEach(function(x){ var a=x.querySelector('.arw'); if(a) a.textContent='↕'; });
+      var arw = th.querySelector('.arw'); if(arw) arw.textContent = asc ? '↑' : '↓';
+    });
+  });
+})();
+</script>
 {% endblock %}

@@ -100,7 +100,66 @@ class PublicAdminSite(AdminSite):
             path('audit/', self.admin_view(self._audit_view), name='cross_audit'),
             path('discovery/', self.admin_view(self._discovery_view), name='cross_discovery'),
             path('sync-gift-costs/', self.admin_view(self._sync_gift_costs_view), name='sync_gift_costs'),
+            path('overview/export/', self.admin_view(self._overview_export_view), name='overview_export'),
         ] + super().get_urls()
+
+    def _overview_export_view(self, request):
+        """
+        GET /superadmin/overview/export/?period=... — выгрузка «Экономики по клиентам»
+        за период в CSV (открывается в Excel). Только суперадмин.
+        """
+        import csv
+        from io import StringIO
+        from django.http import HttpResponse
+        from apps.shared.clients.cross_stats import get_cross_tenant_overview, parse_overview_period
+
+        start, end, _ = parse_overview_period(request)
+        try:
+            data = get_cross_tenant_overview(start, end)
+        except Exception:
+            logger.exception('Public admin: overview export failed')
+            data = {'rows': [], 'totals': {}}
+
+        buf = StringIO()
+        buf.write('﻿')  # BOM — чтобы Excel распознал UTF-8
+        w = csv.writer(buf, delimiter=';')
+        w.writerow(['Период', f'{start.isoformat()} — {end.isoformat()}'])
+        w.writerow([])
+        w.writerow(['Клиент', 'Тариф, ₽/мес', 'Подарки, ₽', 'Обслуживание, ₽',
+                    'Общие, ₽', 'Подп. контакты', 'Цена контакта, ₽',
+                    'Уник. оцифр.', 'Цена уникального, ₽', 'Товаров без себестоимости'])
+
+        def _num(v):
+            return '' if v is None else v
+
+        for r in data.get('rows', []):
+            w.writerow([
+                r.get('name', ''),
+                r.get('plan_price', 0),
+                round(r.get('gift_cost', 0)),
+                round(r.get('service_cost', 0)),
+                round(r.get('total_cost', 0)),
+                r.get('sub_contacts', 0),
+                _num(r.get('cost_per_contact')),
+                r.get('unique_digitized', 0),
+                _num(r.get('cost_per_unique')),
+                r.get('no_cost_products', 0),
+            ])
+        t = data.get('totals', {})
+        w.writerow([])
+        w.writerow([
+            'ИТОГО', t.get('mrr', 0), round(t.get('gift_cost', 0) or 0),
+            round(t.get('service_cost', 0) or 0), round(t.get('total_cost', 0) or 0),
+            t.get('sub_contacts', 0), _num(t.get('cost_per_contact')),
+            t.get('unique_digitized', 0), _num(t.get('cost_per_unique')),
+            t.get('no_cost_products', 0),
+        ])
+
+        resp = HttpResponse(buf.getvalue(), content_type='text/csv; charset=utf-8')
+        resp['Content-Disposition'] = (
+            f'attachment; filename="loyalup_economics_{start.isoformat()}_{end.isoformat()}.csv"'
+        )
+        return resp
 
     def _sync_gift_costs_view(self, request):
         """

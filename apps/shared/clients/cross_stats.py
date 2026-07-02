@@ -170,11 +170,28 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
         'gift_breakdown': [], 'gift_breakdown_title': 'За период нет активированных подарков',
         'sub_contacts': 0, 'unique_digitized': 0,
         'cost_per_contact': None, 'cost_per_unique': None,
+        # Дополнительно: тариф (для выручки/MRR), незаполненная себестоимость, классы подсветки
+        'plan_price': int(getattr(company, 'plan_price_rub', 0) or 0),
+        'no_cost_products': 0, 'no_cost_title': '',
+        'cpc_class': '', 'cpu_class': '',
     }
     feed = []
     try:
+        no_cost_count = 0
+        no_cost_names = []
         with schema_context(company.schema_name):
             stats = get_general_stats(None, start, end, skip_slow=True)
+            # Товары-подарки с незаполненной себестоимостью (занижают «Подарки, ₽»).
+            from django.db.models import Q as _Q
+            from apps.tenant.catalog.models import Product as _Product
+            _nc = (
+                _Product.objects.filter(is_archived=False)
+                .filter(_Q(is_super_prize=True) | _Q(is_birthday_prize=True)
+                        | _Q(is_story_prize=True) | _Q(is_vk_catalog_welcome=True))
+                .filter(_Q(cost_price_rub__isnull=True) | _Q(cost_price_rub=0))
+            )
+            no_cost_count = _nc.count()
+            no_cost_names = list(_nc.order_by('name').values_list('name', flat=True)[:20])
             # Новые отзывы = диалоги с гостевым сообщением за период (НЕ admin-ответы,
             # НЕ «оживлённые» рассылкой по last_message_at — считаем по созданию сообщения).
             guest_msgs = (
@@ -229,6 +246,13 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
             'gift_cost':     gift_cost,
             'gift_breakdown': gift_breakdown,
             'gift_breakdown_title': _fmt_gift_breakdown(gift_breakdown),
+            'no_cost_products': no_cost_count,
+            'no_cost_title': (
+                f"Не заполнена себестоимость ({no_cost_count}):\n"
+                + "\n".join(f"• {n}" for n in no_cost_names)
+                + ("\n…и ещё" if no_cost_count > len(no_cost_names) else "")
+                + "\n\nЗаполните «Себестоимость, ₽» в каталоге и нажмите «Синхронизировать затраты»."
+            ) if no_cost_count else '',
             'service_cost':  service_cost,
             'total_cost':    total_cost,
             'sub_contacts':  sub_contacts,
@@ -290,6 +314,30 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
     for m in merged:
         m['unit'] = round(m['total'] / m['qty'], 2) if m['qty'] else 0.0
     totals['gift_breakdown_title'] = _fmt_gift_breakdown(merged)
+
+    # Выручка платформы (MRR = сумма месячных тарифов) + суммарно незаполненная себес.
+    totals['mrr'] = sum(r.get('plan_price', 0) for r in rows)
+    totals['no_cost_products'] = sum(r.get('no_cost_products', 0) for r in rows)
+
+    # Подсветка выбросов: дорогой контакт/уник (красный) и дешёвый (зелёный)
+    # относительно среднего по клиентам с данными.
+    def _mark(field: str, cls_field: str):
+        vals = [r[field] for r in rows if r.get(field) is not None]
+        if not vals:
+            return
+        avg = sum(vals) / len(vals)
+        if avg <= 0:
+            return
+        for r in rows:
+            v = r.get(field)
+            if v is None:
+                continue
+            if v >= avg * 1.4:
+                r[cls_field] = 'hi'
+            elif v <= avg * 0.7:
+                r[cls_field] = 'lo'
+    _mark('cost_per_contact', 'cpc_class')
+    _mark('cost_per_unique', 'cpu_class')
 
     # Округление денег + производные цены по тоталам (защита от деления на ноль).
     totals['gift_cost']    = round(totals['gift_cost'], 2)
