@@ -127,6 +127,33 @@ def _conv_review_link(conv, kind: str, fallback: str) -> str:
     return fallback or ''
 
 
+def _fmt_gift_breakdown(items: list, limit: int = 30) -> str:
+    """Расшифровка себестоимости подарков в многострочный текст для tooltip.
+    Пример строки: «Пицца Пепперони: 3 шт × 200 ₽ = 600 ₽»."""
+    if not items:
+        return 'За период нет активированных подарков'
+    lines = ['Из чего складывается себестоимость (активировано за период):']
+    for it in items[:limit]:
+        qty = it.get('qty', 0)
+        total = it.get('total', 0)
+        unit = it.get('unit', 0)
+        lines.append(f"• {it.get('name', '—')}: {qty} шт × {unit:g} ₽ = {total:g} ₽")
+    if len(items) > limit:
+        lines.append(f"…и ещё {len(items) - limit} позиц.")
+    tail = sum(it.get('total', 0) for it in items)
+    lines.append(f"Итого: {round(tail):g} ₽")
+    return "\n".join(lines)
+
+
+def _merge_gift_breakdown(acc: dict, items: list) -> None:
+    """Аккумулирует расшифровки нескольких тенантов по названию товара (для тоталов)."""
+    for it in items or []:
+        name = it.get('name', '—')
+        cur = acc.setdefault(name, {'name': name, 'qty': 0, 'total': 0.0})
+        cur['qty'] += it.get('qty', 0)
+        cur['total'] += it.get('total', 0.0)
+
+
 def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
     """Считает строку статистики + последние отзывы одного клиента (в его схеме)."""
     from apps.tenant.analytics.api.services import get_general_stats
@@ -140,6 +167,7 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
         'qr_scans': 0, 'pos_guests': 0, 'ok': False,
         # «Экономика клиента» (ТЗ)
         'gift_cost': 0.0, 'service_cost': 0.0, 'total_cost': 0.0,
+        'gift_breakdown': [], 'gift_breakdown_title': 'За период нет активированных подарков',
         'sub_contacts': 0, 'unique_digitized': 0,
         'cost_per_contact': None, 'cost_per_unique': None,
     }
@@ -184,6 +212,7 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
         # schema_context тенанта). Производные цены — с защитой от деления на ноль.
         from apps.shared.clients.models import ServiceCostPeriod
         gift_cost    = round(float(stats.get('gift_cost_rub', 0) or 0), 2)
+        gift_breakdown = stats.get('gift_cost_breakdown', []) or []
         service_cost = round(float(ServiceCostPeriod.cost_for(company, start, end)), 2)
         total_cost   = round(service_cost + gift_cost, 2)
         sub_contacts = new_community + new_newsletter
@@ -198,6 +227,8 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
             'pos_guests':    pos,
             'scan_index':    round(qr / pos * 100, 1) if pos else 0.0,
             'gift_cost':     gift_cost,
+            'gift_breakdown': gift_breakdown,
+            'gift_breakdown_title': _fmt_gift_breakdown(gift_breakdown),
             'service_cost':  service_cost,
             'total_cost':    total_cost,
             'sub_contacts':  sub_contacts,
@@ -232,8 +263,10 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
         'sub_contacts': 0, 'unique_digitized': 0,
     }
     idx_qr = 0  # числитель индекса — только тенанты, у которых есть POS-данные
+    gift_acc = {}  # сводная расшифровка себестоимости по всем клиентам (по товару)
     for c in companies:
         row, c_feed = _tenant_row(c, start, end)
+        _merge_gift_breakdown(gift_acc, row.get('gift_breakdown', []))
         primary = next((d for d in c.domains.all() if d.is_primary), None) \
             or next(iter(c.domains.all()), None)
         row['domain'] = primary.domain if primary else ''
@@ -252,6 +285,12 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
         round(idx_qr / totals['pos_guests'] * 100, 1)
         if totals['pos_guests'] else 0.0
     )
+    # Сводная расшифровка себестоимости (по всем клиентам, по убыванию суммы).
+    merged = sorted(gift_acc.values(), key=lambda x: -x['total'])
+    for m in merged:
+        m['unit'] = round(m['total'] / m['qty'], 2) if m['qty'] else 0.0
+    totals['gift_breakdown_title'] = _fmt_gift_breakdown(merged)
+
     # Округление денег + производные цены по тоталам (защита от деления на ноль).
     totals['gift_cost']    = round(totals['gift_cost'], 2)
     totals['service_cost'] = round(totals['service_cost'], 2)

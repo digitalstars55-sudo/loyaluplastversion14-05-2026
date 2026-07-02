@@ -139,7 +139,7 @@
       <div class="lbl"><span class="ic ic-rose">🎁</span> Затраты на подарки
         <span class="ov-q" title="Сумма себестоимости всех подарков, которые гости активировали за выбранный период. Считается по себестоимости подарка на момент активации.">?</span>
       </div>
-      <div class="val c-rose ov-money">{{ totals.gift_cost|default:0|floatformat:0|intcomma }} ₽</div>
+      <div class="val c-rose ov-money" style="cursor:help;" title="{{ totals.gift_breakdown_title }}">{{ totals.gift_cost|default:0|floatformat:0|intcomma }} ₽</div>
     </div>
     <div class="ov-card">
       <div class="lbl"><span class="ic ic-slate">🧾</span> Стоимость обслуживания</div>
@@ -190,7 +190,7 @@
               <span class="ov-name-txt">{{ r.name }}</span>
             </div>
           </td>
-          <td class="ov-money">{{ r.gift_cost|default:0|floatformat:0|intcomma }}</td>
+          <td class="ov-money" style="cursor:help;" title="{{ r.gift_breakdown_title }}">{{ r.gift_cost|default:0|floatformat:0|intcomma }}</td>
           <td class="ov-money">{{ r.service_cost|default:0|floatformat:0|intcomma }}</td>
           <td class="ov-money">{{ r.total_cost|default:0|floatformat:0|intcomma }}</td>
           <td class="ov-money">{{ r.sub_contacts|intcomma }}</td>

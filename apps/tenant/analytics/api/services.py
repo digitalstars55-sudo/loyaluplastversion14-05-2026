@@ -269,6 +269,43 @@ def get_gift_cost_total(
     return qs.aggregate(total=Sum('cost_rub'))['total'] or Decimal('0')
 
 
+def get_gift_cost_breakdown(
+    branch_ids: list[int] | None, start_date: date, end_date: date
+) -> list[dict]:
+    """
+    Расшифровка затрат на подарки за период: список активированных подарков,
+    сгруппированный по товару. Для каждого — количество (шт), суммарная
+    себестоимость (снимки) и средняя себестоимость за штуку. Сортировка по убыванию
+    суммы. Включает ВСЕ типы (супер-приз, покупка за баллы, ДР, сториз/каталог VK),
+    т.к. GiftCostEvent пишется при активации любого подарка. Сумма по расшифровке
+    равна значению get_gift_cost_total за тот же период.
+    """
+    from django.db.models import Count, Sum
+    from apps.tenant.inventory.models import GiftCostEvent
+
+    qs = GiftCostEvent.objects.filter(
+        activated_at__date__gte=start_date,
+        activated_at__date__lte=end_date,
+    )
+    qs = _branch_filter(qs, branch_ids, 'branch__in')
+    rows = (
+        qs.values('product__name')
+        .annotate(qty=Count('id'), total=Sum('cost_rub'))
+        .order_by('-total', '-qty')
+    )
+    out = []
+    for r in rows:
+        qty = r['qty'] or 0
+        total = float(r['total'] or 0)
+        out.append({
+            'name': r['product__name'] or '(товар удалён)',
+            'qty': qty,
+            'total': round(total, 2),
+            'unit': round(total / qty, 2) if qty else 0.0,
+        })
+    return out
+
+
 # ── Metric 7b: First gift receivers ──────────────────────────────────────────
 
 def get_first_gift_receivers(
@@ -964,6 +1001,7 @@ def get_general_stats(
         # гости. Подписочные контакты = new_community + new_newsletter (см. выше).
         # Стоимость обслуживания и производные цены считаются на уровне Company.
         'gift_cost_rub':             float(get_gift_cost_total(branch_ids, start_date, end_date)),
+        'gift_cost_breakdown':       get_gift_cost_breakdown(branch_ids, start_date, end_date),
         'unique_digitized_guests':   get_unique_digitized_guests(branch_ids, start_date, end_date),
         'first_gift_receivers':      get_first_gift_receivers(branch_ids, start_date, end_date),
         'gift_activators':           get_gift_activators(branch_ids, start_date, end_date),
