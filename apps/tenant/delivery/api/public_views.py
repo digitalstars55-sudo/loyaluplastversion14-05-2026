@@ -39,12 +39,6 @@ class PublicDeliveryWebhook(APIView):
                 resp_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
                 return Response(DeliverySerializer(delivery).data, status=resp_status)
 
-        # ВРЕМЕННО: лог ненайденного POS branch_id для подключения новых точек Dooglys/iiko.
-        import sys
-        print(f"DOOGLYS_UNMAPPED webhook source={s.validated_data.get('source')!r} "
-              f"branch_id={s.validated_data.get('branch_id')!r} "
-              f"code={s.validated_data.get('code')!r}", file=sys.stderr, flush=True)
-
         return Response(
             {'detail': 'Торговая точка не найдена.'},
             status=status.HTTP_404_NOT_FOUND,

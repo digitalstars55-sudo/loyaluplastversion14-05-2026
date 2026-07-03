@@ -154,11 +154,6 @@ class PublicDailyOrdersIngest(APIView):
                 break
             if not placed:
                 not_found.append({'cafe_id': item['cafe_id'], 'date': str(item['date'])})
-                # ВРЕМЕННО: лог ненайденных cafe_id (+ имя) для подключения новых точек Dooglys.
-                import sys
-                print(f"DOOGLYS_UNMAPPED orders cafe_id={item['cafe_id']!r} "
-                      f"cafe_name={item.get('cafe_name','')!r} date={item['date']} "
-                      f"total={item.get('orders_total')}", file=sys.stderr, flush=True)
 
         resp_status = status.HTTP_200_OK if not not_found else status.HTTP_207_MULTI_STATUS
         return Response(
