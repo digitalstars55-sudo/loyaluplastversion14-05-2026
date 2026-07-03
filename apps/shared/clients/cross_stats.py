@@ -164,7 +164,7 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
         'name': company.name, 'schema': company.schema_name, 'client_id': company.client_id,
         'domain': '', 'logo': logo, 'total_scans': 0, 'new_community': 0, 'new_newsletter': 0,
         'stories': 0, 'reviews': 0, 'scan_index': 0.0,
-        'qr_scans': 0, 'pos_guests': 0, 'ok': False,
+        'qr_scans': 0, 'scan_num': 0, 'pos_guests': 0, 'ok': False,
         # «Экономика клиента» (ТЗ)
         'gift_cost': 0.0, 'service_cost': 0.0, 'total_cost': 0.0,
         'gift_breakdown': [], 'gift_breakdown_title': 'За период нет активированных подарков',
@@ -200,6 +200,15 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
             )
             reviews = guest_msgs.values('conversation').distinct().count()
             pos = _cached_pos_guests(start, end)
+            # Индекс сканирования: числитель (сканы) и знаменатель (POS) в ОДНОМ
+            # окне доступных POS-дней — иначе «сканы за период ÷ POS за 2 дня»
+            # кратно завышает индекс (POS-пуш мог начаться позже начала периода).
+            from apps.tenant.analytics.api.services import (
+                get_pos_data_window as _pos_window, get_qr_scan_count as _qr_cnt,
+            )
+            _pw_mn, _pw_mx, _pw_days = _pos_window(None, start, end)
+            scan_num = _qr_cnt(None, _pw_mn, _pw_mx) if (pos and _pw_mn) else 0
+            scan_index_val = round(scan_num / pos * 100, 1) if pos else 0.0
             # Ссылки на отзыв-площадки (для кнопки «Вставить ссылки» в мобилке)
             from apps.tenant.branch.api.services import get_fallback_review_links
             fb_ya, fb_gis = get_fallback_review_links()
@@ -240,8 +249,9 @@ def _tenant_row(company: Company, start: date, end: date) -> tuple[dict, list]:
             'stories':       stats.get('vk_stories_publishers', 0) or 0,
             'reviews':       reviews,
             'qr_scans':      qr,
+            'scan_num':      scan_num,   # числитель индекса в POS-окне (для итога)
             'pos_guests':    pos,
-            'scan_index':    round(qr / pos * 100, 1) if pos else 0.0,
+            'scan_index':    scan_index_val,
             'gift_cost':     gift_cost,
             'gift_breakdown': gift_breakdown,
             'gift_breakdown_title': _fmt_gift_breakdown(gift_breakdown),
@@ -302,7 +312,7 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
                   'sub_contacts', 'unique_digitized'):
             totals[k] += row[k]
         if row['pos_guests']:
-            idx_qr += row['qr_scans']
+            idx_qr += row['scan_num']
 
     totals['scan_index'] = (
         round(idx_qr / totals['pos_guests'] * 100, 1)

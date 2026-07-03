@@ -837,15 +837,53 @@ def get_pos_guests_count(
 
 # ── Metric 14: Scan index ────────────────────────────────────────────────────
 
+def get_pos_data_window(
+    branch_ids: list[int] | None, start_date: date, end_date: date
+) -> tuple[date | None, date | None, int]:
+    """
+    Окно дней с реальными POS-данными (POSGuestCache) внутри [start, end].
+
+    Возвращает (min_date, max_date, кол-во_дней). Нужно, чтобы индекс
+    сканирования считал числитель (QR-сканы) и знаменатель (POS-гости) в ОДНОМ
+    окне: пуш POS-данных мог начаться позже начала выбранного периода (напр.
+    Dooglys подключили недавно) — тогда «30 дней сканов ÷ 2 дня POS» даёт кратно
+    завышенный индекс. Клампим по фактически доступным дням POS.
+    """
+    from django.db.models import Max, Min
+    qs = POSGuestCache.objects.filter(date__gte=start_date, date__lte=end_date)
+    if branch_ids:
+        qs = qs.filter(branch__in=branch_ids)
+    agg = qs.aggregate(mn=Min('date'), mx=Max('date'))
+    days = qs.values('date').distinct().count()
+    return agg['mn'], agg['mx'], days
+
+
+def compute_scan_index(
+    branch_ids: list[int] | None, pos: int, start_date: date, end_date: date
+) -> tuple[float, int]:
+    """
+    QR-сканы ÷ POS-гости × 100 — числитель и знаменатель в ОДНОМ окне.
+
+    `pos` — уже посчитанный знаменатель за период (сумма POSGuestCache). Сканы
+    берём НЕ за весь период, а только за дни, где реально есть POS-данные, иначе
+    индекс завышается. Возвращает (индекс, кол-во_дней_с_POS).
+    """
+    if not pos:
+        return 0.0, 0
+    mn, mx, days = get_pos_data_window(branch_ids, start_date, end_date)
+    if not mn:
+        return 0.0, 0
+    scans = get_qr_scan_count(branch_ids, mn, mx)
+    return round(scans / pos * 100, 1), days
+
+
 def get_scan_index(
     branch_ids: list[int] | None, start_date: date, end_date: date
 ) -> float:
     """QR scans ÷ POS guests × 100%. Returns 0.0 if no POS data."""
-    scans = get_qr_scan_count(branch_ids, start_date, end_date)
     pos = get_pos_guests_count(branch_ids, start_date, end_date)
-    if not pos:
-        return 0.0
-    return round(scans / pos * 100, 1)
+    idx, _ = compute_scan_index(branch_ids, pos, start_date, end_date)
+    return idx
 
 
 # ── Сканирования по источникам (кафе vs доставка), за период ─────────────────
@@ -945,11 +983,14 @@ def get_general_stats(
     scans = get_qr_scan_count(branch_ids, start_date, end_date)
 
     if skip_slow:
-        pos        = None
-        scan_index = None
+        pos           = None
+        scan_index    = None
+        pos_data_days = None
     else:
         pos        = get_pos_guests_count(branch_ids, start_date, end_date)
-        scan_index = round(scans / pos * 100, 1) if pos else 0.0
+        # Индекс: числитель (сканы) и знаменатель (POS) в одном окне доступных
+        # POS-дней, иначе «30д сканов ÷ 2д POS» завышает индекс кратно.
+        scan_index, pos_data_days = compute_scan_index(branch_ids, pos, start_date, end_date)
 
     # Сканы по источникам (#6). Всего = кафе(ClientBranchVisit) + доставка.
     # «Отсканировали QR-код» (карточка) = total_scans — единая цифра, считающая
@@ -1021,6 +1062,7 @@ def get_general_stats(
         'website_gift_activators':   get_website_gift_activators(branch_ids, start_date, end_date),
         'pos_guests':                pos,
         'scan_index':                scan_index,
+        'pos_data_days':             pos_data_days,
     }
 
 

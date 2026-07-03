@@ -924,11 +924,15 @@ class SlowStatsAPIView(APIView):
         start_date = ser.validated_data['start']
         end_date   = ser.validated_data['end']
 
-        pos   = services.get_pos_guests_count(branch_ids, start_date, end_date)
-        scans = services.get_qr_scan_count(branch_ids, start_date, end_date)
+        pos = services.get_pos_guests_count(branch_ids, start_date, end_date)
+        # Числитель (сканы) и знаменатель (POS) — в одном окне доступных POS-дней,
+        # иначе «сканы за период ÷ POS за 2 дня» кратно завышает индекс.
+        scan_index, pos_data_days = services.compute_scan_index(
+            branch_ids, pos, start_date, end_date)
         return Response({
             'pos_guests': pos,
-            'scan_index': round(scans / pos * 100, 1) if pos else 0.0,
+            'scan_index': scan_index,
+            'pos_data_days': pos_data_days,
         })
 
 

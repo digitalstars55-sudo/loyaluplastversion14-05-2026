@@ -48,6 +48,12 @@ document.addEventListener('DOMContentLoaded', () => {
           scanEl.textContent = data.scan_index ? data.scan_index + '%' : '0%';
           if (data.scan_index > 0) scanEl.classList.replace('c-grey', 'c-orange');
         }
+        const winEl = document.getElementById('stat-scan-window');
+        if (winEl) {
+          winEl.textContent = data.pos_data_days
+            ? 'по данным POS за ' + data.pos_data_days + ' дн.'
+            : '';
+        }
       })
       .catch(() => {
         const posEl  = document.getElementById('stat-pos-guests');

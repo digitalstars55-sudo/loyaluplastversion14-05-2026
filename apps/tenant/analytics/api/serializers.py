@@ -142,6 +142,7 @@ class GeneralStatsSerializer(serializers.Serializer):
     stories_referrals         = serializers.IntegerField()
     pos_guests                = serializers.IntegerField()
     scan_index                = serializers.FloatField()
+    pos_data_days             = serializers.IntegerField(required=False, allow_null=True)
 
 
 class ChartDataSerializer(serializers.Serializer):
