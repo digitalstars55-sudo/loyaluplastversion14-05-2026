@@ -87,7 +87,7 @@
   </div>
 
   <!-- Section label -->
-  <div class="sec-label mb-2">Ключевые показатели</div>
+  <div class="sec-label mb-2">⭐ Ключевые показатели</div>
 
   <!-- Metric cards grid -->
   <div class="row g-3 mb-4">
@@ -185,6 +185,11 @@
       </a>
     </div>
 
+  </div>
+
+  <div class="sec-label mb-2">📥 Сканирования</div>
+  <div class="row g-3 mb-4">
+
     <!-- #6 Сканирования по источникам -->
     <div class="col-sm-6 col-md-4 col-xl-3">
       <div class="mc-card card acc-green position-relative">
@@ -231,6 +236,11 @@
         </div>
       </div>
     </div>
+
+  </div>
+
+  <div class="sec-label mb-2">📬 Подписки по источникам</div>
+  <div class="row g-3 mb-4">
 
     <!-- #7 Подписки в сообщество по источникам -->
     <div class="col-sm-6 col-md-4 col-xl-3">
@@ -338,6 +348,11 @@
       </a>
     </div>
 
+  </div>
+
+  <div class="sec-label mb-2">🎁 Подарки</div>
+  <div class="row g-3 mb-4">
+
     <div class="col-sm-6 col-md-4 col-xl-3">
       <a href="{% url 'analytics-stats-detail' %}?metric=first_gift_receivers&{{ period_qs }}{% if bp %}&branches={{ bp }}{% endif %}" class="mc-link">
         <div class="mc-card card acc-green position-relative">
@@ -364,6 +379,11 @@
       </a>
     </div>
 
+  </div>
+
+  <div class="sec-label mb-2">📖 Подарки из сториз</div>
+  <div class="row g-3 mb-4">
+
     <div class="col-sm-6 col-md-4 col-xl-3">
       <a href="{% url 'analytics-stats-detail' %}?metric=story_gift_receivers&{{ period_qs }}{% if bp %}&branches={{ bp }}{% endif %}" class="mc-link">
         <div class="mc-card card acc-teal position-relative">
@@ -389,6 +409,11 @@
         </div>
       </a>
     </div>
+
+  </div>
+
+  <div class="sec-label mb-2">🌐 Воронка «Сайт»</div>
+  <div class="row g-3 mb-4">
 
     <!-- Воронка «с сайта» (QR на сайте клиента) -->
     <div class="col-sm-6 col-md-4 col-xl-3">
@@ -430,6 +455,11 @@
       </a>
     </div>
 
+  </div>
+
+  <div class="sec-label mb-2">🎂 День рождения</div>
+  <div class="row g-3 mb-4">
+
     <div class="col-sm-6 col-md-4 col-xl-3">
       <div class="mc-card card {% if stats.birthday_greetings_sent > 0 %}acc-orange{% else %}acc-green{% endif %} position-relative">
         <div class="tip-btn">?</div>
@@ -453,6 +483,11 @@
         </div>
       </a>
     </div>
+
+  </div>
+
+  <div class="sec-label mb-2">💬 Сообщения и сториз</div>
+  <div class="row g-3 mb-4">
 
     <div class="col-sm-6 col-md-4 col-xl-3">
       <div class="mc-card card acc-orange position-relative">
@@ -491,6 +526,11 @@
         </div>
       </div>
     </div>
+
+  </div>
+
+  <div class="sec-label mb-2">📊 POS и индекс сканирования</div>
+  <div class="row g-3 mb-4">
 
     <div class="col-sm-6 col-md-4 col-xl-3">
       <div class="mc-card card acc-green position-relative">
