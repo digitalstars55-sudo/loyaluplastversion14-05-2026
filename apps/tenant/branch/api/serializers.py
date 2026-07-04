@@ -115,7 +115,11 @@ class ClientRegistrationRequestSerializer(serializers.Serializer):
     photo_url         = serializers.URLField(required=False, allow_blank=True, default='')
     birth_date        = serializers.DateField(required=False, allow_null=True, default=None)
     source            = serializers.ChoiceField(
-        choices=['restaurant', 'delivery'], required=False, default='restaurant',
+        # restaurant/story — физический скан QR в заведении (пишем визит);
+        # delivery/website/vk_catalog — сетевые входы (визит НЕ пишем, у них
+        # свои метрики), иначе они задваивались бы в «Сканах в кафе».
+        choices=['restaurant', 'delivery', 'website', 'vk_catalog', 'story'],
+        required=False, default='restaurant',
     )
     invited_by_cb_id  = serializers.IntegerField(required=False, allow_null=True, default=None)
     # Отслеживаемый QR («точка контакта»): src=<метка>. Необязательный.
@@ -168,6 +172,15 @@ class VKAuthRequestSerializer(serializers.Serializer):
     state         = serializers.CharField()
     branch_id     = serializers.IntegerField()
     birth_date    = serializers.DateField(required=False, allow_null=True, default=None)
+    # Источник входа (как в POST /client/): сетевые (website/vk_catalog/delivery)
+    # не пишут визит-скан. src — метка отслеживаемого QR («точка контакта»).
+    source        = serializers.ChoiceField(
+        choices=['restaurant', 'delivery', 'website', 'vk_catalog', 'story'],
+        required=False, default='restaurant',
+    )
+    src           = serializers.CharField(
+        required=False, allow_blank=True, default='', max_length=16,
+    )
 
 
 class BranchIdRequestSerializer(serializers.Serializer):

@@ -237,6 +237,8 @@ def vk_web_auth(
     state: str,
     branch_id: int,
     birth_date=None,
+    source: str = 'restaurant',
+    src: str = '',
 ) -> tuple:
     """
     Full VK ID OAuth2 PKCE auth + registration in one atomic call.
@@ -288,6 +290,8 @@ def vk_web_auth(
         last_name=vk_user['last_name'],
         photo_url=vk_user['photo_url'],
         birth_date=effective_birth_date,
+        source=source,
+        src=src,
     )
 
     # Если клиент уже существовал (created=False) и birth_date ещё не заполнен —
@@ -865,8 +869,11 @@ def register_or_get_client(
         profile.birth_date_set_at = timezone.localdate()
         profile.save(update_fields=['birth_date', 'birth_date_set_at'])
 
-    # Record visit: atomic, 6-hour cooldown (delivery tracks via Delivery model)
-    if source != 'delivery':
+    # Record visit: atomic, 6-hour cooldown. Визит-скан = ФИЗИЧЕСКИЙ вход в
+    # заведении (скан QR на месте). Сетевые входы визит НЕ пишут: доставка
+    # трекается через Delivery, а сайт/каталог VK — сетевые (у них свои
+    # метрики), иначе они задваивались бы в «Сканах в кафе» / индексе.
+    if source not in ('delivery', 'website', 'vk_catalog'):
         ClientBranchVisit.record_visit(profile)
 
     # Tracked QR («точка контакта»): лог скана + last-touch активная метка.
