@@ -391,6 +391,16 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
           <td class="R-value">{{ report.new_newsletter }}</td>
           <td class="R-src">Пользователи, которые подписались на рассылку VK <b>через наше приложение</b> за период (все источники: кафе, доставка, сториз и другие). Без этого разрешения VK блокирует отправку. <span class="R-src-ex"><b>Пример:</b> 80 разрешений за период → 80.</span></td>
         </tr>
+        <tr data-key="Подписались в VK с сайта" data-val="{{ report.subs_website_community }}">
+          <td class="R-metric">🌐 Подписались в VK с сайта</td>
+          <td class="R-value">{{ report.subs_website_community }}</td>
+          <td class="R-src">Гости, подписавшиеся на сообщество VK <b>после перехода по QR-коду с вашего сайта</b> (источник «сайт»). Это часть общей цифры «Подписались в VK — всего». <span class="R-src-ex"><b>Пример:</b> 8 подписок пришли с сайта → 8.</span></td>
+        </tr>
+        <tr data-key="Подписались на рассылку с сайта" data-val="{{ report.subs_website_newsletter }}">
+          <td class="R-metric">🌐 Подписались на рассылку с сайта</td>
+          <td class="R-value">{{ report.subs_website_newsletter }}</td>
+          <td class="R-src">Гости, разрешившие рассылку VK <b>после перехода по QR-коду с вашего сайта</b> (источник «сайт»). Часть общей цифры «Подписались на рассылку — всего». <span class="R-src-ex"><b>Пример:</b> 9 разрешений пришли с сайта → 9.</span></td>
+        </tr>
         <tr data-key="Получили первый подарок" data-val="{{ report.new_with_gift }}">
           <td class="R-metric">Получили первый подарок</td>
           <td class="R-value">{{ report.new_with_gift }}</td>
@@ -398,6 +408,27 @@ body, .R, .R * { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Seg
         </tr>
       </tbody>
     </table>
+
+    <div class="R-sec-sub" style="margin-top:18px;">📌 Точки контакта — подписки по каждому отслеживаемому QR (метка src)</div>
+    {% if report.contact_points %}
+    <table class="R-tbl">
+      <thead><tr><th>Точка контакта</th><th>Сканы</th><th>Гости</th><th>Подписались</th><th>Конверсия</th></tr></thead>
+      <tbody>
+        {% for cp in report.contact_points %}
+        <tr data-key="Точка контакта: {{ cp.name }}" data-val="{{ cp.subscribed }}">
+          <td class="R-metric">{{ cp.name }}<br><span style="font-weight:400;color:#6b7280;font-size:12px;">{{ cp.branch }} · {{ cp.mode }}{% if not cp.is_active %} · выкл{% endif %}</span></td>
+          <td class="R-value">{{ cp.scans }}</td>
+          <td class="R-value">{{ cp.guests }}</td>
+          <td class="R-value">{{ cp.subscribed }}</td>
+          <td class="R-value">{{ cp.conversion }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="R-src" style="padding:10px 2px;">За период нет отслеживаемых точек контакта. Создать именованный QR можно в разделе «Точки контакта».</div>
+    {% endif %}
+
     <div class="R-cmt">
       <div class="R-cmt-hd">🟡 Комментарий менеджера</div>
       <textarea class="R-cmt-ta" id="comment-2" placeholder="Динамика роста базы..."></textarea>

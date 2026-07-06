@@ -293,6 +293,8 @@ class LoyaltyReportAPIView(APIView):
             'segment_counts': segment_counts,
             'migration':      migration,
             'sources':        {'from_cafe': from_cafe, 'from_delivery': from_delivery},
+            # Воронка по точкам контакта (отслеживаемые QR) — для паритета с вебом.
+            'contact_points': services.get_contact_point_funnel(branch_ids, start_date, end_date),
             'ai_summary':     '',
         })
 

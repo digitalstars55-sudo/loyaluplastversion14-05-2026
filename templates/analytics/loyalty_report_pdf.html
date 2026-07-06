@@ -149,9 +149,26 @@ html, body { font-family: 'DM Sans', sans-serif; background: #e5e7eb; color: var
         <tr><td class="metric">Новые гости в базе</td><td class="value">{{ report.new_with_gift }}</td><td class="src"><b>Гости, впервые попавшие в базу</b> за период — раньше их не было в системе. <span class="src-ex">Пример: 35 человек подключились в марте.</span></td></tr>
         <tr><td class="metric">Подписались в VK — всего</td><td class="value">{{ report.new_community }}</td><td class="src"><b>Подписки на сообщество VK через наше приложение</b> за период — все источники (кафе, доставка, сториз, другие).</td></tr>
         <tr><td class="metric">Подписались на рассылку — всего</td><td class="value">{{ report.new_newsletter }}</td><td class="src"><b>Подписки на рассылку VK через наше приложение</b> за период — все источники (кафе, доставка, сториз, другие).</td></tr>
+        <tr><td class="metric">🌐 Подписались в VK с сайта</td><td class="value">{{ report.subs_website_community }}</td><td class="src"><b>Подписки на сообщество после перехода по QR с вашего сайта</b> (источник «сайт»). Часть общей цифры «Подписались в VK — всего».</td></tr>
+        <tr><td class="metric">🌐 Подписались на рассылку с сайта</td><td class="value">{{ report.subs_website_newsletter }}</td><td class="src"><b>Разрешения рассылки после перехода по QR с вашего сайта</b> (источник «сайт»). Часть общей цифры «Подписались на рассылку — всего».</td></tr>
         <tr><td class="metric">Получили первый подарок</td><td class="value">{{ report.new_with_gift }}</td><td class="src"><b>Финальный шаг новичка</b>: пришёл в кафе и забрал стартовый подарок. Только после этого считается в базе.</td></tr>
       </tbody>
     </table>
+
+    <div class="sec-title" style="font-size:14px;margin:14px 0 6px;">📌 Точки контакта — подписки по отслеживаемым QR</div>
+    {% if report.contact_points %}
+    <table class="tbl">
+      <thead><tr><th>Точка контакта</th><th>Сканы</th><th>Гости</th><th>Подписались</th><th>Конв.</th></tr></thead>
+      <tbody>
+        {% for cp in report.contact_points %}
+        <tr><td class="metric">{{ cp.name }} <span class="src-ex">{{ cp.branch }} · {{ cp.mode }}{% if not cp.is_active %} · выкл{% endif %}</span></td><td class="value">{{ cp.scans }}</td><td class="value">{{ cp.guests }}</td><td class="value">{{ cp.subscribed }}</td><td class="value">{{ cp.conversion }}%</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="src">За период нет отслеживаемых точек контакта.</div>
+    {% endif %}
+
     <div class="cmt"><div class="cmt-hd">🟡 Комментарий менеджера</div><div class="cmt-out" id="cmt-2"></div><div class="cmt-example"><b>Пример</b>Конверсия первого контакта высокая: большинство гостей получают первый подарок и остаются в базе.</div></div>
   </div>
 

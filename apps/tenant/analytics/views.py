@@ -991,6 +991,11 @@ class LoyaltyReportView(View):
             # Section 1: Key metrics
             'new_community':     stats['new_community_subscribers'],
             'new_newsletter':    stats['new_newsletter_subscribers'],
+            # Подписки с сайта (запрос партнёра) — разбивка «— всего» по источнику сайт.
+            'subs_website_community':  stats.get('community_subs_website', 0),
+            'subs_website_newsletter': stats.get('newsletter_subs_website', 0),
+            # Воронка по точкам контакта (отслеживаемые QR, src=<метка>).
+            'contact_points':    get_contact_point_funnel(branch_ids, start, end),
             'total_vk':          stats['total_vk_subscribers'],
             'new_with_gift':     stats['new_group_with_gift'],
             'birthday_sent':     stats['birthday_greetings_sent'],

@@ -870,10 +870,14 @@ def register_or_get_client(
         profile.save(update_fields=['birth_date', 'birth_date_set_at'])
 
     # Record visit: atomic, 6-hour cooldown. Визит-скан = ФИЗИЧЕСКИЙ вход в
-    # заведении (скан QR на месте). Сетевые входы визит НЕ пишут: доставка
-    # трекается через Delivery, а сайт/каталог VK — сетевые (у них свои
-    # метрики), иначе они задваивались бы в «Сканах в кафе» / индексе.
-    if source not in ('delivery', 'website', 'vk_catalog'):
+    # заведении (скан QR на месте). Сетевые входы визит НЕ пишут:
+    #   - доставка трекается через Delivery;
+    #   - сайт/каталог VK — сетевые (source website/vk_catalog);
+    #   - реферал из чужой сториз (invited_by_cb_id задан) — удалённый вход,
+    #     уже считается в «Перешли из историй» (get_stories_referrals).
+    # Иначе они задваивались бы в «Сканах в кафе» / индексе сканирования.
+    is_referral_entry = bool(invited_by_cb_id)
+    if source not in ('delivery', 'website', 'vk_catalog') and not is_referral_entry:
         ClientBranchVisit.record_visit(profile)
 
     # Tracked QR («точка контакта»): лог скана + last-touch активная метка.
