@@ -130,12 +130,6 @@ class PublicDailyOrdersIngest(APIView):
         ser = DailyOrdersItemSerializer(data=raw_items, many=True)
         ser.is_valid(raise_exception=True)
 
-        # ВРЕМЕННО (диагностика Тулы/Шавермы): лог ВСЕХ входящих cafe_id пуша,
-        # чтобы увидеть, шлёт ли Dooglys эти точки и с какими id.
-        import sys
-        _incoming = [(str(i['cafe_id']), i.get('cafe_name', ''), str(i['date'])) for i in ser.validated_data]
-        print(f"DOOGLYS_DAILY_IN count={len(_incoming)} items={_incoming}", file=sys.stderr, flush=True)
-
         public = get_public_schema_name()
         tenants = list(
             Company.objects.filter(is_active=True).exclude(schema_name=public)
