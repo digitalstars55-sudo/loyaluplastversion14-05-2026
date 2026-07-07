@@ -268,11 +268,17 @@ class PushRegisterAPIView(APIView):
 
         ser = PushTokenSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        PushToken.objects.filter(
-            user=request.user,
+        # Удаляем по ТОКЕНУ (он unique = одно физическое устройство), БЕЗ фильтра
+        # по user. Иначе logout не может снять токен, если в БД он привязан к
+        # другому аккаунту (частый кейс: на одном устройстве вход под разными
+        # аккаунтами — при повторной регистрации токен перепривязывается, но при
+        # выходе фильтр user=request.user не находил строку → устройство
+        # продолжало ловить пуши разлогиненным). Токен — секрет устройства,
+        # предъявляет его тот, у кого устройство; эндпоинт требует IsAuthenticated.
+        deleted, _ = PushToken.objects.filter(
             token=ser.validated_data['token'],
         ).delete()
-        return Response({'ok': True})
+        return Response({'ok': True, 'deleted': deleted})
 
 
 class NotificationListAPIView(APIView):
