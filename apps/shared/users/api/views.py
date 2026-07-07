@@ -266,8 +266,17 @@ class PushRegisterAPIView(APIView):
     def delete(self, request):
         from apps.shared.users.models import PushToken
 
-        ser = PushTokenSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
+        # Для отписки нужен ТОЛЬКО token. Раньше здесь использовался
+        # PushTokenSerializer, который требует ещё и platform — а мобилка при
+        # logout шлёт только {token} → DELETE всегда падал с 400 и токен НИКОГДА
+        # не снимался (устройство ловило пуши разлогиненным). Валидируем сами.
+        token = (request.data or {}).get('token') or ''
+        token = token.strip() if isinstance(token, str) else ''
+        if not token:
+            return Response(
+                {'token': ['Обязательное поле.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         # Удаляем по ТОКЕНУ (он unique = одно физическое устройство), БЕЗ фильтра
         # по user. Иначе logout не может снять токен, если в БД он привязан к
         # другому аккаунту (частый кейс: на одном устройстве вход под разными
@@ -275,9 +284,7 @@ class PushRegisterAPIView(APIView):
         # выходе фильтр user=request.user не находил строку → устройство
         # продолжало ловить пуши разлогиненным). Токен — секрет устройства,
         # предъявляет его тот, у кого устройство; эндпоинт требует IsAuthenticated.
-        deleted, _ = PushToken.objects.filter(
-            token=ser.validated_data['token'],
-        ).delete()
+        deleted, _ = PushToken.objects.filter(token=token).delete()
         return Response({'ok': True, 'deleted': deleted})
 
 
