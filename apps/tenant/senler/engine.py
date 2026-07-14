@@ -152,6 +152,11 @@ def _gift_not_claimed_resolver(rule, now):
             activated_at__isnull=True,
             claim_expires_at__isnull=False,   # бессрочным не напоминаем
             claim_expires_at__gt=now,          # сгоревшим — тоже
+            # ⚠️ КРИТИЧНО: legacy-задача (send_gift_reminder_broadcasts_task) метит
+            # отправку именно этим полем, а НЕ entity_key-логом. Без этого фильтра
+            # движок написал бы второй раз тем, кому legacy уже написала. Дедуп
+            # движка (entity_key) legacy-отправок не видит — значит смотрим поле.
+            reminder_sent_at__isnull=True,
             client_branch__is_employee=False,
             client_branch__client__vk_id__isnull=False,
         )

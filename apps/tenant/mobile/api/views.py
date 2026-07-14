@@ -2862,3 +2862,110 @@ class AssistantContextAPIView(APIView):
             'Как настроить коды дня?',
         ]
         return Response({'greeting': greeting, 'suggestions': suggestions, 'stats': ctx})
+
+
+# ════════════════════════════════════════════════════════════════════
+# Авторассылки («конструктор») — управление из мобилки
+# Создание новых правил и тонкая настройка условий — в вебе; мобилка даёт
+# список, вкл/выкл, правку текста, статистику и предпросмотр.
+# ════════════════════════════════════════════════════════════════════
+
+def _serialize_rule(rule) -> dict:
+    from apps.tenant.senler.models import RecipientStatus
+
+    logs = rule.logs.count()
+    return {
+        'id':            rule.pk,
+        'name':          rule.name,
+        'event':         rule.event,
+        'event_label':   rule.get_event_display(),
+        'is_active':     rule.is_active,
+        'delay_days':    rule.delay_days,
+        'send_hour_start': rule.send_hour_start,
+        'send_hour_end':   rule.send_hour_end,
+        'message_text':  rule.message_text,
+        'priority':      rule.priority,
+        'branches_count': rule.branches.count(),   # 0 = все точки
+        'gender_filter': rule.gender_filter,
+        'segments_count': rule.rf_segments.count(),
+        'sent_total':    logs,
+    }
+
+
+class AutoBroadcastRulesAPIView(APIView):
+    """
+    GET  /api/v1/auto-broadcasts/          — список правил авторассылок
+    PATCH /api/v1/auto-broadcasts/<id>/    — правка текста / вкл-выкл (см. ниже)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.tenant.senler.models import AutoBroadcastRule
+
+        rules = (
+            AutoBroadcastRule.objects
+            .all()
+            .order_by('event', '-priority', 'pk')
+        )
+        return Response({'rules': [_serialize_rule(r) for r in rules]})
+
+
+class AutoBroadcastRuleDetailAPIView(APIView):
+    """
+    PATCH /api/v1/auto-broadcasts/<id>/  body: {message_text?, is_active?}
+    Мобилка правит только текст и вкл/выкл — условия/аудиторию задают в вебе.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, rule_id: int):
+        from apps.tenant.senler.models import AutoBroadcastRule
+
+        try:
+            rule = AutoBroadcastRule.objects.get(pk=rule_id)
+        except AutoBroadcastRule.DoesNotExist:
+            return Response({'detail': 'Правило не найдено.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        fields = []
+        if 'message_text' in request.data:
+            text = (request.data.get('message_text') or '').strip()
+            if not text:
+                return Response({'message_text': ['Текст не может быть пустым.']},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if len(text) > 4096:
+                return Response({'message_text': ['Лимит VK — 4096 символов.']},
+                                status=status.HTTP_400_BAD_REQUEST)
+            rule.message_text = text
+            fields.append('message_text')
+
+        if 'is_active' in request.data:
+            rule.is_active = bool(request.data.get('is_active'))
+            fields.append('is_active')
+
+        if fields:
+            rule.save(update_fields=fields)
+        return Response(_serialize_rule(rule))
+
+
+class AutoBroadcastRulePreviewAPIView(APIView):
+    """
+    GET /api/v1/auto-broadcasts/<id>/preview/
+    «Кому уйдёт и сколько» — НИЧЕГО не отправляет. Показывать перед включением.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, rule_id: int):
+        from apps.tenant.senler.engine import preview_rule
+        from apps.tenant.senler.models import AutoBroadcastRule
+
+        try:
+            rule = AutoBroadcastRule.objects.get(pk=rule_id)
+        except AutoBroadcastRule.DoesNotExist:
+            return Response({'detail': 'Правило не найдено.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        try:
+            data = preview_rule(rule)
+        except Exception as exc:
+            return Response({'detail': f'Не удалось посчитать: {exc}'},
+                            status=status.HTTP_409_CONFLICT)
+        return Response(data)

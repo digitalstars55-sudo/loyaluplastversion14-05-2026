@@ -5,6 +5,9 @@
 from django.urls import path
 
 from .views import (
+    AutoBroadcastRulesAPIView,
+    AutoBroadcastRuleDetailAPIView,
+    AutoBroadcastRulePreviewAPIView,
     MobileBranchListAPIView,
     MobileReviewListAPIView,
     MobileReviewMessagesAPIView,
@@ -189,5 +192,22 @@ urlpatterns = [
         'mobile/reviews/<int:review_id>/resolve/',
         MobileReviewResolveAPIView.as_view(),
         name='mobile-review-resolve',
+    ),
+
+    # Авторассылки («конструктор»): список, вкл/выкл + текст, предпросмотр
+    path(
+        'auto-broadcasts/',
+        AutoBroadcastRulesAPIView.as_view(),
+        name='mobile-auto-broadcasts',
+    ),
+    path(
+        'auto-broadcasts/<int:rule_id>/',
+        AutoBroadcastRuleDetailAPIView.as_view(),
+        name='mobile-auto-broadcast-detail',
+    ),
+    path(
+        'auto-broadcasts/<int:rule_id>/preview/',
+        AutoBroadcastRulePreviewAPIView.as_view(),
+        name='mobile-auto-broadcast-preview',
     ),
 ]

@@ -62,6 +62,14 @@ app.conf.beat_schedule = {
         'schedule': crontab(hour=9, minute=0),
         'kwargs': {'process_evening': True},
     },
+    # Auto-broadcast rules engine («конструктор»). Обрабатывает только ПРАВИЛА
+    # с is_active=True; пока таких нет — работает вхолостую. Legacy-задачи ниже
+    # продолжают работать: дедуп общий (один AutoBroadcastLog, те же trigger_type),
+    # поэтому одновременная работа обеих систем НЕ даёт дублей — см. engine.py.
+    'run-auto-broadcast-rules': {
+        'task': 'apps.tenant.senler.tasks.run_auto_broadcast_rules_task',
+        'schedule': 900.0,
+    },
     # Remind guests who got a story/website gift but never claimed it in a cafe.
     # Daily at 12:00 — inside the 09:00–21:00 quiet-hours window enforced in the task.
     'send-gift-reminders': {
