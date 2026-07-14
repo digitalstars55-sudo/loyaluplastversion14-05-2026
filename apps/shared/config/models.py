@@ -162,6 +162,16 @@ class ClientConfig(models.Model):
             'Должно быть меньше срока жизни. 0 — не напоминать.'
         ),
     )
+    # Предохранитель конструктора авторассылок: не заваливать одного гостя.
+    auto_broadcast_weekly_cap = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name='Лимит авторассылок на гостя в неделю',
+        help_text=(
+            'Максимум автоматических сообщений одному гостю за 7 дней. '
+            'Защита от того, чтобы несколько правил не завалили человека. '
+            '0 — без ограничения (по умолчанию).'
+        ),
+    )
     story_campaign_start = models.DateField(
         null=True, blank=True,
         verbose_name='Дата начала кампании сториз',

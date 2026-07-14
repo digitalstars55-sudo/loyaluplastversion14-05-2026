@@ -679,6 +679,8 @@ _EVENT_ICONS = {
     AutoBroadcastType.BIRTHDAY:         '🎉',
     AutoBroadcastType.AFTER_GAME_3H:    '🎮',
     AutoBroadcastType.GIFT_NOT_CLAIMED: '🎁',
+    AutoBroadcastType.NO_VISIT_DAYS:    '💤',
+    AutoBroadcastType.SUBSCRIBED_DAYS:  '👋',
 }
 
 

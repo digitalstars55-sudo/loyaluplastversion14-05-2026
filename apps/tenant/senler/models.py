@@ -12,6 +12,11 @@ class AutoBroadcastType(models.TextChoices):
     BIRTHDAY         = 'birthday',      'День рождения'
     AFTER_GAME_3H    = 'after_game_3h', 'Через 3 часа после игры'
     GIFT_NOT_CLAIMED = 'gift_not_claimed', 'Подарок из сториз/сайта не забран'
+    # ── Фаза 2: события, где «через сколько дней» задаёт сам маркетолог ────────
+    # (задержка берётся из AutoBroadcastRule.delay_days — одно событие, сколько
+    #  угодно правил: «не приходил 30 дней», «не приходил 60 дней» и т.д.)
+    NO_VISIT_DAYS    = 'no_visit_days',   'Не приходил N дней (реактивация)'
+    SUBSCRIBED_DAYS  = 'subscribed_days', 'Подписался N дней назад (welcome)'
 
 
 class AudienceType(models.TextChoices):

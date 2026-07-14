@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Callable
 
 import pytz
@@ -99,30 +99,108 @@ def _after_game_resolver(rule, now):
     """
     Через 3 часа после игры. 1-в-1 с send_after_game_broadcast_task:
     окно (now-3h-20min .. now-3h), 20 мин нахлёста чтобы не терять игроков.
-    Вечерний режим (игры после 18:00 вчера) здесь НЕ реализуем — им продолжает
-    заниматься legacy-задача, пока движок не подтверждён на проде.
+
+    ВЕЧЕРНИЙ РЕЖИМ (Фаза 2): у legacy для этого отдельный запуск в 09:00 с
+    process_evening=True — он добирает вчерашние игры 18:01–23:59, чей «+3 часа»
+    пришёлся на ночь. Движок делает то же: если сейчас 9-й час по МСК, к обычному
+    окну добавляются вчерашние вечерние игры. Движок крутится каждые 15 мин, т.е.
+    в 9:00/9:15/9:30/9:45 они попадут 4 раза — но дедуп «раз в сутки на гостя»
+    (DEDUP_DAY, общий лог с legacy) не даст отправить повторно.
     """
     from apps.tenant.game.models import ClientAttempt
 
-    window_end   = now - timedelta(hours=3)
-    window_start = now - timedelta(hours=3, minutes=20)
+    local = now.astimezone(_MSK)
+    windows = [(now - timedelta(hours=3, minutes=20), now - timedelta(hours=3))]
+
+    if local.hour == 9:
+        yesterday = local.date() - timedelta(days=1)
+        windows.append((
+            _MSK.localize(datetime(yesterday.year, yesterday.month, yesterday.day, 18, 1, 0)),
+            _MSK.localize(datetime(yesterday.year, yesterday.month, yesterday.day, 23, 59, 59)),
+        ))
+
+    out, seen = [], set()
+    for w_start, w_end in windows:
+        qs = (
+            ClientAttempt.objects
+            .filter(
+                created_at__gte=w_start,
+                created_at__lte=w_end,
+                client__is_employee=False,
+                client__client__vk_id__isnull=False,
+            )
+            .select_related('client', 'client__client', 'client__branch')
+            .distinct()
+        )
+        for att in qs:
+            cb = att.client
+            if cb.pk in seen:
+                continue
+            seen.add(cb.pk)
+            if not _match_audience_obj(cb, rule):
+                continue
+            out.append(Candidate(client_branch=cb, vk_id=cb.client.vk_id))
+    return out
+
+
+def _no_visit_resolver(rule, now):
+    """
+    «Не приходил N дней» — реактивация. Берём гостей, чей ПОСЛЕДНИЙ визит был
+    ровно N дней назад (по дате). Так правило срабатывает один раз — в день, когда
+    гость пересёк порог, а не каждый день после него.
+
+    N = rule.delay_days (обязателен). Одно событие → сколько угодно правил:
+    «не приходил 30 дней», «не приходил 60 дней» — не мешают друг другу, потому
+    что один гость в один день пересекает только один порог.
+    """
+    from django.db.models import Max
+    from apps.tenant.branch.models import ClientBranch
+
+    n = rule.delay_days
+    if not n or n <= 0:
+        return []
+
+    target = now.astimezone(_MSK).date() - timedelta(days=n)
     qs = (
-        ClientAttempt.objects
+        ClientBranch.objects
         .filter(
-            created_at__gte=window_start,
-            created_at__lte=window_end,
+            is_employee=False,
+            client__is_active=True,
+            client__vk_id__isnull=False,
+        )
+        .annotate(last_visit=Max('visits__visited_at'))
+        .filter(last_visit__date=target)      # последний визит ровно N дней назад
+        .select_related('client', 'branch')
+    )
+    qs = _apply_audience(qs, rule)
+    return [Candidate(client_branch=cb, vk_id=cb.client.vk_id) for cb in qs]
+
+
+def _subscribed_resolver(rule, now):
+    """
+    «Подписался N дней назад» — welcome-серия. Гости, вступившие в сообщество
+    ровно N дней назад (по дате вступления). N = rule.delay_days.
+    """
+    from apps.tenant.branch.models import ClientVKStatus
+
+    n = rule.delay_days
+    if n is None or n < 0:
+        return []
+
+    target = now.astimezone(_MSK).date() - timedelta(days=n)
+    qs = (
+        ClientVKStatus.objects
+        .filter(
+            community_joined_at__date=target,
             client__is_employee=False,
+            client__client__is_active=True,
             client__client__vk_id__isnull=False,
         )
         .select_related('client', 'client__client', 'client__branch')
-        .distinct()
     )
-    out, seen = [], set()
-    for att in qs:
-        cb = att.client
-        if cb.pk in seen:
-            continue
-        seen.add(cb.pk)
+    out = []
+    for st in qs:
+        cb = st.client
         if not _match_audience_obj(cb, rule):
             continue
         out.append(Candidate(client_branch=cb, vk_id=cb.client.vk_id))
@@ -225,7 +303,56 @@ def get_events() -> dict:
             placeholders=('{имя}', '{подарок}', '{дней_осталось}', '{адреса}'),
             default_delay_days=10,
         ),
+        # ── Фаза 2 ────────────────────────────────────────────────────────────
+        T.NO_VISIT_DAYS: EventSpec(
+            label='Не приходил N дней (реактивация)', dedup=DEDUP_DAY,
+            resolver=_no_visit_resolver, placeholders=('{имя}', '{адреса}'),
+        ),
+        T.SUBSCRIBED_DAYS: EventSpec(
+            label='Подписался N дней назад (welcome)', dedup=DEDUP_DAY,
+            resolver=_subscribed_resolver, placeholders=('{имя}', '{адреса}'),
+        ),
     }
+
+
+# ── Частотный кэп (предохранитель) ───────────────────────────────────────────
+
+def _weekly_cap() -> int:
+    """
+    Не больше N авто-сообщений одному гостю за 7 дней. Настройка сети
+    (ClientConfig.auto_broadcast_weekly_cap). 0 = без ограничения (дефолт, чтобы
+    ничего не изменилось у тех, кто уже живёт на legacy).
+    """
+    from django.db import connection
+    from apps.shared.config.models import ClientConfig
+    try:
+        company = getattr(connection, 'tenant', None)
+        if company is None or not getattr(company, 'pk', None):
+            return 0
+        cfg = ClientConfig.objects.filter(company=company).first()
+        return int(getattr(cfg, 'auto_broadcast_weekly_cap', 0) or 0)
+    except Exception:
+        return 0
+
+
+def _apply_frequency_cap(cands: list[Candidate], now) -> list[Candidate]:
+    """Выкидывает тех, кто за последние 7 дней уже получил cap авто-сообщений."""
+    from django.db.models import Count
+    from apps.tenant.senler.models import AutoBroadcastLog
+
+    cap = _weekly_cap()
+    if cap <= 0 or not cands:
+        return cands
+
+    vk_ids = [c.vk_id for c in cands]
+    counts = dict(
+        AutoBroadcastLog.objects
+        .filter(vk_id__in=vk_ids, sent_at__gte=now - timedelta(days=7))
+        .values('vk_id')
+        .annotate(n=Count('id'))
+        .values_list('vk_id', 'n')
+    )
+    return [c for c in cands if counts.get(c.vk_id, 0) < cap]
 
 
 # ── Аудитория ────────────────────────────────────────────────────────────────
@@ -352,7 +479,9 @@ def resolve_recipients(rule, now=None) -> list[Candidate]:
         return []
 
     sent = _already_sent(spec, rule.event, cands, now)
-    return [c for c in cands if _dedup_key(spec, c) not in sent]
+    fresh = [c for c in cands if _dedup_key(spec, c) not in sent]
+    # Предохранитель: не заваливать одного гостя авторассылками.
+    return _apply_frequency_cap(fresh, now)
 
 
 def preview_rule(rule, sample: int = 5, now=None) -> dict:
