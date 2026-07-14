@@ -25,6 +25,7 @@ send_gift_reminder_broadcasts_task) НЕ ТРОГАЮТСЯ и остаются 
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -257,6 +258,64 @@ def _gift_not_claimed_resolver(rule, now):
     return out
 
 
+def _follow_up_resolver(rule, now):
+    """
+    Догоняющее письмо. Берём тех, кому РОДИТЕЛЬСКОЕ правило отправило сообщение
+    ≥ N дней назад (N = rule.delay_days) и кто не отреагировал:
+
+      not_read    — сообщение так и не прочитано (BroadcastRecipient.read_at пуст;
+                    прочтения проставляет существующая check_read_status_task);
+      not_visited — прочитал или нет, но в кафе после этого не приходил.
+
+    Дедуп по объекту: один догон на (правило, гость) — entity_key 'fu:<rule>:<vk_id>'.
+    """
+    from apps.tenant.branch.models import ClientBranchVisit
+    from apps.tenant.senler.models import BroadcastRecipient, RecipientStatus
+
+    parent = rule.parent_rule
+    if not parent:
+        return []
+    n = rule.delay_days or 0
+    cutoff = now - timedelta(days=n)
+
+    qs = (
+        BroadcastRecipient.objects
+        .filter(
+            send__auto_broadcast_rule=parent,
+            status=RecipientStatus.SENT,
+            sent_at__isnull=False,
+            sent_at__lte=cutoff,
+            client_branch__isnull=False,
+        )
+        .select_related('client_branch', 'client_branch__client', 'client_branch__branch')
+    )
+    if rule.follow_up_condition == 'not_read':
+        qs = qs.filter(read_at__isnull=True)
+
+    out, seen = [], set()
+    for rec in qs:
+        cb = rec.client_branch
+        if cb.pk in seen:
+            continue
+        seen.add(cb.pk)
+
+        if rule.follow_up_condition == 'not_visited':
+            came = ClientBranchVisit.objects.filter(
+                client=cb, visited_at__gte=rec.sent_at,
+            ).exists()
+            if came:
+                continue
+
+        if not _match_audience_obj(cb, rule):
+            continue
+        out.append(Candidate(
+            client_branch=cb,
+            vk_id=cb.client.vk_id,
+            entity_key=f'fu:{rule.pk}:{cb.client.vk_id}',
+        ))
+    return out
+
+
 def _tenant_gift_reminder_days() -> int:
     """
     Дефолтная задержка напоминания о подарке = настройка сети.
@@ -312,7 +371,78 @@ def get_events() -> dict:
             label='Подписался N дней назад (welcome)', dedup=DEDUP_DAY,
             resolver=_subscribed_resolver, placeholders=('{имя}', '{адреса}'),
         ),
+        # ── Фаза 3 ────────────────────────────────────────────────────────────
+        T.FOLLOW_UP: EventSpec(
+            label='Догоняющее (не отреагировал на другое правило)', dedup=DEDUP_ENTITY,
+            resolver=_follow_up_resolver, placeholders=('{имя}', '{адреса}'),
+        ),
     }
+
+
+# ── A/B-варианты ─────────────────────────────────────────────────────────────
+
+def pick_variant(rule, vk_id: int):
+    """
+    Какой вариант текста достанется этому гостю. Выбор ДЕТЕРМИНИРОВАННЫЙ (по vk_id
+    и id правила): один и тот же человек всегда попадает в одну и ту же ветку.
+    Иначе он в разные дни получал бы разные варианты, и A/B было бы грязным.
+
+    Нет активных вариантов → None (шлём rule.message_text, как раньше).
+    """
+    variants = [v for v in rule.variants.all() if v.is_active and v.weight > 0]
+    if not variants:
+        return None
+    variants.sort(key=lambda v: v.pk)          # стабильный порядок
+    total = sum(v.weight for v in variants)
+    # md5 вместо random и вместо hash(): встроенный hash() рандомизируется между
+    # процессами (PYTHONHASHSEED), т.е. гость мог бы попасть в разные ветки в
+    # разных воркерах. md5 даёт один и тот же бакет всегда и везде.
+    digest = hashlib.md5(f'{rule.pk}:{int(vk_id)}'.encode()).hexdigest()
+    bucket = int(digest, 16) % total
+    acc = 0
+    for v in variants:
+        acc += v.weight
+        if bucket < acc:
+            return v
+    return variants[-1]
+
+
+# ── Статистика по правилу / вариантам ────────────────────────────────────────
+
+def rule_stats(rule) -> dict:
+    """
+    Отправлено / прочитано / % открытий — по правилу и по каждому A/B-варианту.
+    Прочтения берутся из BroadcastRecipient.read_at, который проставляет
+    существующая check_read_status_task (она выбирает получателей обобщённо и
+    резолвит VK-конфиг через client_branch.branch — отправки движка подхватываются
+    сама собой, править её не пришлось).
+    """
+    from apps.tenant.senler.models import BroadcastRecipient, RecipientStatus
+
+    def _agg(qs):
+        sent = qs.filter(status=RecipientStatus.SENT).count()
+        read = qs.filter(status=RecipientStatus.SENT, read_at__isnull=False).count()
+        failed = qs.filter(status=RecipientStatus.FAILED).count()
+        return {
+            'sent': sent,
+            'read': read,
+            'failed': failed,
+            'open_rate': round(read / sent * 100, 1) if sent else 0.0,
+        }
+
+    base = BroadcastRecipient.objects.filter(send__auto_broadcast_rule=rule)
+    out = _agg(base)
+    out['variants'] = [
+        {
+            'id': v.pk,
+            'name': v.name,
+            'weight': v.weight,
+            'is_active': v.is_active,
+            **_agg(base.filter(send__auto_broadcast_variant=v)),
+        }
+        for v in rule.variants.all().order_by('pk')
+    ]
+    return out
 
 
 # ── Частотный кэп (предохранитель) ───────────────────────────────────────────
@@ -435,12 +565,16 @@ def rule_is_due(rule, now) -> tuple[bool, str]:
 
 # ── Текст ────────────────────────────────────────────────────────────────────
 
-def render_text(rule, c: Candidate) -> str:
-    """Подстановка переменных. Недоступные для события переменные просто пустеют."""
+def render_text(rule, c: Candidate, variant=None) -> str:
+    """
+    Подстановка переменных. Недоступные для события переменные просто пустеют.
+    variant — если у правила идёт A/B, берём текст варианта вместо текста правила.
+    """
     gift = c.gift
     days_left = getattr(gift, 'days_left_to_claim', None) if gift else None
+    template = (variant.message_text if variant else rule.message_text) or ''
     return (
-        (rule.message_text or '')
+        template
         .replace('{имя}', getattr(c.client_branch.client, 'first_name', '') or '')
         .replace('{подарок}', (gift.product.name if gift and gift.product else '') or 'подарок')
         .replace('{дней_осталось}', str(days_left) if days_left is not None else '')
@@ -537,13 +671,26 @@ def run_rule(rule, now=None, dry_run: bool = False) -> dict:
             'reason': reason or 'ok',
         }
 
-    bs = BroadcastSend.objects.create(
-        status=SendStatus.RUNNING,
-        trigger_type=TriggerType.AUTO,
-        triggered_by=rule.event,
-        started_at=timezone.now(),
-    )
-    attachment_cache: dict[int, str | None] = {}
+    # A/B: у каждого варианта СВОЙ BroadcastSend — тогда прочтения и статистика
+    # считаются по вариантам сами собой, через уже существующие механизмы.
+    sends: dict = {}          # variant_pk (или None) → BroadcastSend
+    counters: dict = {}       # variant_pk (или None) → [sent, failed]
+
+    def _send_for(variant):
+        key = variant.pk if variant else None
+        if key not in sends:
+            sends[key] = BroadcastSend.objects.create(
+                status=SendStatus.RUNNING,
+                trigger_type=TriggerType.AUTO,
+                triggered_by=rule.event,
+                auto_broadcast_rule=rule,
+                auto_broadcast_variant=variant,
+                started_at=timezone.now(),
+            )
+            counters[key] = [0, 0]
+        return sends[key], counters[key]
+
+    attachment_cache: dict[tuple, str | None] = {}
     sent_count = failed_count = 0
 
     for c in cands:
@@ -555,16 +702,23 @@ def run_rule(rule, now=None, dry_run: bool = False) -> dict:
         if not senler_cfg.is_active:
             continue
 
-        if rule.image:
-            if senler_cfg.pk not in attachment_cache:
-                att, _ = upload_vk_photo(senler_cfg, rule.image)
-                attachment_cache[senler_cfg.pk] = att
-            attachment = attachment_cache[senler_cfg.pk]
+        variant = pick_variant(rule, c.vk_id)
+        bs, cnt = _send_for(variant)
+
+        image = (variant.image if variant and variant.image else rule.image)
+        if image:
+            # Кэш на (VK-сообщество, вариант): фото, загруженное токеном одного
+            # сообщества, нельзя отправить от имени другого.
+            ck = (senler_cfg.pk, variant.pk if variant else None)
+            if ck not in attachment_cache:
+                att, _ = upload_vk_photo(senler_cfg, image)
+                attachment_cache[ck] = att
+            attachment = attachment_cache[ck]
         else:
             attachment = None
 
         ok, err, vk_msg_id = send_vk_message(
-            senler_cfg, c.vk_id, render_text(rule, c), attachment,
+            senler_cfg, c.vk_id, render_text(rule, c, variant), attachment,
         )
         if ok:
             # ⚠️ trigger_type=rule.event — тот же ключ, что пишет legacy-задача.
@@ -582,22 +736,26 @@ def run_rule(rule, now=None, dry_run: bool = False) -> dict:
                 status=RecipientStatus.SENT, sent_at=timezone.now(),
                 vk_message_id=vk_msg_id,
             )
+            cnt[0] += 1
             sent_count += 1
         else:
             BroadcastRecipient.objects.create(
                 send=bs, client_branch=cb, vk_id=c.vk_id,
                 status=RecipientStatus.FAILED, error=(err or '')[:512],
             )
+            cnt[1] += 1
             failed_count += 1
             logger.warning('Auto-rule %s failed vk_id=%s: %s', rule.pk, c.vk_id, err)
         time.sleep(0.05)  # VK rate limit: ≤ 20 messages/second
 
-    bs.status = SendStatus.DONE
-    bs.sent_count = sent_count
-    bs.failed_count = failed_count
-    bs.recipients_count = sent_count + failed_count
-    bs.finished_at = timezone.now()
-    bs.save(update_fields=[
-        'status', 'sent_count', 'failed_count', 'recipients_count', 'finished_at',
-    ])
+    for key, bs in sends.items():
+        s, f = counters[key]
+        bs.status = SendStatus.DONE
+        bs.sent_count = s
+        bs.failed_count = f
+        bs.recipients_count = s + f
+        bs.finished_at = timezone.now()
+        bs.save(update_fields=[
+            'status', 'sent_count', 'failed_count', 'recipients_count', 'finished_at',
+        ])
     return {'sent': sent_count, 'failed': failed_count}

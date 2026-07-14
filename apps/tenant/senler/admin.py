@@ -8,6 +8,7 @@ from apps.shared.config.admin_sites import tenant_admin
 
 from .models import (
     AudienceType, AutoBroadcastRule, AutoBroadcastTemplate, AutoBroadcastType,
+    AutoBroadcastVariant,
     Broadcast, BroadcastRecipient, BroadcastSend,
     RecipientStatus, SendStatus, SenlerConfig,
 )
@@ -681,7 +682,17 @@ _EVENT_ICONS = {
     AutoBroadcastType.GIFT_NOT_CLAIMED: '🎁',
     AutoBroadcastType.NO_VISIT_DAYS:    '💤',
     AutoBroadcastType.SUBSCRIBED_DAYS:  '👋',
+    AutoBroadcastType.FOLLOW_UP:        '🔁',
 }
+
+
+class AutoBroadcastVariantInline(admin.TabularInline):
+    """A/B-варианты текста. Пусто — шлётся текст самого правила (как раньше)."""
+    model = AutoBroadcastVariant
+    extra = 0
+    fields = ['name', 'message_text', 'image', 'weight', 'is_active']
+    verbose_name = 'Вариант текста (A/B)'
+    verbose_name_plural = 'A/B-тест: варианты текста (пусто — один текст правила)'
 
 
 @admin.register(AutoBroadcastRule, site=tenant_admin)
@@ -697,7 +708,7 @@ class AutoBroadcastRuleAdmin(admin.ModelAdmin):
     list_editable   = ['is_active']
     search_fields   = ['name', 'message_text']
     filter_horizontal = ['branches', 'rf_segments']
-    readonly_fields = ['_preview_btn', '_ai_btn', '_vars_hint']
+    readonly_fields = ['_preview_btn', '_ai_btn', '_vars_hint', '_stats']
 
     fieldsets = [
         ('Что и когда', {
@@ -719,11 +730,61 @@ class AutoBroadcastRuleAdmin(admin.ModelAdmin):
         ('Сообщение', {
             'fields': ['message_text', '_vars_hint', '_ai_btn', 'image'],
         }),
+        ('Догоняющее письмо (только для события «Догоняющее»)', {
+            'fields': ['parent_rule', 'follow_up_condition'],
+            'classes': ['collapse'],
+            'description': (
+                'Возьмём тех, кому выбранное правило отправило сообщение (задержка выше — '
+                'через сколько дней догонять), и кто не отреагировал.'
+            ),
+        }),
+        ('Статистика', {
+            'fields': ['_stats'],
+        }),
         ('Проверка перед включением', {
             'fields': ['_preview_btn'],
             'description': 'Посмотрите, скольким гостям уйдёт сообщение. Ничего не отправляется.',
         }),
     ]
+
+    inlines = [AutoBroadcastVariantInline]
+
+    def _stats(self, obj):
+        if not obj or not obj.pk:
+            return mark_safe('<span style="color:#888">Появится после первой отправки.</span>')
+        from apps.tenant.senler.engine import rule_stats
+        try:
+            st = rule_stats(obj)
+        except Exception as exc:
+            return mark_safe(f'<span style="color:#c00">Не удалось посчитать: {exc}</span>')
+
+        rows = (
+            f'<tr><td style="padding:4px 12px 4px 0"><b>Всего</b></td>'
+            f'<td style="padding:4px 12px 4px 0">{st["sent"]}</td>'
+            f'<td style="padding:4px 12px 4px 0">{st["read"]}</td>'
+            f'<td style="padding:4px 12px 4px 0"><b>{st["open_rate"]}%</b></td>'
+            f'<td style="padding:4px 0">{st["failed"]}</td></tr>'
+        )
+        for v in st['variants']:
+            rows += (
+                f'<tr><td style="padding:4px 12px 4px 0">{v["name"]} '
+                f'<span style="color:#888">(вес {v["weight"]})</span></td>'
+                f'<td style="padding:4px 12px 4px 0">{v["sent"]}</td>'
+                f'<td style="padding:4px 12px 4px 0">{v["read"]}</td>'
+                f'<td style="padding:4px 12px 4px 0"><b>{v["open_rate"]}%</b></td>'
+                f'<td style="padding:4px 0">{v["failed"]}</td></tr>'
+            )
+        return mark_safe(
+            '<table style="font-size:13px;border-collapse:collapse">'
+            '<tr style="color:#888;font-size:11px;text-transform:uppercase">'
+            '<td style="padding:0 12px 6px 0">Вариант</td>'
+            '<td style="padding:0 12px 6px 0">Отправлено</td>'
+            '<td style="padding:0 12px 6px 0">Прочитано</td>'
+            '<td style="padding:0 12px 6px 0">% открытий</td>'
+            '<td style="padding:0 0 6px 0">Ошибок</td></tr>'
+            + rows + '</table>'
+        )
+    _stats.short_description = 'Отправки и открытия'
 
     def _vars_hint(self, obj):
         return mark_safe(

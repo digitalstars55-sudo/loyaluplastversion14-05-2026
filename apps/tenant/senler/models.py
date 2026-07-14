@@ -17,6 +17,15 @@ class AutoBroadcastType(models.TextChoices):
     #  угодно правил: «не приходил 30 дней», «не приходил 60 дней» и т.д.)
     NO_VISIT_DAYS    = 'no_visit_days',   'Не приходил N дней (реактивация)'
     SUBSCRIBED_DAYS  = 'subscribed_days', 'Подписался N дней назад (welcome)'
+    # ── Фаза 3: догоняющее письмо ─────────────────────────────────────────────
+    # Смотрит на ДРУГОЕ правило (parent_rule): кому оно отправило N дней назад и
+    # кто не отреагировал (не прочитал / не пришёл) — тому уходит это сообщение.
+    FOLLOW_UP        = 'follow_up',       'Догоняющее (не отреагировал на другое правило)'
+
+
+class FollowUpCondition(models.TextChoices):
+    NOT_READ    = 'not_read',    'Не прочитал сообщение'
+    NOT_VISITED = 'not_visited', 'Не пришёл в кафе после сообщения'
 
 
 class AudienceType(models.TextChoices):
@@ -233,6 +242,23 @@ class BroadcastSend(TimeStampedModel):
         blank=True,
         related_name='sends',
         verbose_name='Шаблон авторассылки',
+    )
+    # Отправка движком правил: чьё правило и какой вариант текста (A/B).
+    # Через них считается статистика по каждому правилу/варианту; прочтения
+    # проставляет существующая check_read_status_task (правок не потребовалось).
+    auto_broadcast_rule = models.ForeignKey(
+        'senler.AutoBroadcastRule',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='sends',
+        verbose_name='Правило авторассылки',
+    )
+    auto_broadcast_variant = models.ForeignKey(
+        'senler.AutoBroadcastVariant',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='sends',
+        verbose_name='Вариант текста (A/B)',
     )
     status = models.CharField(
         max_length=9,
@@ -565,6 +591,26 @@ class AutoBroadcastRule(TimeStampedModel):
                   'правилу с БОЛЬШИМ приоритетом (одно сообщение, не несколько).',
     )
 
+    # ── Фаза 3: ветвление (догоняющее письмо) ─────────────────────────────────
+    # Заполняется ТОЛЬКО когда event = follow_up.
+    parent_rule = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True, blank=True,
+        related_name='follow_ups',
+        verbose_name='За каким правилом догоняем',
+        help_text='Только для события «Догоняющее». Возьмём тех, кому это правило '
+                  'отправило сообщение, и кто не отреагировал.',
+    )
+    follow_up_condition = models.CharField(
+        max_length=16,
+        choices=FollowUpCondition.choices,
+        default=FollowUpCondition.NOT_READ,
+        blank=True,
+        verbose_name='Условие догона',
+        help_text='Кого догоняем: кто не прочитал, или кто прочитал, но так и не пришёл.',
+    )
+
     def __str__(self):
         return f'{self.name} ({self.get_event_display()})'
 
@@ -575,3 +621,58 @@ class AutoBroadcastRule(TimeStampedModel):
         indexes = [
             models.Index(fields=['event', 'is_active'], name='autobc_rule_event_idx'),
         ]
+
+
+# ── AutoBroadcastVariant (A/B-тест текстов) ──────────────────────────────────
+
+class AutoBroadcastVariant(TimeStampedModel):
+    """
+    Вариант текста для A/B-теста внутри правила.
+
+    Если у правила НЕТ активных вариантов — шлётся rule.message_text (как раньше).
+    Если есть — каждому гостю достаётся один вариант, и ВСЕГДА один и тот же:
+    выбор детерминированный (по vk_id), иначе один человек в разные дни попадал бы
+    в разные ветки и A/B был бы грязным.
+
+    Статистика (отправлено / прочитано) считается отдельно по каждому варианту —
+    у каждого свои BroadcastSend, поэтому прочтения подхватывает существующая
+    задача check_read_status_task без единой правки.
+    """
+
+    rule = models.ForeignKey(
+        AutoBroadcastRule,
+        on_delete=models.CASCADE,
+        related_name='variants',
+        verbose_name='Правило',
+    )
+    name = models.CharField(
+        max_length=60,
+        verbose_name='Название варианта',
+        help_text='Напр. «А — со скидкой», «Б — без скидки».',
+    )
+    message_text = models.TextField(
+        verbose_name='Текст варианта',
+        help_text='Переменные те же, что у правила.',
+    )
+    image = models.ImageField(
+        upload_to='auto_broadcasts/',
+        blank=True, null=True,
+        verbose_name='Изображение',
+    )
+    weight = models.PositiveSmallIntegerField(
+        default=1,
+        verbose_name='Вес',
+        help_text='Доля аудитории. Два варианта с весами 1 и 1 → 50/50; 3 и 1 → 75/25.',
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name='Участвует в тесте',
+    )
+
+    def __str__(self):
+        return f'{self.rule.name} · {self.name}'
+
+    class Meta:
+        verbose_name = 'Вариант текста (A/B)'
+        verbose_name_plural = 'Варианты текста (A/B)'
+        ordering = ['rule', 'name']

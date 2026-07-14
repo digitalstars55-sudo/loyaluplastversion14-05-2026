@@ -2871,9 +2871,13 @@ class AssistantContextAPIView(APIView):
 # ════════════════════════════════════════════════════════════════════
 
 def _serialize_rule(rule) -> dict:
-    from apps.tenant.senler.models import RecipientStatus
+    from apps.tenant.senler.engine import rule_stats
 
-    logs = rule.logs.count()
+    try:
+        st = rule_stats(rule)
+    except Exception:
+        st = {'sent': 0, 'read': 0, 'failed': 0, 'open_rate': 0.0, 'variants': []}
+
     return {
         'id':            rule.pk,
         'name':          rule.name,
@@ -2888,7 +2892,15 @@ def _serialize_rule(rule) -> dict:
         'branches_count': rule.branches.count(),   # 0 = все точки
         'gender_filter': rule.gender_filter,
         'segments_count': rule.rf_segments.count(),
-        'sent_total':    logs,
+        'sent_total':    rule.logs.count(),
+        # Фаза 3: статистика и A/B
+        'sent':          st['sent'],
+        'read':          st['read'],
+        'failed':        st['failed'],
+        'open_rate':     st['open_rate'],
+        'variants':      st['variants'],
+        # Догоняющее письмо: за каким правилом идём
+        'parent_rule_name': rule.parent_rule.name if rule.parent_rule_id else None,
     }
 
 
