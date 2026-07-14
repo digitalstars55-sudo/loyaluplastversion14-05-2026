@@ -139,6 +139,7 @@ class ClientConfigAdmin(admin.ModelAdmin):
                 'story_require_cafe_visit',
                 'story_cafe_address',
                 'story_activation_text', 'story_saved_text',
+                'story_gift_lifetime_days', 'story_gift_reminder_days',
                 'story_campaign_start', 'story_campaign_end',
             ),
             'description': (

@@ -5,6 +5,7 @@ Schedule (main/celery.py beat_schedule):
   send-birthday-broadcasts  — daily at 10:00 Moscow time
   send-after-game-broadcast — every 15 minutes (09:00–21:00 window enforced in task)
   send-after-game-morning   — daily at 09:00, handles yesterday-evening games
+  send-gift-reminders       — daily at 12:00, напоминание о незабранном подарке
 """
 from __future__ import annotations
 
@@ -361,6 +362,198 @@ def send_after_game_broadcast_task(process_evening: bool = False) -> dict:
         except Exception as exc:
             logger.exception(
                 'send_after_game_broadcast_task failed tenant=%s: %s',
+                tenant.schema_name, exc,
+            )
+
+    return {'sent': total_sent}
+
+
+# ── Gift-not-claimed reminder ────────────────────────────────────────────────
+
+def _tenant_addresses(limit: int = 10) -> str:
+    """
+    Адреса всех активных точек сети — для плейсхолдера {адреса}.
+    Подарок сетевой (забрать можно в любой точке), поэтому конкретный адрес
+    не подставляем. Берём BranchConfig.address, фолбэк — название точки.
+    """
+    from apps.tenant.branch.models import Branch
+
+    parts = []
+    for b in Branch.objects.filter(is_active=True).select_related('config')[:limit]:
+        addr = (getattr(getattr(b, 'config', None), 'address', '') or '').strip()
+        parts.append(addr or b.name)
+    return ', '.join(p for p in parts if p)
+
+
+def render_gift_reminder_text(template_text: str, *, entry, addresses: str) -> str:
+    """Подставляет переменные в текст авторассылки «подарок не забран»."""
+    days_left = entry.days_left_to_claim
+    return (
+        (template_text or '')
+        .replace('{дней_осталось}', str(days_left if days_left is not None else ''))
+        .replace('{подарок}', entry.product.name if entry.product else 'подарок')
+        .replace('{адреса}', addresses)
+    )
+
+
+@shared_task(name='apps.tenant.senler.tasks.send_gift_reminder_broadcasts_task')
+def send_gift_reminder_broadcasts_task() -> dict:
+    """
+    Напоминание гостю, который получил подарок из сториз/сайта, но так и не
+    активировал его в кафе.
+
+    Кому: подарок получен (received_at) ≥ N дней назад (ClientConfig.
+    story_gift_reminder_days, по умолчанию 10), НЕ активирован, срок забора ещё
+    НЕ вышел (claim_expires_at > now — сгоревшим напоминать бессмысленно), и
+    напоминание по нему ещё не отправляли.
+
+    Дедуп — по САМОМУ ПОДАРКУ (StoryGiftEntry.reminder_sent_at), а не по vk_id:
+    гость может получить несколько подарков в разное время, и каждый заслуживает
+    своего напоминания.
+
+    Тихие часы: шлём только 09:00–21:00 МСК (как after_game).
+    Текст — AutoBroadcastTemplate(type=gift_not_claimed) с плейсхолдерами.
+    """
+    from django_tenants.utils import get_tenant_model, schema_context
+    from apps.shared.config.models import ClientConfig
+    from apps.tenant.inventory.models import StoryGiftEntry
+    from apps.tenant.senler.models import (
+        AutoBroadcastLog, AutoBroadcastTemplate, AutoBroadcastType,
+        BroadcastRecipient, BroadcastSend, RecipientStatus, SendStatus, TriggerType,
+    )
+    from apps.tenant.senler.services import send_vk_message, upload_vk_photo
+
+    now = timezone.now()
+    now_local = now.astimezone(_MSK)
+    if not (9 <= now_local.hour < 21):
+        return {'sent': 0, 'reason': 'outside_send_window'}
+
+    TenantModel = get_tenant_model()
+    total_sent = 0
+
+    for tenant in TenantModel.objects.exclude(schema_name='public'):
+        try:
+            # ClientConfig живёт в public и привязан к Company — читаем ЯВНО по
+            # tenant, а не через connection.tenant (в schema_context он не выставлен).
+            cfg = ClientConfig.objects.filter(company=tenant).first()
+            reminder_days = int(getattr(cfg, 'story_gift_reminder_days', 0) or 0)
+            if reminder_days <= 0:
+                continue
+
+            with schema_context(tenant.schema_name):
+                try:
+                    template = AutoBroadcastTemplate.objects.get(
+                        type=AutoBroadcastType.GIFT_NOT_CLAIMED,
+                        is_active=True,
+                    )
+                except AutoBroadcastTemplate.DoesNotExist:
+                    continue
+
+                entries = (
+                    StoryGiftEntry.objects
+                    .filter(
+                        received_at__isnull=False,
+                        received_at__lte=now - timedelta(days=reminder_days),
+                        activated_at__isnull=True,
+                        reminder_sent_at__isnull=True,
+                        claim_expires_at__isnull=False,   # бессрочным не напоминаем
+                        claim_expires_at__gt=now,          # сгоревшим — тоже
+                        client_branch__is_employee=False,
+                        client_branch__client__vk_id__isnull=False,
+                    )
+                    .select_related(
+                        'product', 'client_branch',
+                        'client_branch__client', 'client_branch__branch',
+                    )
+                )
+                if not entries.exists():
+                    continue
+
+                addresses = _tenant_addresses()
+
+                bs = BroadcastSend.objects.create(
+                    auto_broadcast_template=template,
+                    status=SendStatus.RUNNING,
+                    trigger_type=TriggerType.AUTO,
+                    triggered_by=AutoBroadcastType.GIFT_NOT_CLAIMED,
+                    started_at=timezone.now(),
+                )
+
+                attachment_cache: dict[int, str | None] = {}
+                sent_count = 0
+                failed_count = 0
+
+                for entry in entries:
+                    cb = entry.client_branch
+                    vk_id = cb.client.vk_id
+
+                    try:
+                        senler_cfg = cb.branch.senler_config
+                    except Exception:
+                        continue
+                    if not senler_cfg.is_active:
+                        continue
+
+                    if template.image:
+                        if senler_cfg.pk not in attachment_cache:
+                            att, _ = upload_vk_photo(senler_cfg, template.image)
+                            attachment_cache[senler_cfg.pk] = att
+                        attachment = attachment_cache[senler_cfg.pk]
+                    else:
+                        attachment = None
+
+                    text = render_gift_reminder_text(
+                        template.message_text, entry=entry, addresses=addresses,
+                    )
+                    ok, err, vk_msg_id = send_vk_message(
+                        senler_cfg, vk_id, text, attachment
+                    )
+                    if ok:
+                        # Дедуп по подарку — одно напоминание на один подарок.
+                        entry.reminder_sent_at = timezone.now()
+                        entry.save(update_fields=['reminder_sent_at'])
+                        AutoBroadcastLog.objects.create(
+                            trigger_type=AutoBroadcastType.GIFT_NOT_CLAIMED,
+                            vk_id=vk_id,
+                        )
+                        BroadcastRecipient.objects.create(
+                            send=bs,
+                            client_branch=cb,
+                            vk_id=vk_id,
+                            status=RecipientStatus.SENT,
+                            sent_at=timezone.now(),
+                            vk_message_id=vk_msg_id,
+                        )
+                        total_sent += 1
+                        sent_count += 1
+                    else:
+                        BroadcastRecipient.objects.create(
+                            send=bs,
+                            client_branch=cb,
+                            vk_id=vk_id,
+                            status=RecipientStatus.FAILED,
+                            error=(err or '')[:512],
+                        )
+                        failed_count += 1
+                        logger.warning(
+                            'Gift reminder failed vk_id=%s entry=%s: %s',
+                            vk_id, entry.pk, err,
+                        )
+                    time.sleep(0.05)  # VK rate limit: ≤ 20 messages/second
+
+                bs.status = SendStatus.DONE
+                bs.sent_count = sent_count
+                bs.failed_count = failed_count
+                bs.recipients_count = sent_count + failed_count
+                bs.finished_at = timezone.now()
+                bs.save(update_fields=[
+                    'status', 'sent_count', 'failed_count',
+                    'recipients_count', 'finished_at',
+                ])
+
+        except Exception as exc:
+            logger.exception(
+                'send_gift_reminder_broadcasts_task failed tenant=%s: %s',
                 tenant.schema_name, exc,
             )
 

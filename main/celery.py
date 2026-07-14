@@ -62,6 +62,12 @@ app.conf.beat_schedule = {
         'schedule': crontab(hour=9, minute=0),
         'kwargs': {'process_evening': True},
     },
+    # Remind guests who got a story/website gift but never claimed it in a cafe.
+    # Daily at 12:00 — inside the 09:00–21:00 quiet-hours window enforced in the task.
+    'send-gift-reminders': {
+        'task': 'apps.tenant.senler.tasks.send_gift_reminder_broadcasts_task',
+        'schedule': crontab(hour=12, minute=0),
+    },
     # Generate daily codes (game, quest, birthday) for all branches at 03:00 MSK
     'generate-daily-codes': {
         'task': 'apps.tenant.branch.tasks.generate_daily_codes_task',

@@ -583,6 +583,37 @@ def get_story_gift_activators(
     return qs.values('client_branch__client_id').distinct().count()
 
 
+def get_gift_claim_expired(
+    branch_ids: list[int] | None, start_date: date, end_date: date,
+    source: str | None = None,
+) -> int:
+    """
+    «Подарок сгорел»: гость получил подарок (сториз/сайт), но так и не активировал
+    его в кафе до истечения срока (claim_expires_at). Третий исход воронки рядом с
+    «получили» и «активировали».
+
+    Считаем по дате сгорания (claim_expires_at в периоде) — так метрика ложится в
+    тот же временной срез, что и остальные. Дедуп по guest.Client.
+
+    source — 'story' | 'website' | None (все источники со сроком).
+    Подарки, выданные до включения срока, имеют claim_expires_at=NULL и не считаются.
+    """
+    from django.utils import timezone as _tz
+    from apps.tenant.inventory.models import StoryGiftEntry
+
+    qs = StoryGiftEntry.objects.filter(
+        claim_expires_at__isnull=False,
+        claim_expires_at__date__gte=start_date,
+        claim_expires_at__date__lte=end_date,
+        claim_expires_at__lte=_tz.now(),   # уже сгорел, а не «сгорит сегодня позже»
+        activated_at__isnull=True,
+    )
+    if source:
+        qs = qs.filter(source=source)
+    qs = _branch_filter(qs, branch_ids, 'client_branch__branch__in')
+    return qs.values('client_branch__client_id').distinct().count()
+
+
 # ── Metrics: Website (QR с сайта) funnel ─────────────────────────────────────
 
 def get_website_gift_players(
@@ -1056,10 +1087,12 @@ def get_general_stats(
         'stories_referrals':         get_stories_referrals(branch_ids, start_date, end_date),
         'story_gift_receivers':      get_story_gift_receivers(branch_ids, start_date, end_date),
         'story_gift_activators':     get_story_gift_activators(branch_ids, start_date, end_date),
+        'story_gift_expired':        get_gift_claim_expired(branch_ids, start_date, end_date, source='story'),
         # Воронка «с сайта» (QR на сайте клиента) — отдельные метрики
         'website_gift_players':      get_website_gift_players(branch_ids, start_date, end_date),
         'website_gift_receivers':    get_website_gift_receivers(branch_ids, start_date, end_date),
         'website_gift_activators':   get_website_gift_activators(branch_ids, start_date, end_date),
+        'website_gift_expired':      get_gift_claim_expired(branch_ids, start_date, end_date, source='website'),
         'pos_guests':                pos,
         'scan_index':                scan_index,
         'pos_data_days':             pos_data_days,

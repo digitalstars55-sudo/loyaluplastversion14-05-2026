@@ -1,3 +1,4 @@
+import math
 from datetime import timedelta
 
 from django.db import models, transaction
@@ -291,6 +292,9 @@ class StoryStatus(models.TextChoices):
     WAITING_CAFE_VISIT = 'waiting_cafe_visit',         'Ожидает визита в кафе'
     ACTIVATED          = 'gift_activated_story',       'Подарок активирован через сториз'
     EXPIRED            = 'expired_after_activation',   'Истекло время активации'
+    # Гость так и не дошёл в кафе за отведённый срок (claim_expires_at) —
+    # подарок сгорел ДО активации. Не путать с EXPIRED (истёк таймер ПОСЛЕ активации).
+    CLAIM_EXPIRED      = 'claim_expired',              'Сгорел (не забрали вовремя)'
     USED               = 'used',                       'Использован (выдан сотрудником)'
 
 
@@ -389,18 +393,57 @@ class StoryGiftEntry(TimeStampedModel):
         verbose_name='Метка источника/сайта',
         help_text='Для website — метка сайта (напр. tula), чтобы различать сайты в аналитике.',
     )
-    # ── Сетевой подарок: где фактически забрали (website) ───────────────────
+    # ── Сетевой подарок: где фактически забрали ─────────────────────────────
     activated_branch = models.ForeignKey(
         'branch.Branch',
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='story_gifts_activated_here',
         verbose_name='Точка активации (сетевой подарок)',
-        help_text='Для website-подарка: точка, где забрали по её коду дня. '
-                  'Для сториз — пусто (забирают на точке входа).',
+        help_text='Точка, где забрали подарок по её коду дня. Подарок сетевой — '
+                  'забрать можно в любой точке, независимо от источника. '
+                  'Пусто — у подарков, активированных до перехода на сетевую схему.',
+    )
+
+    # ── Срок, за который надо ЗАБРАТЬ подарок в кафе ────────────────────────
+    claim_expires_at = models.DateTimeField(
+        null=True, blank=True,
+        db_index=True,
+        verbose_name='Забрать до',
+        help_text='received_at + срок жизни (настройка сети). Если не активировали '
+                  'до этого момента — подарок сгорает. Пусто — бессрочно (подарки, '
+                  'выданные до включения срока).',
+    )
+    reminder_sent_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Напоминание отправлено',
+        help_text='Когда ушла авторассылка «подарок не забран». Дедуп: одно на подарок.',
     )
 
     # ── Computed state ──────────────────────────────────────────────────────
+
+    @property
+    def is_claim_expired(self) -> bool:
+        """Срок забора вышел, а в кафе так и не активировали → подарок сгорел."""
+        return bool(
+            self.claim_expires_at
+            and not self.activated_at
+            and timezone.now() >= self.claim_expires_at
+        )
+
+    @property
+    def days_left_to_claim(self) -> int | None:
+        """
+        Сколько дней осталось забрать подарок (округляем вверх — «остался 1 день»
+        показываем до самого конца последних суток). None — бессрочный или уже
+        активирован. 0 — сгорел.
+        """
+        if not self.claim_expires_at or self.activated_at:
+            return None
+        delta = self.claim_expires_at - timezone.now()
+        if delta.total_seconds() <= 0:
+            return 0
+        return math.ceil(delta.total_seconds() / 86400)
 
     @property
     def status(self) -> str:
@@ -410,6 +453,9 @@ class StoryGiftEntry(TimeStampedModel):
             if self.expires_at and timezone.now() >= self.expires_at:
                 return StoryStatus.EXPIRED
             return StoryStatus.ACTIVATED
+        # Не активирован и срок забора вышел → сгорел.
+        if self.is_claim_expired:
+            return StoryStatus.CLAIM_EXPIRED
         if self.received_at:
             return StoryStatus.WAITING_CAFE_VISIT
         if self.selected_at:
@@ -435,10 +481,16 @@ class StoryGiftEntry(TimeStampedModel):
             self.played_at = timezone.now()
             self.save(update_fields=['played_at'])
 
-    def select_gift(self, product, *, min_order_amount: int = 0, duration: int = 40) -> bool:
+    def select_gift(
+        self, product, *, min_order_amount: int = 0, duration: int = 40,
+        lifetime_days: int = 0,
+    ) -> bool:
         """
         Гость выбрал подарок из набора сториз → сохраняем в «Мои подарки».
         Возвращает False, если подарок уже был выбран.
+
+        lifetime_days — сколько дней есть на забор подарка в кафе (снимок настройки
+        сети на момент получения). 0 — бессрочно (claim_expires_at остаётся пустым).
         """
         if self.selected_at:
             return False
@@ -448,7 +500,11 @@ class StoryGiftEntry(TimeStampedModel):
         self.duration = duration
         self.selected_at = now
         self.received_at = now
-        self.save(update_fields=['product', 'min_order_amount', 'duration', 'selected_at', 'received_at'])
+        fields = ['product', 'min_order_amount', 'duration', 'selected_at', 'received_at']
+        if lifetime_days and lifetime_days > 0:
+            self.claim_expires_at = now + timedelta(days=lifetime_days)
+            fields.append('claim_expires_at')
+        self.save(update_fields=fields)
         return True
 
     def activate(self, activated_branch=None) -> bool:

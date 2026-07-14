@@ -69,6 +69,11 @@ class StoryAlreadyActivated(Exception):
     pass
 
 
+class StoryGiftExpired(Exception):
+    """Срок забора подарка вышел — активировать уже нельзя (подарок сгорел)."""
+    pass
+
+
 class StoryActivationDenied(Exception):
     """
     Активация не выполнена (нет кода дня / условия не выполнены).
@@ -84,6 +89,9 @@ class StoryActivationDenied(Exception):
 _DEFAULT_MIN_ORDER          = 600
 _DEFAULT_ACTIVATION_MINUTES = 40
 _DEFAULT_REQUIRE_CAFE       = True
+# Сколько дней подарок ждёт гостя в кафе и когда напомнить, если не забрал.
+_DEFAULT_GIFT_LIFETIME_DAYS = 14
+_DEFAULT_GIFT_REMINDER_DAYS = 10
 
 _DEFAULT_ACTIVATION_TEXT = (
     'Чтобы активировать подарок «[название подарка]», приходите в «[название кафе]» '
@@ -174,6 +182,18 @@ def _resolve_story_settings(cb: ClientBranch) -> dict:
         getattr(net, 'story_saved_text', '') if net else '',
         _DEFAULT_SAVED_TEXT, truthy=True,
     )
+    # Срок на ЗАБОР подарка в кафе (не путать с activation_minutes — то окно
+    # уже после активации). 0 = бессрочно.
+    lifetime_days = _pick(
+        None,
+        getattr(net, 'story_gift_lifetime_days', None) if net else None,
+        _DEFAULT_GIFT_LIFETIME_DAYS,
+    )
+    reminder_days = _pick(
+        None,
+        getattr(net, 'story_gift_reminder_days', None) if net else None,
+        _DEFAULT_GIFT_REMINDER_DAYS,
+    )
     return {
         'enabled':            bool(enabled),
         'min_order_amount':   int(min_order),
@@ -182,6 +202,8 @@ def _resolve_story_settings(cb: ClientBranch) -> dict:
         'cafe_address':       cafe_address,
         'activation_text':    activation_text,
         'saved_text':         saved_text,
+        'gift_lifetime_days': int(lifetime_days or 0),
+        'gift_reminder_days': int(reminder_days or 0),
         'campaign_start':     getattr(net, 'story_campaign_start', None) if net else None,
         'campaign_end':       getattr(net, 'story_campaign_end', None) if net else None,
     }
@@ -356,6 +378,7 @@ def select_story_gift(vk_id: int, branch_id: int, product_id: int) -> StoryGiftE
         product,
         min_order_amount=settings['min_order_amount'],
         duration=settings['activation_minutes'],
+        lifetime_days=settings['gift_lifetime_days'],
     )
 
     # Атрибуция подписки к источнику «сториз»: если гость подписался через приложение
@@ -398,23 +421,11 @@ def get_story_gift(vk_id: int, branch_id: int) -> StoryGiftEntry | None:
     )
 
 
-def _validate_game_code(branch, code: str | None) -> None:
-    if not code:
-        raise StoryActivationDenied(reason='need_code')
-    daily = DailyCode.objects.filter(
-        branch=branch,
-        purpose=DailyCodePurpose.GAME,
-        valid_date=current_code_date(),
-    ).first()
-    if not daily or daily.code != code.upper().strip():
-        raise StoryActivationDenied(reason='bad_code')
-
-
 def _validate_game_code_network(code: str | None):
     """
-    Валидация кода дня для СЕТЕВОГО подарка (вход с сайта): принимает код дня
-    ЛЮБОЙ активной точки сети и возвращает эту точку. Так гость, сыгравший на
-    сайте, забирает подарок в любой из точек по её коду дня.
+    Валидация кода дня для СЕТЕВОГО подарка: принимает код дня ЛЮБОЙ активной
+    точки сети и возвращает эту точку. Гость, получивший подарок (из сториз, с
+    сайта или из каталога VK), забирает его в любой точке по её коду дня.
     """
     if not code:
         raise StoryActivationDenied(reason='need_code')
@@ -470,6 +481,9 @@ def activate_story_gift(vk_id: int, branch_id: int, code: str | None = None) -> 
         raise StoryGiftNotFound
     if entry.status in (StoryStatus.ACTIVATED, StoryStatus.EXPIRED, StoryStatus.USED):
         raise StoryAlreadyActivated
+    if entry.status == StoryStatus.CLAIM_EXPIRED:
+        # Не дошёл в кафе за отведённый срок — подарок сгорел.
+        raise StoryGiftExpired
     if entry.status != StoryStatus.WAITING_CAFE_VISIT:
         # ещё не выбрал подарок / не получил
         raise StoryGiftNotFound
@@ -478,12 +492,12 @@ def activate_story_gift(vk_id: int, branch_id: int, code: str | None = None) -> 
     activated_branch = None
     if settings['require_cafe_visit']:
         try:
-            if entry.source in ('website', 'vk_catalog'):
-                # Сетевой подарок (сайт / каталог VK): код дня любой точки сети →
-                # она и есть точка забора.
-                activated_branch = _validate_game_code_network(code)
-            else:
-                _validate_game_code(cb.branch, code)
+            # Подарок СЕТЕВОЙ для всех источников (сториз / сайт / каталог VK):
+            # принимаем код дня ЛЮБОЙ активной точки сети, она же становится
+            # точкой забора. Раньше сетевыми были только сайт/каталог, а сториз
+            # забирали строго на точке входа — по решению маркетинга привязку
+            # к конкретному кафе убрали.
+            activated_branch = _validate_game_code_network(code)
         except StoryActivationDenied as denied:
             denied.instruction_text = render_story_text(
                 settings['activation_text'],

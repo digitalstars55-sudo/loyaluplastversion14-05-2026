@@ -70,6 +70,10 @@ class StoryGiftSerializer(serializers.Serializer):
     activated_at        = serializers.DateTimeField(allow_null=True)
     expires_at          = serializers.DateTimeField(allow_null=True)
     seconds_remaining   = serializers.SerializerMethodField()
+    # Срок, за который надо ЗАБРАТЬ подарок в кафе (не путать с expires_at —
+    # то таймер уже ПОСЛЕ активации). null — бессрочный подарок.
+    claim_expires_at    = serializers.DateTimeField(allow_null=True)
+    days_left_to_claim  = serializers.IntegerField(allow_null=True)
     cafe_address        = serializers.SerializerMethodField()
     activation_text     = serializers.SerializerMethodField()
     created_at          = serializers.DateTimeField()

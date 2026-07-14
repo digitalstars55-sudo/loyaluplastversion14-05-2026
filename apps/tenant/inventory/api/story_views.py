@@ -159,6 +159,15 @@ class StoryActivateView(APIView):
             return Response({'detail': 'Подарок недоступен для активации.'}, status=status.HTTP_404_NOT_FOUND)
         except svc.StoryAlreadyActivated:
             return Response({'detail': 'Подарок уже активирован.'}, status=status.HTTP_409_CONFLICT)
+        except svc.StoryGiftExpired:
+            return Response(
+                {
+                    'detail': 'Срок действия подарка истёк — забрать его уже нельзя.',
+                    'reason': 'claim_expired',
+                    'activated': False,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         except svc.StoryActivationDenied as denied:
             return Response(
                 {

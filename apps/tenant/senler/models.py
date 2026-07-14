@@ -11,6 +11,7 @@ class AutoBroadcastType(models.TextChoices):
     BIRTHDAY_1_DAY   = 'birthday_1d',   'За 1 день до дня рождения'
     BIRTHDAY         = 'birthday',      'День рождения'
     AFTER_GAME_3H    = 'after_game_3h', 'Через 3 часа после игры'
+    GIFT_NOT_CLAIMED = 'gift_not_claimed', 'Подарок из сториз/сайта не забран'
 
 
 class AudienceType(models.TextChoices):
@@ -361,14 +362,20 @@ class AutoBroadcastTemplate(TimeStampedModel):
     """
 
     type = models.CharField(
-        max_length=16,
+        max_length=32,
         choices=AutoBroadcastType.choices,
         unique=True,
         verbose_name='Триггер',
     )
     message_text = models.TextField(
         verbose_name='Текст сообщения',
-        help_text='Лимит VK: 4096 символов.',
+        help_text=(
+            'Лимит VK: 4096 символов. Для триггера «Подарок из сториз/сайта не забран» '
+            'можно вставлять переменные: {дней_осталось} — сколько дней осталось забрать '
+            'подарок; {подарок} — название подарка; {адреса} — список адресов всех точек '
+            '(подарок сетевой — забрать можно в любой). Пример: «Ваш подарок {подарок} всё '
+            'ещё ждёт вас! Осталось {дней_осталось} дн. Приходите в любое наше кафе: {адреса}».'
+        ),
     )
     image = models.ImageField(
         upload_to='auto_broadcasts/',
@@ -402,7 +409,7 @@ class AutoBroadcastLog(models.Model):
     """
 
     trigger_type = models.CharField(
-        max_length=16,
+        max_length=32,
         choices=AutoBroadcastType.choices,
         verbose_name='Триггер',
         db_index=True,
