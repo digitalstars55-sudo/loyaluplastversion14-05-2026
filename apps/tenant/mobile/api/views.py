@@ -1245,6 +1245,33 @@ class AuditLogAPIView(APIView):
 # ════════════════════════════════════════════════════════════════════
 # Subscription / billing status
 # ════════════════════════════════════════════════════════════════════
+def _effective_price_rub(tenant) -> int:
+    """
+    Цена подписки для мобилки = АКТУАЛЬНАЯ «Стоимость обслуживания»
+    (ServiceCostPeriod — именно её заполняют в карточке клиента).
+
+    Company.plan_price_rub — legacy-поле с дефолтом 4900, которое никто не
+    правил, поэтому раньше мобилка показывала 4900 всем (Кинешма/Арзамас и др.),
+    хотя в админке стояли реальные 35000/25000. Фолбэк на plan_price_rub
+    остаётся для клиентов без заведённой истории стоимости (или с нулевой
+    ставкой), чтобы поведение для них не менялось.
+    """
+    from django.utils import timezone
+    from django_tenants.utils import schema_context
+    from apps.shared.clients.models import Company, ServiceCostPeriod
+
+    fallback = int(getattr(tenant, 'plan_price_rub', None) or 4900)
+    if tenant is None or not getattr(tenant, 'pk', None):
+        return fallback
+    try:
+        with schema_context('public'):
+            company = Company.objects.get(pk=tenant.pk)
+            rate = int(ServiceCostPeriod.monthly_rate_at(company, timezone.localdate()))
+    except Exception:
+        return fallback
+    return rate or fallback
+
+
 class SubscriptionStatusAPIView(APIView):
     """
     GET /api/v1/billing/status/
@@ -1261,7 +1288,7 @@ class SubscriptionStatusAPIView(APIView):
         tenant = getattr(connection, 'tenant', None)
         paid_until = getattr(tenant, 'paid_until', None) if tenant else None
         plan_code = getattr(tenant, 'plan_code', None) or 'standard'
-        price_rub = getattr(tenant, 'plan_price_rub', None) or 4900
+        price_rub = _effective_price_rub(tenant)
         auto_pay = bool(getattr(tenant, 'auto_pay_enabled', False))
         try:
             plan_label = Company.Plan(plan_code).label
@@ -1308,7 +1335,7 @@ class BillingPayAPIView(APIView):
         bank = (request.data.get('bank') or '').strip()
 
         tenant = getattr(connection, 'tenant', None)
-        price_rub = getattr(tenant, 'plan_price_rub', None) or 4900
+        price_rub = _effective_price_rub(tenant)
         plan_code = plan or (getattr(tenant, 'plan_code', None) or 'standard')
         try:
             plan_label = Company.Plan(plan_code).label
