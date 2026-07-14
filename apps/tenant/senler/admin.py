@@ -7,7 +7,7 @@ from django.utils.safestring import mark_safe
 from apps.shared.config.admin_sites import tenant_admin
 
 from .models import (
-    AudienceType, AutoBroadcastTemplate, AutoBroadcastType,
+    AudienceType, AutoBroadcastRule, AutoBroadcastTemplate, AutoBroadcastType,
     Broadcast, BroadcastRecipient, BroadcastSend,
     RecipientStatus, SendStatus, SenlerConfig,
 )
@@ -669,3 +669,161 @@ class AutoBroadcastTemplateAdmin(admin.ModelAdmin):
         if len(obj.message_text) > 80:
             preview += '…'
         return preview
+
+
+# ── AutoBroadcastRule (конструктор авторассылок) ──────────────────────────────
+
+_EVENT_ICONS = {
+    AutoBroadcastType.BIRTHDAY_7_DAYS:  '🎂',
+    AutoBroadcastType.BIRTHDAY_1_DAY:   '🎂',
+    AutoBroadcastType.BIRTHDAY:         '🎉',
+    AutoBroadcastType.AFTER_GAME_3H:    '🎮',
+    AutoBroadcastType.GIFT_NOT_CLAIMED: '🎁',
+}
+
+
+@admin.register(AutoBroadcastRule, site=tenant_admin)
+class AutoBroadcastRuleAdmin(admin.ModelAdmin):
+    """
+    Конструктор авторассылок: событие + когда + кому + текст.
+    Перед включением — кнопка «Предпросмотр»: покажет, скольким уйдёт, ничего не
+    отправляя. Правило создаётся ВЫКЛЮЧЕННЫМ (is_active=False) намеренно.
+    """
+    list_display    = ['name', 'event_display', 'when_display', 'audience_display',
+                       'is_active', 'sent_total']
+    list_filter     = ['is_active', 'event']
+    list_editable   = ['is_active']
+    search_fields   = ['name', 'message_text']
+    filter_horizontal = ['branches', 'rf_segments']
+    readonly_fields = ['_preview_btn', '_ai_btn', '_vars_hint']
+
+    fieldsets = [
+        ('Что и когда', {
+            'fields': ['name', 'event', 'delay_days', 'is_active', 'priority'],
+            'description': (
+                'Событие — что должно произойти с гостем. Задержка пустая = значение '
+                'по умолчанию для события. Если на одно событие несколько правил, '
+                'гость получит ОДНО сообщение — по правилу с бо́льшим приоритетом.'
+            ),
+        }),
+        ('Когда можно слать', {
+            'fields': ['send_hour_start', 'send_hour_end', 'active_from', 'active_to'],
+            'description': 'Тихие часы и период действия. По умолчанию 9:00–21:00, бессрочно.',
+        }),
+        ('Кому', {
+            'fields': ['branches', 'gender_filter', 'rf_segments'],
+            'description': 'Пусто в любом поле = без ограничения (все точки / любой пол / любой сегмент).',
+        }),
+        ('Сообщение', {
+            'fields': ['message_text', '_vars_hint', '_ai_btn', 'image'],
+        }),
+        ('Проверка перед включением', {
+            'fields': ['_preview_btn'],
+            'description': 'Посмотрите, скольким гостям уйдёт сообщение. Ничего не отправляется.',
+        }),
+    ]
+
+    def _vars_hint(self, obj):
+        return mark_safe(
+            '<div style="font-size:12px;color:#555;line-height:1.6">'
+            'Переменные: <code>{имя}</code> — имя гостя · '
+            '<code>{подарок}</code> — название подарка · '
+            '<code>{дней_осталось}</code> — сколько дней осталось забрать · '
+            '<code>{адреса}</code> — адреса всех точек.<br>'
+            'Доступность зависит от события: <code>{подарок}</code> и '
+            '<code>{дней_осталось}</code> работают только для «Подарок не забран».'
+            '</div>'
+        )
+    _vars_hint.short_description = 'Подсказка'
+
+    def _ai_btn(self, obj):
+        return mark_safe(
+            f'{_AI_BTN_JS}'
+            f'<button type="button" style="{_AI_BTN_STYLE}" onclick="(function(){{'
+            f'var t=document.getElementById(\'id_event\');'
+            f'_levoneAiGenerate(this,\'id_message_text\',\'broadcast\','
+            f'{{broadcast_type:t?t.value:\'\'}});'
+            f'}})()">🤖 Сгенерировать ИИ</button>'
+        )
+    _ai_btn.short_description = ''
+
+    def _preview_btn(self, obj):
+        if not obj or not obj.pk:
+            return mark_safe(
+                '<span style="color:#888">Сохраните правило — появится кнопка предпросмотра.</span>'
+            )
+        url = reverse('admin:senler_autobroadcastrule_preview', args=[obj.pk])
+        return format_html(
+            '<a class="button" href="{}" style="background:#7c3aed;color:#fff;'
+            'padding:8px 16px;border-radius:6px;text-decoration:none">'
+            '👁 Предпросмотр: кому уйдёт</a>', url,
+        )
+    _preview_btn.short_description = ''
+
+    @admin.display(description='Событие', ordering='event')
+    def event_display(self, obj):
+        return format_html(
+            '{} {}', _EVENT_ICONS.get(obj.event, '📨'), obj.get_event_display(),
+        )
+
+    @admin.display(description='Когда')
+    def when_display(self, obj):
+        delay = f'через {obj.delay_days} дн' if obj.delay_days else 'по умолчанию'
+        return format_html(
+            '{} · {}:00–{}:00', delay, obj.send_hour_start, obj.send_hour_end,
+        )
+
+    @admin.display(description='Кому')
+    def audience_display(self, obj):
+        n_br = obj.branches.count()
+        parts = [f'{n_br} точ.' if n_br else 'все точки']
+        if obj.gender_filter and obj.gender_filter != 'all':
+            parts.append(obj.get_gender_filter_display())
+        n_seg = obj.rf_segments.count()
+        if n_seg:
+            parts.append(f'{n_seg} сегм.')
+        return ' · '.join(parts)
+
+    @admin.display(description='Отправлено')
+    def sent_total(self, obj):
+        return obj.logs.count()
+
+    def get_urls(self):
+        return [
+            path(
+                '<int:rule_id>/preview/',
+                self.admin_site.admin_view(self.preview_view),
+                name='senler_autobroadcastrule_preview',
+            ),
+        ] + super().get_urls()
+
+    def preview_view(self, request, rule_id):
+        """Считает получателей, НИЧЕГО не отправляя."""
+        from apps.tenant.senler.engine import preview_rule
+
+        rule = AutoBroadcastRule.objects.get(pk=rule_id)
+        try:
+            data = preview_rule(rule)
+        except Exception as exc:
+            self.message_user(request, f'Не удалось посчитать: {exc}', messages.ERROR)
+            return HttpResponseRedirect(
+                reverse('admin:senler_autobroadcastrule_change', args=[rule_id])
+            )
+
+        names = ', '.join(data['sample_names']) or '—'
+        self.message_user(
+            request,
+            f'👁 Сейчас сообщение получили бы {data["recipients"]} гостей. '
+            f'Например: {names}. '
+            + ('Правило активно и в окне отправки.' if data['due_now']
+               else f'Сейчас НЕ отправляется (причина: {data["reason"]}).'),
+            messages.INFO,
+        )
+        if data['recipients']:
+            self.message_user(
+                request, f'Текст первому получателю: {data["sample_text"][:400]}',
+                messages.INFO,
+            )
+        return HttpResponseRedirect(
+            reverse('admin:senler_autobroadcastrule_change', args=[rule_id])
+        )

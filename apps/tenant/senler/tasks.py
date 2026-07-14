@@ -560,6 +560,65 @@ def send_gift_reminder_broadcasts_task() -> dict:
     return {'sent': total_sent}
 
 
+# ── Движок правил («конструктор») ────────────────────────────────────────────
+
+@shared_task(name='apps.tenant.senler.tasks.run_auto_broadcast_rules_task')
+def run_auto_broadcast_rules_task(dry_run: bool = False) -> dict:
+    """
+    Прогоняет все активные правила авторассылок (AutoBroadcastRule) по всем тенантам.
+
+    ⚠️ Дедуп общий с legacy-задачами (один AutoBroadcastLog, те же trigger_type),
+    поэтому одновременная работа старой задачи и движка НЕ даёт дублей — см. шапку
+    engine.py. Это и есть страховка на время переезда.
+
+    dry_run=True — ничего не отправляет, только считает получателей (для проверки
+    на проде, что движок выбирает тех же людей, что и старая задача).
+
+    Если на одно событие несколько активных правил — они идут по убыванию
+    приоритета, и гость получает ОДНО сообщение (следующее правило его уже не
+    возьмёт, т.к. дедуп-лог общий).
+    """
+    from django_tenants.utils import get_tenant_model, schema_context
+    from apps.tenant.senler.engine import run_rule
+    from apps.tenant.senler.models import AutoBroadcastRule
+
+    TenantModel = get_tenant_model()
+    total_sent = 0
+    total_would = 0
+    per_tenant = {}
+
+    for tenant in TenantModel.objects.exclude(schema_name='public'):
+        try:
+            with schema_context(tenant.schema_name):
+                rules = list(
+                    AutoBroadcastRule.objects
+                    .filter(is_active=True)
+                    .order_by('event', '-priority', 'pk')
+                )
+                if not rules:
+                    continue
+                for rule in rules:
+                    res = run_rule(rule, dry_run=dry_run)
+                    total_sent += res.get('sent', 0)
+                    total_would += res.get('would_send', 0)
+                    if res.get('sent') or res.get('would_send'):
+                        per_tenant.setdefault(tenant.schema_name, []).append(
+                            {'rule': rule.name, 'event': rule.event, **res}
+                        )
+        except Exception as exc:
+            logger.exception(
+                'run_auto_broadcast_rules_task failed tenant=%s: %s',
+                tenant.schema_name, exc,
+            )
+
+    return {
+        'sent': total_sent,
+        'would_send': total_would,
+        'dry_run': dry_run,
+        'details': per_tenant,
+    }
+
+
 # ── Read-status polling ──────────────────────────────────────────────────────
 
 def _check_read_for_config(cfg, items_with_vk_id, now, tenant_schema):

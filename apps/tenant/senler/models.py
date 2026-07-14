@@ -406,6 +406,15 @@ class AutoBroadcastLog(models.Model):
 
     Birthday triggers: check .filter(trigger_type=type, vk_id=vk_id, sent_at__year=year)
     After-game trigger: check .filter(trigger_type=type, vk_id=vk_id, sent_at__date=today)
+
+    ⚠️ КЛЮЧ ДЕДУПА — (trigger_type, vk_id, период). Он НЕ меняется и НЕ включает
+    правило/шаблон: на проде накоплено ~13k записей, и именно они не дают повторно
+    написать людям, которых уже поздравили. Новый движок правил (engine.py) пишет и
+    читает ЭТОТ ЖЕ лог с теми же trigger_type → старые записи продолжают работать,
+    и даже одновременный запуск старой задачи и нового движка не даст дубля.
+    Следствие (осознанное): если на одно событие заведено несколько правил, гость
+    за период получит ОДНО сообщение (побеждает правило с большим приоритетом) —
+    правила это варианты текста, а не повод писать человеку дважды.
     """
 
     trigger_type = models.CharField(
@@ -417,6 +426,23 @@ class AutoBroadcastLog(models.Model):
     vk_id = models.PositiveIntegerField(verbose_name='VK ID', db_index=True)
     sent_at = models.DateTimeField(auto_now_add=True, verbose_name='Отправлено')
 
+    # Дедуп по КОНКРЕТНОМУ объекту, а не по периоду: для «подарок не забран» это
+    # 'gift:<id>' — гость может получить несколько подарков, и по каждому положено
+    # своё напоминание. Пусто — дедуп по периоду (ДР/после игры), как раньше.
+    entity_key = models.CharField(
+        max_length=64, blank=True, default='', db_index=True,
+        verbose_name='Ключ объекта',
+        help_text='Например gift:123 — дедуп по конкретному подарку, а не по периоду.',
+    )
+    # Каким правилом отправлено — только для статистики/трассировки, В ДЕДУПЕ НЕ УЧАСТВУЕТ.
+    rule = models.ForeignKey(
+        'senler.AutoBroadcastRule',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='logs',
+        verbose_name='Правило',
+    )
+
     def __str__(self):
         return f'{self.get_trigger_type_display()} → vk{self.vk_id} @ {self.sent_at:%d.%m.%Y %H:%M}'
 
@@ -425,4 +451,122 @@ class AutoBroadcastLog(models.Model):
         verbose_name_plural = 'Лог авторассылок'
         indexes = [
             models.Index(fields=['trigger_type', 'vk_id', 'sent_at'], name='autobc_log_idx'),
+            models.Index(fields=['trigger_type', 'entity_key'], name='autobc_log_entity_idx'),
+        ]
+
+
+# ── AutoBroadcastRule (конструктор авторассылок) ──────────────────────────────
+
+class AutoBroadcastRule(TimeStampedModel):
+    """
+    Правило авторассылки — «конструктор»: событие + когда + кому + что написать.
+
+    Отличие от AutoBroadcastTemplate (legacy): шаблонов может быть НЕСКОЛЬКО на одно
+    событие, у каждого свои задержка/окно/период/аудитория. Legacy-шаблоны остаются
+    и переносятся сюда данными; старые задачи не трогаются и служат путём отката.
+
+    Пустая настройка = «как было»: пустые branches/rf_segments = все, delay_days=None
+    = задержка по умолчанию для события, active_from/to пусто = бессрочно.
+    """
+
+    name = models.CharField(
+        max_length=120,
+        verbose_name='Название',
+        help_text='Только для админки — гости его не видят. Напр. «Напоминание о подарке».',
+    )
+    event = models.CharField(
+        max_length=32,
+        choices=AutoBroadcastType.choices,
+        db_index=True,
+        verbose_name='Событие (триггер)',
+        help_text='Что должно произойти с гостем, чтобы ему ушло это сообщение.',
+    )
+
+    # ── Когда слать ───────────────────────────────────────────────────────────
+    delay_days = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        verbose_name='Задержка после события, дней',
+        help_text='Пусто — задержка по умолчанию для этого события (напр. 10 дней для '
+                  'незабранного подарка берётся из настроек сети).',
+    )
+    send_hour_start = models.PositiveSmallIntegerField(
+        default=9,
+        verbose_name='Не слать раньше (час)',
+        help_text='Тихие часы. По умолчанию 9 — до 9 утра сообщения не уходят.',
+    )
+    send_hour_end = models.PositiveSmallIntegerField(
+        default=21,
+        verbose_name='Не слать позже (час)',
+        help_text='По умолчанию 21 — после 21:00 сообщения не уходят.',
+    )
+    active_from = models.DateField(
+        null=True, blank=True,
+        verbose_name='Действует с',
+        help_text='Пусто — без ограничения.',
+    )
+    active_to = models.DateField(
+        null=True, blank=True,
+        verbose_name='Действует по',
+        help_text='Пусто — без ограничения.',
+    )
+
+    # ── Кому слать (фильтры те же, что у обычных рассылок) ────────────────────
+    branches = models.ManyToManyField(
+        'branch.Branch',
+        blank=True,
+        related_name='auto_broadcast_rules',
+        verbose_name='Точки',
+        help_text='Пусто — все точки сети.',
+    )
+    gender_filter = models.CharField(
+        max_length=3,
+        choices=GenderFilter.choices,
+        default=GenderFilter.ALL,
+        verbose_name='Пол',
+    )
+    rf_segments = models.ManyToManyField(
+        'analytics.RFSegment',
+        blank=True,
+        related_name='auto_broadcast_rules',
+        verbose_name='RF-сегменты',
+        help_text='Пусто — без ограничения по сегменту.',
+    )
+
+    # ── Что написать ──────────────────────────────────────────────────────────
+    message_text = models.TextField(
+        verbose_name='Текст сообщения',
+        help_text=(
+            'Лимит VK: 4096 символов. Переменные: {имя} — имя гостя; {подарок} — название '
+            'подарка; {дней_осталось} — сколько дней осталось забрать; {адреса} — адреса '
+            'всех точек. Доступность переменной зависит от события.'
+        ),
+    )
+    image = models.ImageField(
+        upload_to='auto_broadcasts/',
+        blank=True, null=True,
+        verbose_name='Изображение',
+    )
+
+    is_active = models.BooleanField(
+        default=False,
+        verbose_name='Активно',
+        help_text='Пока выключено — сообщения не уходят. Перед включением посмотрите '
+                  'предпросмотр «кому уйдёт».',
+    )
+    priority = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name='Приоритет',
+        help_text='Если на одно событие несколько правил — гость получит сообщение по '
+                  'правилу с БОЛЬШИМ приоритетом (одно сообщение, не несколько).',
+    )
+
+    def __str__(self):
+        return f'{self.name} ({self.get_event_display()})'
+
+    class Meta:
+        verbose_name = 'Правило авторассылки'
+        verbose_name_plural = 'Авторассылки (конструктор)'
+        ordering = ['event', '-priority', 'name']
+        indexes = [
+            models.Index(fields=['event', 'is_active'], name='autobc_rule_event_idx'),
         ]
