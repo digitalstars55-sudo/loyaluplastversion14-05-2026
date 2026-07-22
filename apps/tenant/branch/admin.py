@@ -1211,15 +1211,19 @@ class QRCodeAdmin(admin.ModelAdmin):
                 vk_app_id = getattr(settings, 'VK_MINI_APP_ID', '')
                 company_id = tenant.client_id if tenant else ''
                 suffix = ''
-                if obj.mode == 'delivery':
+                # Сетевой QR доставки: branch в ссылку НЕ кладём — точку определит
+                # введённый код (POST /code/resolve/). Один QR на всю сеть.
+                network_delivery = obj.mode == 'delivery_network'
+                if obj.mode in ('delivery', 'delivery_network'):
                     suffix += '&delivery=true'
                 elif obj.mode == 'website':
                     # Игра с сайта (сетевой подарок) — web=<метка>; src=<метка> даёт воронку.
                     suffix += f'&web={obj.key}'
                 suffix += f'&src={obj.key}'
+                branch_part = '' if network_delivery else f'&branch={obj.branch.branch_id}'
                 extra_context['qr_link'] = (
                     f'https://vk.com/app{vk_app_id}/#/?company={company_id}'
-                    f'&branch={obj.branch.branch_id}{suffix}'
+                    f'{branch_part}{suffix}'
                 )
                 extra_context['qr_name'] = obj.name
         return super().change_view(request, object_id, form_url, extra_context)

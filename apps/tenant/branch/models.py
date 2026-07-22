@@ -397,6 +397,8 @@ class QRCode(TimeStampedModel):
     class Mode(models.TextChoices):
         CAFE = 'cafe', 'В кафе (на месте)'
         DELIVERY = 'delivery', 'Доставка'
+        # Один QR на всю сеть: точку определяет введённый код доставки, а не QR.
+        DELIVERY_NETWORK = 'delivery_network', 'Доставка — вся сеть (один QR)'
         WEBSITE = 'website', 'С сайта (сетевой подарок)'
 
     branch = models.ForeignKey(
