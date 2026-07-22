@@ -24,6 +24,11 @@ class DeliveryNotFound(Exception):
     pass
 
 
+# Сетевой резолв ищет код только среди свежих доставок (дней). Гость сканирует
+# коробку в день заказа; ограничение убирает ложные коллизии со старым пулом.
+NETWORK_RESOLVE_WINDOW_DAYS = 7
+
+
 class AmbiguousDeliveryCode(Exception):
     """
     Один и тот же short_code (последние 5 цифр) оказался pending сразу у НЕСКОЛЬКИХ
@@ -193,13 +198,20 @@ def resolve_and_activate_network_delivery(*, short_code: str, vk_id: int):
     if already:
         return already.branch, already
 
-    # Свежие pending-доставки с этим кодом по всей сети (только активные точки).
+    # ⚠️ ОКНО СВЕЖЕСТИ — критично для сетевого резолва. Код гостя всегда из
+    # недавнего заказа (сканирует коробку в день доставки). Если искать по ВСЕЙ
+    # истории, копящиеся годами pending-доставки (у Орла/Брянска 50-58 тысяч,
+    # заполняют половину пространства 5 цифр) дают ложные коллизии last-5 между
+    # точками: 13-19% по всей истории → <0.6% за 7 дней. Пер-точечный
+    # activate_delivery окно НЕ использует (там точка фиксирована QR, коллизий нет).
+    cutoff = timezone.now() - timedelta(days=NETWORK_RESOLVE_WINDOW_DAYS)
     pending = list(
         Delivery.objects
         .select_related('branch')
         .filter(
             short_code=short_code,
             activated_at__isnull=True,
+            created_at__gte=cutoff,
             branch__is_active=True,
         )
     )
