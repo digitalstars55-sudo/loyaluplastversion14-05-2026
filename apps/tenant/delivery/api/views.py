@@ -8,13 +8,25 @@ from drf_spectacular.types import OpenApiTypes
 
 from .serializers import (
     CodeActivationRequestSerializer,
+    CodeResolveRequestSerializer,
     DeliverySerializer,
     WebhookRequestSerializer,
 )
 from .services import (
-    BranchNotFound, ClientNotFound, DeliveryNotFound,
-    activate_delivery, register_delivery, verify_webhook_signature,
+    AmbiguousDeliveryCode, BranchNotFound, ClientNotFound, DeliveryNotFound,
+    activate_delivery, register_delivery, resolve_and_activate_network_delivery,
+    verify_webhook_signature,
 )
+
+
+def _branch_brief(branch) -> dict:
+    """branch_id + название + адрес (адрес живёт на BranchConfig)."""
+    cfg = getattr(branch, 'config', None)
+    return {
+        'branch_id': branch.branch_id,
+        'name':      branch.name,
+        'address':   (getattr(cfg, 'address', '') or '').strip(),
+    }
 
 
 class DeliveryWebhook(APIView):
@@ -76,3 +88,46 @@ class DeliveryCodeView(APIView):
             )
 
         return Response(DeliverySerializer(delivery).data)
+
+
+class DeliveryCodeResolveView(APIView):
+    """
+    POST /api/v1/code/resolve/   body: {short_code, vk_id}
+
+    Сетевая активация для тенант-QR «один на всю сеть»: точку определяем по коду
+    (без выбора гостем), регистрируем гостя и активируем доставку. Возвращает
+    точку (branch_id + название + адрес) + саму доставку — фронт ставит эту точку
+    и запускает обычный поток игры.
+
+    Старый пер-точечный POST /api/v1/code/ НЕ затрагивается.
+
+    200 — активировано; 404 — код не найден; 409 — код у нескольких точек
+    (коллизия), в теле список точек для выбора.
+    """
+
+    @extend_schema(request=CodeResolveRequestSerializer, responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT, 409: OpenApiTypes.OBJECT})
+    def post(self, request: Request) -> Response:
+        s = CodeResolveRequestSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+
+        try:
+            branch, delivery = resolve_and_activate_network_delivery(**s.validated_data)
+        except DeliveryNotFound:
+            return Response(
+                {'detail': 'Код не найден или срок его действия истёк.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except AmbiguousDeliveryCode as exc:
+            return Response(
+                {
+                    'detail': 'Такой код есть у нескольких точек — выберите вашу.',
+                    'ambiguous': True,
+                    'branches': [_branch_brief(b) for b in exc.branches],
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        return Response({
+            'branch': _branch_brief(branch),
+            'delivery': DeliverySerializer(delivery).data,
+        })

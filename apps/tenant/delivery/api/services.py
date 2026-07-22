@@ -24,6 +24,17 @@ class DeliveryNotFound(Exception):
     pass
 
 
+class AmbiguousDeliveryCode(Exception):
+    """
+    Один и тот же short_code (последние 5 цифр) оказался pending сразу у НЕСКОЛЬКИХ
+    точек тенанта — по нему нельзя однозначно определить точку. Несёт список
+    точек-кандидатов, чтобы фронт показал выбор. Крайне редкий случай (коллизия
+    5 цифр), но должен обрабатываться, иначе активируем не ту доставку.
+    """
+    def __init__(self, branches):
+        self.branches = branches
+
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def verify_webhook_signature(request) -> bool:
@@ -148,6 +159,66 @@ def activate_delivery(*, short_code: str, vk_id: int, branch_id: int) -> Deliver
     _reattribute_subscription_to_delivery(client_branch, delivery.activated_at)
 
     return delivery
+
+
+@transaction.atomic
+def resolve_and_activate_network_delivery(*, short_code: str, vk_id: int):
+    """
+    СЕТЕВАЯ активация кода доставки (для тенант-QR «один на всю сеть»).
+
+    Гость вводит код БЕЗ выбора точки — точку определяем по самому коду: ищем
+    pending-доставку с этим short_code среди ВСЕХ активных точек тенанта. Затем
+    регистрируем гостя на найденной точке (source=delivery) и активируем — через
+    ТОТ ЖЕ activate_delivery, что и обычный поток (одна логика, один анти-фрод).
+
+    Возвращает (branch, delivery).
+
+    Raises:
+        DeliveryNotFound       — нет pending-доставки с таким кодом нигде в сети.
+        AmbiguousDeliveryCode  — код pending сразу у нескольких точек (коллизия
+                                 5 цифр) → фронт должен показать выбор точки.
+
+    ⚠️ Старый пер-точечный activate_delivery/эндпоинт НЕ трогается — это отдельный
+    аддитивный путь только для тенант-QR.
+    """
+    # Идемпотентность: этот гость уже активировал доставку с таким кодом —
+    # возвращаем ту же точку, не пытаясь активировать заново.
+    already = (
+        Delivery.objects
+        .select_related('branch')
+        .filter(short_code=short_code, activated_by__client__vk_id=vk_id)
+        .order_by('-activated_at')
+        .first()
+    )
+    if already:
+        return already.branch, already
+
+    # Свежие pending-доставки с этим кодом по всей сети (только активные точки).
+    pending = list(
+        Delivery.objects
+        .select_related('branch')
+        .filter(
+            short_code=short_code,
+            activated_at__isnull=True,
+            branch__is_active=True,
+        )
+    )
+    branches = list({d.branch_id: d.branch for d in pending}.values())
+
+    if not branches:
+        raise DeliveryNotFound
+    if len(branches) > 1:
+        # Коллизия: один код у нескольких точек — пусть гость уточнит точку.
+        raise AmbiguousDeliveryCode(branches)
+
+    branch = branches[0]
+    # Ленивый импорт — избегаем цикла branch.services ↔ delivery.services.
+    from apps.tenant.branch.api.services import register_or_get_client
+    # Гарантируем ClientBranch на этой точке (доставочный вход — визит НЕ пишется).
+    register_or_get_client(vk_id=vk_id, branch_id=branch.branch_id, source='delivery')
+    # Активируем через штатную функцию — та же идемпотентность и ретро-атрибуция.
+    delivery = activate_delivery(short_code=short_code, vk_id=vk_id, branch_id=branch.branch_id)
+    return branch, delivery
 
 
 def _reattribute_subscription_to_delivery(client_branch, activated_at) -> None:

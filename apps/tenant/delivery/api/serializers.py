@@ -17,6 +17,15 @@ class CodeActivationRequestSerializer(serializers.Serializer):
     branch_id  = serializers.IntegerField()
 
 
+class CodeResolveRequestSerializer(serializers.Serializer):
+    """
+    Сетевой резолв: гость вводит код БЕЗ точки (тенант-QR). Точку определяем
+    по коду среди всех точек тенанта.
+    """
+    short_code = serializers.CharField(min_length=5, max_length=5)
+    vk_id      = serializers.IntegerField()
+
+
 # ── Response ───────────────────────────────────────────────────────────────────
 
 class DeliverySerializer(serializers.Serializer):
