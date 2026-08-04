@@ -490,8 +490,10 @@ def _apply_frequency_cap(cands: list[Candidate], now) -> list[Candidate]:
 def _apply_audience(qs, rule):
     """
     Фильтры правила поверх queryset'а ClientBranch. Пусто = без ограничения.
-    Сегменты — ТАК ЖЕ, как у обычных рассылок (services.resolve_audience):
-    через related_name rf_score (GuestRFScore) → поле segment. НЕ rf_segment_id.
+    Сегменты — ТАК ЖЕ, как у обычных рассылок (services.resolve_recipients):
+    rf_score — related_name от GuestRFScore.client, который указывает на
+    guest.Client (НЕ ClientBranch). От ClientBranch путь идёт через client:
+    client → rf_score → segment. НЕ rf_segment_id.
     """
     branch_ids = list(rule.branches.values_list('id', flat=True))
     if branch_ids:
@@ -500,7 +502,7 @@ def _apply_audience(qs, rule):
         qs = qs.filter(client__gender=rule.gender_filter)
     seg_ids = list(rule.rf_segments.values_list('id', flat=True))
     if seg_ids:
-        qs = qs.filter(rf_score__segment_id__in=seg_ids)
+        qs = qs.filter(client__rf_score__segment_id__in=seg_ids)
     return qs.distinct()
 
 
@@ -514,7 +516,7 @@ def _match_audience_obj(cb, rule) -> bool:
             return False
     seg_ids = set(rule.rf_segments.values_list('id', flat=True))
     if seg_ids:
-        seg = getattr(getattr(cb, 'rf_score', None), 'segment_id', None)
+        seg = getattr(getattr(cb.client, 'rf_score', None), 'segment_id', None)
         if seg not in seg_ids:
             return False
     return True

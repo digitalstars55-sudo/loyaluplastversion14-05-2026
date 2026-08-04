@@ -93,15 +93,17 @@
   <div class="row g-3 mb-4">
 
     <div class="col-sm-6 col-md-4 col-xl-3">
-      <div class="mc-card card acc-green position-relative">
-        <div class="tip-btn">?</div>
-        <div class="card-body">
-          <div class="mc-label">📱 Отсканировали QR-код</div>
-          <div class="mc-val c-green">{{ stats.total_scans }}</div>
-          <div class="mc-sub">Все сканы: кафе + доставка</div>
-          <div class="tip-box">Все факты сканирования QR-кода за выбранный период — <b>независимо от того, дошёл ли гость до игры</b>. Это первый контакт гостя с системой. Совпадает с «Всего сканирований» и равно сумме по источникам: кафе + доставка. Защита от фантомов: один гость не считается чаще одного раза в 6 часов. Если гость пришёл утром и вечером — это 2 сканирования. Чтобы увидеть, сколько после скана дошли до игры — метрика «Дошли до игры».</div>
+      <a href="{% url 'analytics-stats-detail' %}?metric=qr_scans&{{ period_qs }}{% if bp %}&branches={{ bp }}{% endif %}" class="mc-link">
+        <div class="mc-card card acc-green position-relative">
+          <div class="tip-btn">?</div>
+          <div class="card-body">
+            <div class="mc-label">📱 Отсканировали QR-код</div>
+            <div class="mc-val c-green">{{ stats.total_scans }}</div>
+            <div class="mc-sub">Все сканы: кафе + доставка</div>
+            <div class="tip-box">Все факты сканирования QR-кода за выбранный период — <b>независимо от того, дошёл ли гость до игры</b>. Это первый контакт гостя с системой. Совпадает с «Всего сканирований» и равно сумме по источникам: кафе + доставка. Защита от фантомов: один гость не считается чаще одного раза в 6 часов. Если гость пришёл утром и вечером — это 2 сканирования. Чтобы увидеть, сколько после скана дошли до игры — метрика «Дошли до игры». Нажмите на карточку — список гостей, стоящих за этими сканами, с их подписками.</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
 
     <div class="col-sm-6 col-md-4 col-xl-3">

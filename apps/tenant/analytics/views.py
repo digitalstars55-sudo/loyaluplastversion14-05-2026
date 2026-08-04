@@ -793,11 +793,15 @@ class SegmentExportSenlerView(View):
         if branch_ids:
             try:
                 ids = [int(x) for x in branch_ids.split(',') if x.strip()]
-                qs = qs.filter(client__branch_id__in=ids)
+                # GuestRFScore.client → guest.Client (НЕ ClientBranch). Фильтр по
+                # точке идёт через профили гостя: client → branch_profiles → branch.
+                # .distinct(), т.к. гость с несколькими профилями размножил бы строки.
+                qs = qs.filter(client__branch_profiles__branch_id__in=ids).distinct()
             except ValueError:
                 pass
 
-        vk_ids = qs.values_list('client__client__vk_id', flat=True)
+        # vk_id лежит прямо на guest.Client (client), не на client__client.
+        vk_ids = qs.values_list('client__vk_id', flat=True).distinct()
         lines = [str(vk_id) for vk_id in vk_ids if vk_id]
         content = '\n'.join(lines)
 

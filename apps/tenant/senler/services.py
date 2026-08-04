@@ -59,8 +59,10 @@ def resolve_recipients(broadcast: Broadcast):
 
     segments = broadcast.rf_segments.all()
     if segments.exists():
-        # rf_score is the related_name from GuestRFScore.client OneToOneField
-        qs = qs.filter(rf_score__segment__in=segments)
+        # rf_score — related_name от GuestRFScore.client, а он указывает на
+        # guest.Client (НЕ ClientBranch). От ClientBranch путь идёт через client:
+        # client → rf_score → segment.
+        qs = qs.filter(client__rf_score__segment__in=segments)
 
     return qs.distinct()
 
