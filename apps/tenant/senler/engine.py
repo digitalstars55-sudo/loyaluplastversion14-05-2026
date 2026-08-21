@@ -384,16 +384,16 @@ def get_events() -> dict:
         # ── Фаза 2 ────────────────────────────────────────────────────────────
         T.NO_VISIT_DAYS: EventSpec(
             label='Не приходил N дней (реактивация)', dedup=DEDUP_DAY,
-            resolver=_no_visit_resolver, placeholders=('{имя}', '{адреса}'),
+            resolver=_no_visit_resolver, placeholders=('{имя}', '{адреса}', '{баланс}'),
         ),
         T.SUBSCRIBED_DAYS: EventSpec(
             label='Подписался N дней назад (welcome)', dedup=DEDUP_DAY,
-            resolver=_subscribed_resolver, placeholders=('{имя}', '{адреса}'),
+            resolver=_subscribed_resolver, placeholders=('{имя}', '{адреса}', '{баланс}'),
         ),
         # ── Фаза 3 ────────────────────────────────────────────────────────────
         T.FOLLOW_UP: EventSpec(
             label='Догоняющее (не отреагировал на другое правило)', dedup=DEDUP_ENTITY,
-            resolver=_follow_up_resolver, placeholders=('{имя}', '{адреса}'),
+            resolver=_follow_up_resolver, placeholders=('{имя}', '{адреса}', '{баланс}'),
         ),
     }
 
@@ -510,6 +510,112 @@ def _apply_frequency_cap(cands: list[Candidate], now, event: str | None = None) 
     return [c for c in cands if counts.get(c.vk_id, 0) < cap]
 
 
+# ── Оркестратор RF-коммуникаций (ТЗ авторассылок v1.1, §5) ───────────────────
+# Глобальный антиспам ТОЛЬКО для RF-событий (реактивация / welcome /
+# догоняющее). ДР, after-game и напоминания о подарках живут своими
+# контурами — оркестратор их не трогает и они не съедают RF-лимиты.
+# Включается флагом сети ClientConfig.rf_orchestrator_enabled; по умолчанию
+# ВЫКЛЮЧЕН — поведение прода не меняется, пока флаг не взведён.
+
+RF_MIN_GAP_HOURS        = 72   # минимум между двумя RF-сообщениями
+RF_MAX_PER_14D          = 2    # не более 2 RF-сообщений за 14 дней
+RF_MAX_PER_30D          = 3    # не более 3 за 30 дней
+RF_SCAN_COOLDOWN_DAYS   = 7    # после скана/визита RF молчит 7 полных дней
+RF_BIRTHDAY_FREEZE_DAYS = 7    # заморозка D-7..D+7 вокруг дня рождения
+
+
+def _rf_events() -> set:
+    from apps.tenant.senler.models import AutoBroadcastType as T
+    return {T.NO_VISIT_DAYS, T.SUBSCRIBED_DAYS, T.FOLLOW_UP}
+
+
+def _orchestrator_enabled() -> bool:
+    try:
+        cfg = _tenant_client_config()
+        return bool(getattr(cfg, 'rf_orchestrator_enabled', False))
+    except Exception:
+        return False
+
+
+def _apply_rf_orchestrator(cands: list[Candidate], event: str, now) -> list[Candidate]:
+    """
+    Отсекает кандидатов, для которых RF-сообщение сейчас нарушило бы
+    глобальный антиспам ТЗ v1.1 §5:
+      • < 72 часов с прошлого RF-сообщения;
+      • уже 2 RF-сообщения за 14 дней или 3 за 30;
+      • визит за последние 7 дней (гость «вернулся» — реактивация не нужна,
+        это же отменяет и догоняющие шаги);
+      • день рождения в окне ±7 дней (там работает ДР-контур с подарком).
+
+    Кросс-правила в одном тике решаются сами: правила идут последовательно
+    по приоритету, лог пишется на каждую отправку — следующее правило уже
+    видит свежие RF-сообщения и 72-часовой зазор их отсечёт.
+    """
+    if not cands or event not in _rf_events() or not _orchestrator_enabled():
+        return cands
+
+    from datetime import date as _date
+    from apps.tenant.senler.models import AutoBroadcastLog
+    from apps.tenant.branch.models import ClientBranch, ClientBranchVisit
+
+    vk_ids = [c.vk_id for c in cands]
+    today = now.astimezone(_MSK).date()
+
+    # 72ч + лимиты 14/30 дней — по логу RF-событий
+    last_sent: dict = {}
+    cnt14: dict = {}
+    cnt30: dict = {}
+    for vk, sent_at in (AutoBroadcastLog.objects
+                        .filter(vk_id__in=vk_ids, trigger_type__in=_rf_events(),
+                                sent_at__gte=now - timedelta(days=30))
+                        .values_list('vk_id', 'sent_at')):
+        cnt30[vk] = cnt30.get(vk, 0) + 1
+        if sent_at >= now - timedelta(days=14):
+            cnt14[vk] = cnt14.get(vk, 0) + 1
+        if vk not in last_sent or sent_at > last_sent[vk]:
+            last_sent[vk] = sent_at
+
+    # Cooldown после визита: любой визит за последние 7 дней
+    recent_visit_vk = set(
+        ClientBranchVisit.objects
+        .filter(client__client__vk_id__in=vk_ids,
+                visited_at__gte=now - timedelta(days=RF_SCAN_COOLDOWN_DAYS))
+        .values_list('client__client__vk_id', flat=True)
+    )
+
+    # Заморозка вокруг ДР (D-7..D+7)
+    bday_frozen: set = set()
+    for vk, bd in (ClientBranch.objects
+                   .filter(client__vk_id__in=vk_ids, birth_date__isnull=False)
+                   .values_list('client__vk_id', 'birth_date')):
+        if vk in bday_frozen:
+            continue
+        for yr in (today.year - 1, today.year, today.year + 1):
+            try:
+                occ = bd.replace(year=yr)
+            except ValueError:            # 29 февраля
+                occ = _date(yr, 3, 1)
+            if abs((occ - today).days) <= RF_BIRTHDAY_FREEZE_DAYS:
+                bday_frozen.add(vk)
+                break
+
+    min_gap = timedelta(hours=RF_MIN_GAP_HOURS)
+    out: list[Candidate] = []
+    for c in cands:
+        vk = c.vk_id
+        ls = last_sent.get(vk)
+        if ls is not None and (now - ls) < min_gap:
+            continue
+        if cnt14.get(vk, 0) >= RF_MAX_PER_14D or cnt30.get(vk, 0) >= RF_MAX_PER_30D:
+            continue
+        if vk in recent_visit_vk:
+            continue
+        if vk in bday_frozen:
+            continue
+        out.append(c)
+    return out
+
+
 # ── Аудитория ────────────────────────────────────────────────────────────────
 
 def _apply_audience(qs, rule):
@@ -592,6 +698,18 @@ def rule_is_due(rule, now) -> tuple[bool, str]:
 
 # ── Текст ────────────────────────────────────────────────────────────────────
 
+def _coin_balance(client_branch) -> int:
+    """Баланс монет гостя на его точке (баллы пер-точечные)."""
+    from django.db.models import Q as _Q, Sum
+    from apps.tenant.branch.models import CoinTransaction
+
+    agg = CoinTransaction.objects.filter(client=client_branch).aggregate(
+        income=Sum('amount', filter=_Q(type='income')),
+        expense=Sum('amount', filter=_Q(type='expense')),
+    )
+    return (agg['income'] or 0) - (agg['expense'] or 0)
+
+
 def render_text(rule, c: Candidate, variant=None) -> str:
     """
     Подстановка переменных. Недоступные для события переменные просто пустеют.
@@ -600,6 +718,9 @@ def render_text(rule, c: Candidate, variant=None) -> str:
     gift = c.gift
     days_left = getattr(gift, 'days_left_to_claim', None) if gift else None
     template = (variant.message_text if variant else rule.message_text) or ''
+    if '{баланс}' in template:
+        # Лениво: баланс считается только когда переменная реально в тексте.
+        template = template.replace('{баланс}', str(_coin_balance(c.client_branch)))
     return (
         template
         .replace('{имя}', getattr(c.client_branch.client, 'first_name', '') or '')
@@ -656,7 +777,11 @@ def resolve_recipients(rule, now=None) -> list[Candidate]:
         unique.append(c)
 
     # Предохранитель: не заваливать одного гостя авторассылками.
-    return _apply_frequency_cap(unique, now, event=rule.event)
+    capped = _apply_frequency_cap(unique, now, event=rule.event)
+
+    # RF-оркестратор (ТЗ v1.1 §5): 72ч / 2 за 14д / 3 за 30д / пауза после
+    # визита / заморозка вокруг ДР. Работает только при включённом флаге сети.
+    return _apply_rf_orchestrator(capped, rule.event, now)
 
 
 def preview_rule(rule, sample: int = 5, now=None) -> dict:
