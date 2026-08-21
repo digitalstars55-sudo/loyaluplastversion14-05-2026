@@ -1111,6 +1111,21 @@ class SendSegmentBroadcastAPIView(APIView):
         )
         triggered_by = getattr(request.user, 'username', 'api')
 
+        # Файл >2.5МБ Django держит temp-файлом на диске и при первом save()
+        # ПЕРЕМЕЩАЕТ его в media — повторный save той же картинки для
+        # следующей точки падал FileNotFoundError (в вебе выглядело как
+        # «ошибка соединения», запуск зависал в pending). Читаем байты один
+        # раз, каждой точке — собственная копия.
+        from django.core.files.base import ContentFile
+        image_bytes = image_name = None
+        if image_file:
+            image_file.seek(0)
+            image_bytes = image_file.read()
+            image_name = image_file.name or 'broadcast.jpg'
+
+        def _image_copy():
+            return ContentFile(image_bytes, name=image_name) if image_bytes is not None else None
+
         results = []
         # run_broadcast откладывается: сначала создаём все BroadcastSend,
         # потом решаем sync (мало получателей) или один серийный celery-таск
@@ -1161,7 +1176,7 @@ class SendSegmentBroadcastAPIView(APIView):
                     message_text=single_text,
                     audience_type=AudienceType.SPECIFIC,
                     gender_filter=gender_filter,
-                    image=image_file if image_file else None,
+                    image=_image_copy(),
                 )
                 broadcast.specific_clients.set([cb.pk for cb in cb_list])
 
@@ -1216,7 +1231,7 @@ class SendSegmentBroadcastAPIView(APIView):
                         message_text=v['text'],
                         audience_type=AudienceType.SPECIFIC,
                         gender_filter=gender_filter,
-                        image=image_file if image_file else None,
+                        image=_image_copy(),
                     )
                     if chunk:
                         broadcast.specific_clients.set(chunk)
