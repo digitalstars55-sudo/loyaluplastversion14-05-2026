@@ -565,57 +565,95 @@ def send_gift_reminder_broadcasts_task() -> dict:
 @shared_task(name='apps.tenant.senler.tasks.run_auto_broadcast_rules_task')
 def run_auto_broadcast_rules_task(dry_run: bool = False) -> dict:
     """
-    Прогоняет все активные правила авторассылок (AutoBroadcastRule) по всем тенантам.
+    Диспетчер движка правил: ставит ОТДЕЛЬНЫЙ таск на каждый тенант с
+    активными правилами (фикс 22.08 — раньше все тенанты шли одним таском
+    и упирались в общий CELERY_TASK_SOFT_TIME_LIMIT: при RF-объёмах хвост
+    списка тенантов систематически не доходил бы до отправки).
+
+    Параллельные пер-тенантные таски безопасны для лимитов VK: у каждого
+    тенанта свой vk_community_token, лимит ≤20 msg/s считается на сообщество.
+
+    Имя таска сохранено — beat-расписание не меняется.
+    """
+    from django_tenants.utils import get_tenant_model, schema_context
+    from apps.tenant.senler.models import AutoBroadcastRule
+
+    TenantModel = get_tenant_model()
+    dispatched: list[str] = []
+    for tenant in TenantModel.objects.exclude(schema_name='public'):
+        try:
+            with schema_context(tenant.schema_name):
+                has_rules = AutoBroadcastRule.objects.filter(is_active=True).exists()
+            if has_rules:
+                run_auto_broadcast_rules_for_tenant_task.delay(tenant.schema_name, dry_run)
+                dispatched.append(tenant.schema_name)
+        except Exception as exc:
+            logger.exception(
+                'run_auto_broadcast_rules_task dispatch failed tenant=%s: %s',
+                tenant.schema_name, exc,
+            )
+    return {'dispatched': dispatched, 'dry_run': dry_run}
+
+
+@shared_task(name='apps.tenant.senler.tasks.run_auto_broadcast_rules_for_tenant_task', bind=True)
+def run_auto_broadcast_rules_for_tenant_task(self, schema_name: str, dry_run: bool = False) -> dict:
+    """
+    Прогоняет активные правила авторассылок ОДНОГО тенанта.
 
     ⚠️ Дедуп общий с legacy-задачами (один AutoBroadcastLog, те же trigger_type),
     поэтому одновременная работа старой задачи и движка НЕ даёт дублей — см. шапку
     engine.py. Это и есть страховка на время переезда.
 
-    dry_run=True — ничего не отправляет, только считает получателей (для проверки
-    на проде, что движок выбирает тех же людей, что и старая задача).
+    dry_run=True — ничего не отправляет, только считает получателей.
 
     Если на одно событие несколько активных правил — они идут по убыванию
     приоритета, и гость получает ОДНО сообщение (следующее правило его уже не
     возьмёт, т.к. дедуп-лог общий).
+
+    Celery-таймаут не страшен: run_rule закрывает счётчики и пробрасывает
+    SoftTimeLimitExceeded, всё отправленное уже в дедуп-логе — следующий
+    15-минутный тик beat дошлёт остальных без дублей.
     """
-    from django_tenants.utils import get_tenant_model, schema_context
+    from celery.exceptions import SoftTimeLimitExceeded
+    from django_tenants.utils import schema_context
     from apps.tenant.senler.engine import run_rule
     from apps.tenant.senler.models import AutoBroadcastRule
 
-    TenantModel = get_tenant_model()
     total_sent = 0
     total_would = 0
-    per_tenant = {}
+    details = []
 
-    for tenant in TenantModel.objects.exclude(schema_name='public'):
-        try:
-            with schema_context(tenant.schema_name):
-                rules = list(
-                    AutoBroadcastRule.objects
-                    .filter(is_active=True)
-                    .order_by('event', '-priority', 'pk')
-                )
-                if not rules:
-                    continue
-                for rule in rules:
-                    res = run_rule(rule, dry_run=dry_run)
-                    total_sent += res.get('sent', 0)
-                    total_would += res.get('would_send', 0)
-                    if res.get('sent') or res.get('would_send'):
-                        per_tenant.setdefault(tenant.schema_name, []).append(
-                            {'rule': rule.name, 'event': rule.event, **res}
-                        )
-        except Exception as exc:
-            logger.exception(
-                'run_auto_broadcast_rules_task failed tenant=%s: %s',
-                tenant.schema_name, exc,
+    try:
+        with schema_context(schema_name):
+            rules = list(
+                AutoBroadcastRule.objects
+                .filter(is_active=True)
+                .order_by('event', '-priority', 'pk')
             )
+            for rule in rules:
+                res = run_rule(rule, dry_run=dry_run)
+                total_sent += res.get('sent', 0)
+                total_would += res.get('would_send', 0)
+                if res.get('sent') or res.get('would_send'):
+                    details.append({'rule': rule.name, 'event': rule.event, **res})
+    except SoftTimeLimitExceeded:
+        logger.warning(
+            'run_auto_broadcast_rules_for_tenant_task: soft limit schema=%s '
+            '(sent=%s) — продолжение на следующем тике beat',
+            schema_name, total_sent,
+        )
+    except Exception as exc:
+        logger.exception(
+            'run_auto_broadcast_rules_for_tenant_task failed tenant=%s: %s',
+            schema_name, exc,
+        )
 
     return {
+        'schema': schema_name,
         'sent': total_sent,
         'would_send': total_would,
         'dry_run': dry_run,
-        'details': per_tenant,
+        'details': details,
     }
 
 

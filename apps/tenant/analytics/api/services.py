@@ -2575,14 +2575,8 @@ def recalculate_rf_scores(
             if r['activated_by__client_id'] is not None
         }
 
-    if not visit_map:
-        return {
-            'updated': 0, 'created': 0, 'migrations': 0,
-            'branches': branch_qs.count(),
-            'duration_ms': int((time.monotonic() - t0) * 1000),
-            'thresholds':        thresholds,
-            'thresholds_source': source,
-        }
+    # ВАЖНО: раннего выхода при пустом visit_map больше нет — aging-проход
+    # ниже должен отработать даже когда свежих визитов в окне не было.
 
     # ── Load existing scores ──────────────────────────────────────────
     existing_scores = {
@@ -2592,7 +2586,7 @@ def recalculate_rf_scores(
         ).select_related('segment')
     }
 
-    total_updated = total_created = total_migrations = 0
+    total_updated = total_created = total_migrations = total_aged = 0
 
     # ── Score each unique guest ───────────────────────────────────────
     with transaction.atomic():
@@ -2637,6 +2631,77 @@ def recalculate_rf_scores(
                 )
                 total_created += 1
 
+        # ── Aging pass (фикс 22.08): гости с RF-строкой, но БЕЗ визита в
+        # окне анализа. Раньше пересчёт их не трогал вовсе: recency_days
+        # замирала навсегда и «потерянные» сегменты недополняли гостей —
+        # а ради них RF-реактивация и затевается. Теперь давность честно
+        # растёт от последнего визита за всё время, частота за окно = 0.
+        stale_scores = list(
+            ScoreModel.objects
+            .exclude(client_id__in=visit_map.keys())
+            .select_related('segment')
+        )
+        if stale_scores:
+            stale_ids = [s.client_id for s in stale_scores]
+            if mode == 'restaurant':
+                last_rows = (
+                    ClientBranchVisit.objects
+                    .filter(client__client_id__in=stale_ids)
+                    .values('client__client_id')
+                    .annotate(last_at=Max('visited_at'))
+                )
+                last_map_stale = {r['client__client_id']: r['last_at'] for r in last_rows}
+            else:
+                from apps.tenant.delivery.models import Delivery as _Delivery
+                last_rows = (
+                    _Delivery.objects
+                    .filter(activated_at__isnull=False, activated_by__isnull=False,
+                            activated_by__client_id__in=stale_ids)
+                    .values('activated_by__client_id')
+                    .annotate(last_at=Max('activated_at'))
+                )
+                last_map_stale = {r['activated_by__client_id']: r['last_at'] for r in last_rows}
+
+            changed_rows = []
+            new_migrations = []
+            for s_row in stale_scores:
+                last_at = last_map_stale.get(s_row.client_id)
+                if not last_at:
+                    continue  # визитов не нашлось вовсе — базы для расчёта нет
+                last_date = last_at.date() if hasattr(last_at, 'date') else last_at
+                stale_recency = (today - last_date).days
+                stale_freq = 0  # визитов внутри окна анализа нет
+                stale_r = _r_score(stale_recency, thresholds)
+                stale_f = _f_score(stale_freq, thresholds)
+                stale_segment = find_segment(stale_recency, stale_freq)
+                seg_pk = stale_segment.pk if stale_segment else None
+                if (s_row.recency_days == stale_recency and s_row.frequency == stale_freq
+                        and s_row.segment_id == seg_pk):
+                    continue
+                if s_row.segment_id != seg_pk:
+                    new_migrations.append(MigModel(
+                        client_id=s_row.client_id,
+                        from_segment=s_row.segment,
+                        to_segment=stale_segment,
+                    ))
+                s_row.recency_days = stale_recency
+                s_row.frequency    = stale_freq
+                s_row.r_score      = stale_r
+                s_row.f_score      = stale_f
+                s_row.segment      = stale_segment
+                changed_rows.append(s_row)
+
+            if changed_rows:
+                ScoreModel.objects.bulk_update(
+                    changed_rows,
+                    ['recency_days', 'frequency', 'r_score', 'f_score', 'segment'],
+                    batch_size=500,
+                )
+                total_aged = len(changed_rows)
+            if new_migrations:
+                MigModel.objects.bulk_create(new_migrations, batch_size=500)
+                total_migrations += len(new_migrations)
+
         # ── Refresh today's snapshot per branch ───────────────────────
         for branch in branch_qs:
             for seg in segments:
@@ -2656,6 +2721,7 @@ def recalculate_rf_scores(
     return {
         'updated':           total_updated,
         'created':           total_created,
+        'aged':              total_aged,
         'migrations':        total_migrations,
         'branches':          branch_qs.count(),
         'duration_ms':       int((time.monotonic() - t0) * 1000),

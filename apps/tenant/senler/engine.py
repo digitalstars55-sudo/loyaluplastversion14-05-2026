@@ -465,10 +465,20 @@ def _weekly_cap() -> int:
         return 0
 
 
-def _apply_frequency_cap(cands: list[Candidate], now) -> list[Candidate]:
-    """Выкидывает тех, кто за последние 7 дней уже получил cap авто-сообщений."""
+def _apply_frequency_cap(cands: list[Candidate], now, event: str | None = None) -> list[Candidate]:
+    """
+    Выкидывает тех, кто за последние 7 дней уже получил cap авто-сообщений.
+
+    Контур ДР отдельный (фикс 22.08): поздравления с днём рождения кэп
+    не глушит никогда, и сами ДР-сообщения не съедают лимит остальных —
+    иначе поток RF-реактиваций систематически душил бы поздравления.
+    """
     from django.db.models import Count
-    from apps.tenant.senler.models import AutoBroadcastLog
+    from apps.tenant.senler.models import AutoBroadcastLog, AutoBroadcastType as T
+
+    birthday_events = {T.BIRTHDAY, T.BIRTHDAY_1_DAY, T.BIRTHDAY_7_DAYS}
+    if event in birthday_events:
+        return cands
 
     cap = _weekly_cap()
     if cap <= 0 or not cands:
@@ -478,6 +488,7 @@ def _apply_frequency_cap(cands: list[Candidate], now) -> list[Candidate]:
     counts = dict(
         AutoBroadcastLog.objects
         .filter(vk_id__in=vk_ids, sent_at__gte=now - timedelta(days=7))
+        .exclude(trigger_type__in=birthday_events)
         .values('vk_id')
         .annotate(n=Count('id'))
         .values_list('vk_id', 'n')
@@ -616,8 +627,22 @@ def resolve_recipients(rule, now=None) -> list[Candidate]:
 
     sent = _already_sent(spec, rule.event, cands, now)
     fresh = [c for c in cands if _dedup_key(spec, c) not in sent]
+
+    # In-batch дедуп (фикс 22.08): гость с профилями на нескольких точках
+    # приходит от резолвера несколькими кандидатами с одним vk_id — без
+    # этого он получил бы столько же одинаковых сообщений за один прогон
+    # (лог-дедуп ловит только СЛЕДУЮЩИЕ прогоны). Оставляем первого.
+    seen_keys: set = set()
+    unique: list[Candidate] = []
+    for c in fresh:
+        k = _dedup_key(spec, c)
+        if k in seen_keys:
+            continue
+        seen_keys.add(k)
+        unique.append(c)
+
     # Предохранитель: не заваливать одного гостя авторассылками.
-    return _apply_frequency_cap(fresh, now)
+    return _apply_frequency_cap(unique, now, event=rule.event)
 
 
 def preview_rule(rule, sample: int = 5, now=None) -> dict:
@@ -655,7 +680,9 @@ def run_rule(rule, now=None, dry_run: bool = False) -> dict:
         AutoBroadcastLog, BroadcastRecipient, BroadcastSend,
         RecipientStatus, SendStatus, TriggerType,
     )
-    from apps.tenant.senler.services import send_vk_message, upload_vk_photo
+    from apps.tenant.senler.services import (
+        SoftTimeLimitExceeded, send_vk_message, upload_vk_photo,
+    )
 
     now = now or timezone.now()
     due, reason = rule_is_due(rule, now)
@@ -695,7 +722,20 @@ def run_rule(rule, now=None, dry_run: bool = False) -> dict:
     attachment_cache: dict[tuple, str | None] = {}
     sent_count = failed_count = 0
 
-    for c in cands:
+    def _finalize_sends():
+        for key, bs in sends.items():
+            s, f = counters[key]
+            bs.status = SendStatus.DONE
+            bs.sent_count = s
+            bs.failed_count = f
+            bs.recipients_count = s + f
+            bs.finished_at = timezone.now()
+            bs.save(update_fields=[
+                'status', 'sent_count', 'failed_count', 'recipients_count', 'finished_at',
+            ])
+
+    try:
+      for c in cands:
         cb = c.client_branch
         try:
             senler_cfg = cb.branch.senler_config
@@ -749,15 +789,12 @@ def run_rule(rule, now=None, dry_run: bool = False) -> dict:
             failed_count += 1
             logger.warning('Auto-rule %s failed vk_id=%s: %s', rule.pk, c.vk_id, err)
         time.sleep(0.05)  # VK rate limit: ≤ 20 messages/second
+    except SoftTimeLimitExceeded:
+        # Celery-таймаут посреди правила: всё отправленное уже в дедуп-логе,
+        # следующий 15-минутный тик дошлёт остальных без дублей. Закрываем
+        # счётчики (иначе запуски висят «running») и отдаём таймаут наверх.
+        _finalize_sends()
+        raise
 
-    for key, bs in sends.items():
-        s, f = counters[key]
-        bs.status = SendStatus.DONE
-        bs.sent_count = s
-        bs.failed_count = f
-        bs.recipients_count = s + f
-        bs.finished_at = timezone.now()
-        bs.save(update_fields=[
-            'status', 'sent_count', 'failed_count', 'recipients_count', 'finished_at',
-        ])
+    _finalize_sends()
     return {'sent': sent_count, 'failed': failed_count}
