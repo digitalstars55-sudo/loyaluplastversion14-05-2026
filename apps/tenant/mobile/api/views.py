@@ -75,9 +75,15 @@ class MobileReviewListAPIView(generics.ListAPIView):
 
     def get_queryset(self):
         from apps.shared.users.access import user_allowed_branches, current_schema_name
+        # Треды без единого сообщения (last_message_at=NULL — остатки старых
+        # чисток VK) исключаем: показывать в них нечего, а Postgres при
+        # ORDER BY DESC ставит NULL ПЕРВЫМИ — они забивали верх списка
+        # пустыми карточками и прятали настоящие отзывы.
         qs = TestimonialConversation.objects.select_related(
             'branch', 'client__client', 'vk_guest',
-        ).prefetch_related('messages').order_by('-last_message_at', '-id')
+        ).prefetch_related('messages').exclude(
+            last_message_at__isnull=True,
+        ).order_by('-last_message_at', '-id')
 
         # RBAC: ограничиваем выдачу по точкам, к которым у user'а доступ.
         # NULL branch (VK-conv без точки) — показываем только если есть ХОТЯ БЫ
