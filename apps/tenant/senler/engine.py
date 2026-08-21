@@ -316,18 +316,37 @@ def _follow_up_resolver(rule, now):
     return out
 
 
-def _tenant_gift_reminder_days() -> int:
+def _tenant_client_config():
     """
-    Дефолтная задержка напоминания о подарке = настройка сети.
-    ClientConfig лежит в public и привязан к Company — берём через connection.tenant.
+    ClientConfig текущего тенанта (public-таблица, OneToOne к Company).
+
+    ⚠️ Фикс 22.08: под schema_context (а так работают celery-таски движка и
+    shell) connection.tenant — это FakeTenant БЕЗ pk. Раньше оба читателя
+    настроек возвращали 0 при отсутствии pk → частотный кэп и задержка
+    напоминания МОЛЧА не работали во всех боевых прогонах движка (в
+    предпросмотре из админки tenant настоящий — там всё выглядело живым).
+    Теперь Company добираем по schema_name.
     """
     from django.db import connection
+    from django_tenants.utils import get_tenant_model
     from apps.shared.config.models import ClientConfig
+
+    company = getattr(connection, 'tenant', None)
+    if company is not None and getattr(company, 'pk', None):
+        return ClientConfig.objects.filter(company=company).first()
+    schema = getattr(company, 'schema_name', None) or getattr(connection, 'schema_name', '')
+    if not schema or schema == 'public':
+        return None
+    real = get_tenant_model().objects.filter(schema_name=schema).first()
+    if real is None:
+        return None
+    return ClientConfig.objects.filter(company=real).first()
+
+
+def _tenant_gift_reminder_days() -> int:
+    """Дефолтная задержка напоминания о подарке = настройка сети."""
     try:
-        company = getattr(connection, 'tenant', None)
-        if company is None or not getattr(company, 'pk', None):
-            return 0
-        cfg = ClientConfig.objects.filter(company=company).first()
+        cfg = _tenant_client_config()
         return int(getattr(cfg, 'story_gift_reminder_days', 0) or 0)
     except Exception:
         return 0
@@ -453,13 +472,8 @@ def _weekly_cap() -> int:
     (ClientConfig.auto_broadcast_weekly_cap). 0 = без ограничения (дефолт, чтобы
     ничего не изменилось у тех, кто уже живёт на legacy).
     """
-    from django.db import connection
-    from apps.shared.config.models import ClientConfig
     try:
-        company = getattr(connection, 'tenant', None)
-        if company is None or not getattr(company, 'pk', None):
-            return 0
-        cfg = ClientConfig.objects.filter(company=company).first()
+        cfg = _tenant_client_config()
         return int(getattr(cfg, 'auto_broadcast_weekly_cap', 0) or 0)
     except Exception:
         return 0
