@@ -7,6 +7,7 @@ from apps.shared.config.admin_sites import tenant_admin
 
 from .models import (
     AcquisitionSource, GiftCostEvent, InventoryItem, ItemStatus,
+    RewardCatalogItem, RewardTier,
     StoryGiftEntry, StoryStatus,
     SuperPrizeEntry, SuperPrizeTrigger,
 )
@@ -622,3 +623,279 @@ class GiftCostEventAdmin(admin.ModelAdmin):
         if obj.product:
             return obj.product.name
         return mark_safe('<span style="color:var(--body-quiet-color,#aaa);font-style:italic;">—</span>')
+
+
+# ── Каталог наград ────────────────────────────────────────────────────────────
+
+_TIER_STYLES = {
+    RewardTier.G1: _BADGE + 'background:#e8f5e9;color:#1b5e20;border:1px solid #c8e6c9;',
+    RewardTier.G2: _BADGE + 'background:#e3f2fd;color:#0d47a1;border:1px solid #bbdefb;',
+    RewardTier.G3: _BADGE + 'background:#fff3cd;color:#856404;border:1px solid #ffe08a;',
+}
+_LIMIT_OK_STYLE   = _BADGE + 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;'
+_LIMIT_OUT_STYLE  = _BADGE + 'background:#fdecea;color:#b71c1c;border:1px solid #f5c6cb;'
+_RFM_ON_STYLE     = _BADGE + 'background:#ede7f6;color:#4527a0;border:1px solid #d1c4e9;'
+_OFF_STYLE        = _BADGE + 'background:#f3f4f6;color:#374151;border:1px solid #d1d5db;'
+_ON_STYLE         = _BADGE + 'background:#e8f5e9;color:#1b5e20;border:1px solid #c8e6c9;'
+
+
+class RewardAvailabilityFilter(admin.SimpleListFilter):
+    """Быстрый ответ на вопрос «что реально может выпасть прямо сейчас»."""
+
+    title = 'Доступность'
+    parameter_name = 'availability'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('available',   'Может выпасть сейчас'),
+            ('limit_out',   'Лимит исчерпан'),
+            ('out_of_period', 'Вне периода доступности'),
+        )
+
+    def queryset(self, request, queryset):
+        now = timezone.now()
+        in_period = (
+            models.Q(available_from__isnull=True) | models.Q(available_from__lte=now)
+        ) & (
+            models.Q(available_to__isnull=True) | models.Q(available_to__gte=now)
+        )
+        has_room = (
+            models.Q(activation_limit__isnull=True)
+            | models.Q(issued_count__lt=models.F('activation_limit'))
+        )
+
+        value = self.value()
+        if value == 'available':
+            return queryset.filter(
+                in_period & has_room, is_active=True, is_archived=False,
+            )
+        if value == 'limit_out':
+            return queryset.filter(
+                activation_limit__isnull=False,
+                issued_count__gte=models.F('activation_limit'),
+            )
+        if value == 'out_of_period':
+            return queryset.exclude(in_period)
+        return queryset
+
+
+@admin.register(RewardCatalogItem, site=tenant_admin)
+class RewardCatalogItemAdmin(admin.ModelAdmin):
+    """
+    Справочник наград для RFM-кампаний и RF-авторассылок.
+
+    Позиция — надстройка над подарком из каталога: тир, вес выбора, лимит
+    и срок жизни. Пустые поля карточки наследуются от выбранного подарка.
+    """
+
+    list_display = (
+        'image_thumb', 'name_col', 'tier_badge', 'weight_col',
+        'issues_col', 'lifetime_col', 'cost_col', 'branch_col',
+        'rfm_badge', 'state_badge', 'updated_at',
+    )
+    list_display_links = ('image_thumb', 'name_col')
+    list_filter = (
+        'tier', 'is_active', 'is_archived', 'available_for_rfm',
+        RewardAvailabilityFilter, 'branch',
+    )
+    search_fields = ('name', 'internal_code', 'description', 'product__name')
+    list_select_related = ('product', 'branch')
+    ordering = ('tier', 'name', 'pk')
+    readonly_fields = ('issued_count', 'image_preview', 'created_at', 'updated_at')
+    actions = [
+        'activate_items', 'deactivate_items',
+        'archive_items', 'unarchive_items',
+        'allow_for_rfm', 'deny_for_rfm',
+        'reset_issued_count',
+    ]
+
+    fieldsets = (
+        (None, {
+            'fields': ('product', 'name', 'internal_code', 'description'),
+            'description': (
+                'Позиция каталога наград — надстройка над подарком. Выберите подарок, '
+                'и пустые поля карточки (название, описание, изображение, себестоимость) '
+                'подтянутся из него.'
+            ),
+        }),
+        ('Изображение', {
+            'fields': ('image', 'image_preview'),
+        }),
+        ('Экономика', {
+            'fields': ('cost_price', 'min_order_amount'),
+        }),
+        ('Правила выбора', {
+            'fields': ('tier', 'weight', 'default_lifetime_days'),
+            'description': (
+                'Сценарий задаёт тир, а система выбирает позицию внутри тира случайно '
+                'с учётом веса: чем больше вес, тем чаще позиция достаётся гостю.'
+            ),
+        }),
+        ('Лимиты и доступность', {
+            'fields': (
+                'activation_limit', 'issued_count',
+                'available_from', 'available_to', 'branch',
+            ),
+        }),
+        ('Флаги', {
+            'fields': ('is_active', 'is_archived', 'available_for_rfm'),
+        }),
+        ('Служебное', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',),
+        }),
+    )
+
+    # ── Колонки ───────────────────────────────────────────────────────────────
+
+    @admin.display(description='')
+    def image_thumb(self, obj):
+        image = obj.display_image
+        if image:
+            return format_html(
+                '<img src="{}" style="width:44px;height:44px;'
+                'object-fit:cover;border-radius:6px;'
+                'border:1px solid var(--border-color,#ddd);" />',
+                image.url,
+            )
+        return mark_safe(
+            '<div style="width:44px;height:44px;border-radius:6px;'
+            'background:var(--darkened-bg,#f0f0f0);'
+            'border:1px solid var(--border-color,#ddd);'
+            'display:flex;align-items:center;justify-content:center;'
+            'font-size:18px;">🎁</div>'
+        )
+
+    @admin.display(description='Изображение')
+    def image_preview(self, obj):
+        image = obj.display_image
+        if not image:
+            return mark_safe(
+                '<span style="color:var(--body-quiet-color,#aaa);font-style:italic;">'
+                'Нет изображения — будет использовано изображение подарка.</span>'
+            )
+        source = 'своё' if obj.image else 'от подарка'
+        return format_html(
+            '<div><img src="{}" style="max-width:220px;border-radius:8px;'
+            'border:1px solid var(--border-color,#ddd);" />'
+            '<div style="color:var(--body-quiet-color,#888);font-size:11px;'
+            'margin-top:4px;">Источник: {}</div></div>',
+            image.url, source,
+        )
+
+    @admin.display(description='Название', ordering='name')
+    def name_col(self, obj):
+        if obj.product_id and not obj.name:
+            return format_html(
+                '{} <span style="color:var(--body-quiet-color,#888);font-size:11px;">'
+                '(из подарка)</span>',
+                obj.display_name,
+            )
+        return obj.display_name
+
+    @admin.display(description='Тир', ordering='tier')
+    def tier_badge(self, obj):
+        style = _TIER_STYLES.get(obj.tier, _OFF_STYLE)
+        return format_html('<span style="{}">{}</span>', style, obj.tier)
+
+    @admin.display(description='Вес', ordering='weight')
+    def weight_col(self, obj):
+        if not obj.weight:
+            return mark_safe(
+                '<span style="color:var(--body-quiet-color,#aaa);" title="Позиция выпадет '
+                'только если других не осталось.">0</span>'
+            )
+        return obj.weight
+
+    @admin.display(description='Выдано / лимит', ordering='issued_count')
+    def issues_col(self, obj):
+        if obj.activation_limit is None:
+            return format_html(
+                '<span style="{}">{} / ∞</span>', _LIMIT_OK_STYLE, obj.issued_count,
+            )
+        style = _LIMIT_OUT_STYLE if obj.is_limit_reached else _LIMIT_OK_STYLE
+        return format_html(
+            '<span style="{}">{} / {}</span>',
+            style, obj.issued_count, obj.activation_limit,
+        )
+
+    @admin.display(description='Срок', ordering='default_lifetime_days')
+    def lifetime_col(self, obj):
+        return f'{obj.default_lifetime_days} дн.'
+
+    @admin.display(description='Себестоимость')
+    def cost_col(self, obj):
+        value = obj.effective_cost_price
+        if obj.product_id and not obj.cost_price:
+            return format_html(
+                '{} ₽ <span style="color:var(--body-quiet-color,#888);font-size:11px;">'
+                '(из подарка)</span>', value,
+            )
+        return f'{value} ₽'
+
+    @admin.display(description='Точка', ordering='branch__name')
+    def branch_col(self, obj):
+        if obj.branch_id:
+            return obj.branch.name
+        return mark_safe(
+            '<span style="color:var(--body-quiet-color,#888);">Вся сеть</span>'
+        )
+
+    @admin.display(description='RFM', ordering='available_for_rfm')
+    def rfm_badge(self, obj):
+        if obj.available_for_rfm:
+            return format_html('<span style="{}">✓ RFM</span>', _RFM_ON_STYLE)
+        return format_html('<span style="{}">— не для RFM</span>', _OFF_STYLE)
+
+    @admin.display(description='Состояние')
+    def state_badge(self, obj):
+        if obj.is_archived:
+            return format_html('<span style="{}">📦 Архив</span>', _OFF_STYLE)
+        if not obj.is_active:
+            return format_html('<span style="{}">⏸ Выключена</span>', _OFF_STYLE)
+        if obj.is_limit_reached:
+            return format_html('<span style="{}">🚫 Лимит исчерпан</span>', _LIMIT_OUT_STYLE)
+        if not obj.is_within_period():
+            return format_html('<span style="{}">🕒 Вне периода</span>', _OFF_STYLE)
+        return format_html('<span style="{}">✅ Выдаётся</span>', _ON_STYLE)
+
+    # ── Действия ──────────────────────────────────────────────────────────────
+
+    @admin.action(description='Включить позиции')
+    def activate_items(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f'Включено позиций: {updated}.')
+
+    @admin.action(description='Выключить позиции')
+    def deactivate_items(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f'Выключено позиций: {updated}.')
+
+    @admin.action(description='В архив')
+    def archive_items(self, request, queryset):
+        updated = queryset.update(is_archived=True)
+        self.message_user(request, f'В архив отправлено позиций: {updated}.')
+
+    @admin.action(description='Вернуть из архива')
+    def unarchive_items(self, request, queryset):
+        updated = queryset.update(is_archived=False)
+        self.message_user(request, f'Возвращено из архива позиций: {updated}.')
+
+    @admin.action(description='Разрешить для RFM')
+    def allow_for_rfm(self, request, queryset):
+        updated = queryset.update(available_for_rfm=True)
+        self.message_user(request, f'Разрешено для RFM позиций: {updated}.')
+
+    @admin.action(description='Запретить для RFM')
+    def deny_for_rfm(self, request, queryset):
+        updated = queryset.update(available_for_rfm=False)
+        self.message_user(request, f'Запрещено для RFM позиций: {updated}.')
+
+    @admin.action(description='Обнулить счётчик выдач')
+    def reset_issued_count(self, request, queryset):
+        updated = queryset.update(issued_count=0)
+        self.message_user(
+            request,
+            f'Счётчик выдач обнулён у позиций: {updated}. '
+            'Лимит снова считается с нуля.',
+        )
