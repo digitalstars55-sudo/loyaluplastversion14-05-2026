@@ -888,13 +888,6 @@ class TestimonialConversationAdmin(admin.ModelAdmin):
     )
     date_hierarchy  = 'last_message_at'
     ordering        = ('-has_unread', '-last_message_at')
-
-    def get_queryset(self, request):
-        # Треды без сообщений (last_message_at=NULL — мусор старых VK-чисток)
-        # прячем: Postgres при DESC-сортировке ставит NULL первыми, и пустые
-        # карточки без текста забивали верх списка, пряча настоящие отзывы.
-        return super().get_queryset(request).exclude(last_message_at__isnull=True)
-
     readonly_fields = (
         'created_at', 'updated_at', 'last_message_at',
         'client', 'vk_sender_id', 'branch',
@@ -918,8 +911,12 @@ class TestimonialConversationAdmin(admin.ModelAdmin):
     )
 
     def get_queryset(self, request):
+        # exclude: треды без сообщений (last_message_at=NULL — мусор старых
+        # VK-чисток) прячем — Postgres при DESC-сортировке ставит NULL первыми,
+        # и пустые карточки без текста забивали верх списка поверх настоящих.
         return (
             super().get_queryset(request)
+            .exclude(last_message_at__isnull=True)
             .select_related('branch', 'client__client')
             .prefetch_related('messages')
         )
