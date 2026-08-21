@@ -193,6 +193,10 @@ function loadGuests(r, f) {
   params.set('f_score', f);
   params.set('mode', ACTIVE_MODE);
   if (BRANCH_PARAM) params.set('branch_ids', BRANCH_PARAM.replace('branches=', ''));
+  // Тот же период, что у матрицы страницы — иначе список гостей ячейки
+  // считается по дефолтному окну 30 дней и расходится с её цифрой.
+  if (typeof PERIOD_START !== 'undefined' && PERIOD_START) params.set('start', PERIOD_START);
+  if (typeof PERIOD_END !== 'undefined' && PERIOD_END) params.set('end', PERIOD_END);
 
   fetch(`/api/v1/analytics/rf/?${params.toString()}`)
     .then(r => r.json())
@@ -617,6 +621,10 @@ function sendBroadcast() {
     if (_modalCell.r_score) formData.append('r_score', _modalCell.r_score);
     if (_modalCell.f_score) formData.append('f_score', _modalCell.f_score);
     if (typeof _modalCell.count === 'number') formData.append('expected_count', _modalCell.count);
+    // Период страницы: без него бэкенд берёт окно 30 дней, а страница может
+    // показывать «всё время» → «в сегменте нет получателей» при полной ячейке.
+    if (typeof PERIOD_START !== 'undefined' && PERIOD_START) formData.append('start', PERIOD_START);
+    if (typeof PERIOD_END !== 'undefined' && PERIOD_END) formData.append('end', PERIOD_END);
   }
   formData.append('message_text', text);
   formData.append('mode', ACTIVE_MODE);

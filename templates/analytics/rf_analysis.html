@@ -298,6 +298,10 @@ const RF_DATA = {{ rf_json|safe }};
 const RF_DELIVERY_DATA = {{ rf_delivery_json|safe }};
 const ACTIVE_MODE = "{{ active_mode }}";
 const BRANCH_PARAM = "{% if active_branch_ids %}branches={% for id in active_branch_ids %}{{ id }}{% if not forloop.last %},{% endif %}{% endfor %}{% endif %}";
+// Период страницы — уходит в рассылку и списки гостей, чтобы аудитория
+// совпадала с цифрами матрицы (страница может стоять на «всё время»).
+const PERIOD_START = "{{ start }}";
+const PERIOD_END = "{{ end }}";
 const ALL_BRANCHES = JSON.parse(document.getElementById('rf-branches-data').textContent);
 const ACTIVE_BRANCH_IDS = JSON.parse(document.getElementById('rf-active-branch-ids').textContent);
 const matrixData = ACTIVE_MODE === 'delivery' ? RF_DELIVERY_DATA : RF_DATA;
