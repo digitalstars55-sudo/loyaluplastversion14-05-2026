@@ -1176,7 +1176,7 @@ class QRCodeAdmin(admin.ModelAdmin):
     list_filter = ('branch', 'mode', 'is_active')
     search_fields = ('name', 'key')
     readonly_fields = ('key',)
-    fields = ('branch', 'name', 'mode', 'is_active', 'key')
+    fields = ('branch', 'name', 'mode', 'table_number', 'is_active', 'key')
     change_form_template = 'admin/branch/qrcode/change_form.html'
 
     def get_queryset(self, request):
@@ -1195,7 +1195,12 @@ class QRCodeAdmin(admin.ModelAdmin):
 
     @admin.display(description='Тип')
     def mode_badge(self, obj):
-        color = '#2e7d32' if obj.mode == 'delivery' else '#4a76a8'
+        if obj.mode == 'review':
+            color = '#b26a00'
+        elif obj.mode == 'delivery':
+            color = '#2e7d32'
+        else:
+            color = '#4a76a8'
         return format_html(
             '<span style="background:{};color:#fff;padding:2px 8px;border-radius:10px;'
             'font-size:11px;font-weight:600;">{}</span>',
@@ -1211,6 +1216,9 @@ class QRCodeAdmin(admin.ModelAdmin):
                 vk_app_id = getattr(settings, 'VK_MINI_APP_ID', '')
                 company_id = tenant.client_id if tenant else ''
                 suffix = ''
+                # «Отзыв со стола» ведёт сразу на форму отзыва: путь #/review,
+                # стол обязателен (без table= мини-апп блокирует отправку).
+                path = '#/review?' if obj.mode == 'review' else '#/?'
                 # Сетевой QR доставки: branch в ссылку НЕ кладём — точку определит
                 # введённый код (POST /code/resolve/). Один QR на всю сеть.
                 network_delivery = obj.mode == 'delivery_network'
@@ -1219,10 +1227,12 @@ class QRCodeAdmin(admin.ModelAdmin):
                 elif obj.mode == 'website':
                     # Игра с сайта (сетевой подарок) — web=<метка>; src=<метка> даёт воронку.
                     suffix += f'&web={obj.key}'
+                elif obj.mode == 'review' and obj.table_number:
+                    suffix += f'&table={obj.table_number}'
                 suffix += f'&src={obj.key}'
                 branch_part = '' if network_delivery else f'&branch={obj.branch.branch_id}'
                 extra_context['qr_link'] = (
-                    f'https://vk.com/app{vk_app_id}/#/?company={company_id}'
+                    f'https://vk.com/app{vk_app_id}/{path}company={company_id}'
                     f'{branch_part}{suffix}'
                 )
                 extra_context['qr_name'] = obj.name

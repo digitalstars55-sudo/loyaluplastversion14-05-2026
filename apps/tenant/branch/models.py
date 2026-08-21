@@ -400,6 +400,8 @@ class QRCode(TimeStampedModel):
         # Один QR на всю сеть: точку определяет введённый код доставки, а не QR.
         DELIVERY_NETWORK = 'delivery_network', 'Доставка — вся сеть (один QR)'
         WEBSITE = 'website', 'С сайта (сетевой подарок)'
+        # Ссылка ведёт сразу на форму отзыва (#/review) с привязкой к столу.
+        REVIEW = 'review', 'Отзыв со стола'
 
     branch = models.ForeignKey(
         Branch,
@@ -433,6 +435,21 @@ class QRCode(TimeStampedModel):
         verbose_name='Активен',
         help_text='Выключенный QR не учитывает новые сканы (старая статистика сохраняется).',
     )
+    table_number = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name='Номер стола',
+        help_text='Только для типа «Отзыв со стола»: ссылка откроет форму отзыва '
+                  'с привязкой к этому столу. Для остальных типов не заполняется.',
+    )
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.mode == self.Mode.REVIEW and not self.table_number:
+            raise ValidationError({
+                'table_number': 'Для типа «Отзыв со стола» укажите номер стола — '
+                                'без него гость не сможет отправить отзыв.',
+            })
 
     def save(self, *args, **kwargs):
         if not self.key:
