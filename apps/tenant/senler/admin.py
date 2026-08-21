@@ -449,14 +449,25 @@ class BroadcastSendAdmin(admin.ModelAdmin):
         send = BroadcastSend.objects.get(pk=pk)
         back_url = reverse(f'{self.admin_site.name}:senler_broadcastsend_change', args=[pk])
         if request.method != 'POST':
+            if send.status == SendStatus.RUNNING:
+                warning = (
+                    'Отправка идёт прямо сейчас: оставшиеся сообщения будут '
+                    'остановлены в течение нескольких секунд. Уже отправленные '
+                    'останутся у гостей — их можно убрать кнопкой '
+                    '«Удалить из ВК» (действует 24 часа с момента отправки).'
+                )
+                confirm_text = 'Остановить идущую рассылку? Оставшиеся сообщения не уйдут.'
+            else:
+                warning = 'Рассылка ещё не была отправлена. Отмена остановит её запуск.'
+                confirm_text = 'Отменить эту рассылку? Она ещё не была отправлена.'
             return TemplateResponse(request, 'admin/senler/broadcastsend_confirm_action.html', {
                 'send': send,
                 'title': f'Отменить рассылку — {send}',
                 'action_title': 'Отменить рассылку',
-                'warning': 'Рассылка ещё не была отправлена. Отмена остановит её запуск.',
+                'warning': warning,
                 'btn_label': '⛔ Отменить рассылку',
                 'btn_color': '#d97706',
-                'confirm_text': 'Отменить эту рассылку? Она ещё не была отправлена.',
+                'confirm_text': confirm_text,
                 'opts': self.model._meta,
                 'back_url': back_url,
             })

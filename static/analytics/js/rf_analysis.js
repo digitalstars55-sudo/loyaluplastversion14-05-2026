@@ -611,6 +611,12 @@ function sendBroadcast() {
   const formData = new FormData();
   if (_modalMode === 'segment') {
     formData.append('segment_id', _modalCell.segment_id);
+    // Контекст ячейки: бэкенд собирает аудиторию ровно как показанную цифру
+    // (режим/область/период) и отбивает отправку, если фактическая аудитория
+    // заметно больше показанной (инцидент 2026-08-21).
+    if (_modalCell.r_score) formData.append('r_score', _modalCell.r_score);
+    if (_modalCell.f_score) formData.append('f_score', _modalCell.f_score);
+    if (typeof _modalCell.count === 'number') formData.append('expected_count', _modalCell.count);
   }
   formData.append('message_text', text);
   formData.append('mode', ACTIVE_MODE);

@@ -805,7 +805,8 @@ def check_read_status_task() -> dict:
 # ── Manual broadcast runner (RF / сегментные рассылки) ────────────────────────
 
 @shared_task(name='apps.tenant.senler.tasks.run_broadcast_task', bind=True)
-def run_broadcast_task(self, schema_name: str, send_ids: list[int]) -> dict:
+def run_broadcast_task(self, schema_name: str, send_ids: list[int],
+                       requeue_depth: int = 0) -> dict:
     """
     Запускает run_broadcast для списка BroadcastSend ПОСЛЕДОВАТЕЛЬНО,
     одним таском на весь запрос рассылки.
@@ -816,16 +817,27 @@ def run_broadcast_task(self, schema_name: str, send_ids: list[int]) -> dict:
     параллельные таски на один vk_community_token суммарно превысят
     20 msg/s. Один серийный таск на запрос исключает это.
 
+    Большие рассылки не влезают в CELERY_TASK_SOFT_TIME_LIMIT (240с ≈
+    500-600 сообщений). Раньше таймаут молча убивал отправку на середине
+    (инцидент 2026-08-21: рассылка встала на 612/1191 со статусом running
+    навсегда). Теперь SoftTimeLimitExceeded ловится здесь: прогресс уже
+    сохранён внутри run_broadcast, а сюда ставится задача-продолжение с
+    теми же send_ids — run_broadcast дошлёт только PENDING-получателей.
+    requeue_depth ограничивает цепочку продолжений (защита от зацикливания).
+
     Вызывать с корректным schema_name — django-tenants: celery-воркер
     стартует в public-схеме, тенанта надо выставить явно.
     """
+    from celery.exceptions import SoftTimeLimitExceeded
     from django_tenants.utils import schema_context
     from apps.tenant.senler.models import BroadcastSend
-    from apps.tenant.senler.services import run_broadcast
+    from apps.tenant.senler.services import run_broadcast, _fail
+
+    MAX_REQUEUES = 40  # ~40 продолжений × ~500 сообщений — с запасом больше любой базы
 
     processed = 0
     with schema_context(schema_name):
-        for sid in send_ids:
+        for idx, sid in enumerate(send_ids):
             try:
                 send = BroadcastSend.objects.get(pk=sid)
             except BroadcastSend.DoesNotExist:
@@ -837,6 +849,39 @@ def run_broadcast_task(self, schema_name: str, send_ids: list[int]) -> dict:
             try:
                 run_broadcast(send)
                 processed += 1
+            except SoftTimeLimitExceeded:
+                remaining = send_ids[idx:]
+                if requeue_depth >= MAX_REQUEUES:
+                    logger.error(
+                        'run_broadcast_task: превышен лимит продолжений (%s) '
+                        'send=%s schema=%s — рассылка остановлена',
+                        MAX_REQUEUES, sid, schema_name,
+                    )
+                    try:
+                        send.refresh_from_db()
+                        _fail(send, 'Рассылка остановлена: превышен лимит '
+                                    'продолжений после celery-таймаутов.')
+                    except Exception:
+                        logger.exception('run_broadcast_task: не смог пометить send=%s failed', sid)
+                    return {
+                        'processed': processed, 'total': len(send_ids),
+                        'schema': schema_name, 'requeue_limit_hit': True,
+                    }
+                run_broadcast_task.apply_async(
+                    args=[schema_name, remaining],
+                    kwargs={'requeue_depth': requeue_depth + 1},
+                    countdown=5,
+                )
+                logger.warning(
+                    'run_broadcast_task: soft time limit, поставлено продолжение '
+                    '#%s (%s send(s)) schema=%s',
+                    requeue_depth + 1, len(remaining), schema_name,
+                )
+                return {
+                    'processed': processed, 'total': len(send_ids),
+                    'schema': schema_name, 'requeued': len(remaining),
+                    'requeue_depth': requeue_depth + 1,
+                }
             except Exception:
                 logger.exception(
                     'run_broadcast_task: run_broadcast failed send=%s schema=%s',

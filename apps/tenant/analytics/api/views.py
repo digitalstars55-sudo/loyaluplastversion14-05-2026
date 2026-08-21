@@ -990,8 +990,34 @@ class SendSegmentBroadcastAPIView(APIView):
         variants_raw  = request.data.get('variants', '')
         image_file    = request.FILES.get('image')
 
+        if mode not in ('restaurant', 'delivery'):
+            mode = 'restaurant'
+
         if gender_filter not in {GenderFilter.ALL, GenderFilter.MALE, GenderFilter.FEMALE}:
             gender_filter = GenderFilter.ALL
+
+        # Контекст ячейки матрицы (мобилка/веб передают с 2026-08-21) — чтобы
+        # аудитория отправки совпадала с цифрой, которую видел пользователь.
+        def _int_param(name):
+            raw = request.data.get(name)
+            try:
+                return int(raw) if raw not in (None, '') else None
+            except (TypeError, ValueError):
+                return None
+
+        def _date_param(name):
+            from datetime import date as _date
+            raw = request.data.get(name)
+            try:
+                return _date.fromisoformat(raw) if raw else None
+            except (TypeError, ValueError):
+                return None
+
+        r_score        = _int_param('r_score')
+        f_score        = _int_param('f_score')
+        expected_count = _int_param('expected_count')
+        start_date     = _date_param('start')
+        end_date       = _date_param('end')
 
         # Parse variants. Если не пришли — используем message_text как единственный вариант.
         variants = []
@@ -1024,20 +1050,63 @@ class SendSegmentBroadcastAPIView(APIView):
                 return Response({'error': 'Сегмент не найден'}, status=status.HTTP_404_NOT_FOUND)
 
         # Resolve target branches
+        branch_id_list: list[int] | None = None
         if branch_ids:
             try:
-                ids = [int(x) for x in str(branch_ids).split(',') if x.strip()]
-                branches = Branch.objects.filter(is_active=True, pk__in=ids)
+                branch_id_list = [int(x) for x in str(branch_ids).split(',') if x.strip()]
             except ValueError:
-                branches = Branch.objects.filter(is_active=True)
+                branch_id_list = None
+
+        # RBAC: точки, доступные пользователю (как в матрице/аналитике) —
+        # менеджер с ограниченным branch_access не шлёт по чужим точкам.
+        eff = effective_branch_ids(request.user, current_schema_name(), branch_id_list or [])
+        branch_id_list = list(eff) if eff else None
+        if branch_id_list == [-1]:
+            return Response({'error': 'Нет доступа к выбранным точкам'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        if branch_id_list:
+            branches = Branch.objects.filter(is_active=True, pk__in=branch_id_list)
         else:
             branches = Branch.objects.filter(is_active=True)
 
         if not branches.exists():
             return Response({'error': 'Нет активных торговых точек'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Аудитория сегмента = ровно та ячейка матрицы, которую видел
+        # пользователь (mode + область + период + on-the-fly r/f). Фикс
+        # инцидента 2026-08-21: раньше фильтр шёл по сохранённому
+        # ресторанному FK независимо от режима — из «Доставки» (показан
+        # 1 гость) рассылка ушла по ресторанному сегменту (1433).
+        segment_client_ids: list[int] | None = None
+        if segment is not None:
+            segment_client_ids = services.resolve_rf_cell_client_ids(
+                branch_id_list or None, mode=mode, segment=segment,
+                r_score=r_score, f_score=f_score,
+                start_date=start_date, end_date=end_date,
+            )
+            if segment_client_ids is not None:
+                resolved_n = len(segment_client_ids)
+                if resolved_n == 0:
+                    return Response(
+                        {'error': 'В выбранном сегменте сейчас нет получателей'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                # Предохранитель: фактическая аудитория заметно больше цифры,
+                # которую показывал интерфейс — не отправляем.
+                if expected_count is not None and resolved_n > max(expected_count * 2, expected_count + 10):
+                    return Response(
+                        {'error': (
+                            f'Аудитория сегмента изменилась: в приложении показано '
+                            f'{expected_count}, фактически {resolved_n}. '
+                            f'Обновите экран аналитики и запустите рассылку заново.'
+                        )},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+
+        mode_label = ' (доставка)' if mode == 'delivery' else ''
         broadcast_label = (
-            f'RF: {segment.emoji} {segment.name} ({segment.code})' if segment
+            f'RF{mode_label}: {segment.emoji} {segment.name} ({segment.code})' if segment
             else 'Рассылка всем оцифрованным гостям'
         )
         triggered_by = getattr(request.user, 'username', 'api')
@@ -1065,7 +1134,14 @@ class SendSegmentBroadcastAPIView(APIView):
                 if gender_filter != GenderFilter.ALL:
                     cb_qs = cb_qs.filter(client__gender=gender_filter)
                 if segment is not None:
-                    cb_qs = cb_qs.filter(client__rf_score__segment=segment)
+                    if segment_client_ids is not None:
+                        cb_qs = cb_qs.filter(client_id__in=segment_client_ids)
+                    else:
+                        # Fallback (нестандартный код сегмента): фильтр по
+                        # сохранённому FK, но с учётом режима.
+                        seg_rel = ('client__rf_score_delivery__segment'
+                                   if mode == 'delivery' else 'client__rf_score__segment')
+                        cb_qs = cb_qs.filter(**{seg_rel: segment})
                 cb_qs = cb_qs.exclude(client__vk_id__in=seen_vk_ids)
 
                 cb_list = list(cb_qs)
@@ -1108,7 +1184,14 @@ class SendSegmentBroadcastAPIView(APIView):
                 if gender_filter != GenderFilter.ALL:
                     cb_qs = cb_qs.filter(client__gender=gender_filter)
                 if segment is not None:
-                    cb_qs = cb_qs.filter(client__rf_score__segment=segment)
+                    if segment_client_ids is not None:
+                        cb_qs = cb_qs.filter(client_id__in=segment_client_ids)
+                    else:
+                        # Fallback (нестандартный код сегмента): фильтр по
+                        # сохранённому FK, но с учётом режима.
+                        seg_rel = ('client__rf_score_delivery__segment'
+                                   if mode == 'delivery' else 'client__rf_score__segment')
+                        cb_qs = cb_qs.filter(**{seg_rel: segment})
                 cb_qs = cb_qs.exclude(client__vk_id__in=seen_vk_ids_split)
 
                 cb_objs = list(cb_qs)

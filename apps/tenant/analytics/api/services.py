@@ -1502,6 +1502,64 @@ def _build_code_to_segment(branch_ids: list[int] | None) -> dict:
     return global_map
 
 
+def resolve_rf_cell_client_ids(
+    branch_ids: list[int] | None,
+    mode: str = 'restaurant',
+    segment=None,
+    r_score: int | None = None,
+    f_score: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> list[int] | None:
+    """
+    guest.Client PKs, попадающие в ячейку RF-матрицы — РОВНО так же, как их
+    считает get_rf_stats/get_rf_matrix для отображения: on-the-fly r/f по
+    актуальным порогам области + фильтр активности за период (без явных дат —
+    то же 30-дневное окно, что и у матрицы по умолчанию).
+
+    Используется рассылкой по сегменту: аудитория отправки обязана совпадать
+    с цифрой в ячейке, которую видит пользователь (инцидент 2026-08-21 —
+    режим «Доставка» показал 1 гостя, а отправка ушла по ресторанному
+    сегменту из 1433).
+
+    Возвращает None, если ячейку определить нельзя (сегмент с нестандартным
+    кодом и нет явных r/f) — вызывающий откатывается на фильтр по
+    сохранённому FK segment.
+    """
+    from datetime import date as _date, timedelta as _timedelta
+    from apps.tenant.analytics.models import RFSettings
+
+    if r_score is None or f_score is None:
+        rf = _CODE_TO_RF.get(getattr(segment, 'code', '') or '')
+        if rf is None:
+            return None
+        r_score, f_score = rf
+
+    if start_date is None or end_date is None:
+        end_date = _date.today()
+        start_date = end_date - _timedelta(days=29)
+
+    client_ids_filter = _get_active_client_ids_v2(branch_ids, start_date, end_date, mode)
+    if not client_ids_filter:
+        return []
+
+    _, thresholds, _ = RFSettings.resolve_for_scope(branch_ids)
+
+    ScoreModel = _get_score_model(mode)
+    qs = ScoreModel.objects.all()
+    qs = _branch_filter(qs, branch_ids, 'client__branch_profiles__branch__in')
+    if branch_ids:
+        qs = qs.distinct()
+    qs = qs.filter(client_id__in=client_ids_filter)
+
+    matched: list[int] = []
+    for row in qs.values('client_id', 'recency_days', 'frequency').iterator():
+        if (_r_score(row['recency_days'], thresholds) == r_score
+                and _f_score(row['frequency'], thresholds) == f_score):
+            matched.append(row['client_id'])
+    return matched
+
+
 # ── RF Matrix ─────────────────────────────────────────────────────────────────
 
 def get_rf_matrix(

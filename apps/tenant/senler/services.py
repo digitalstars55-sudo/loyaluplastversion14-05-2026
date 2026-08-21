@@ -13,7 +13,14 @@ import random
 import time
 
 from django.db import transaction
+from django.db.models import Count, Q
 from django.utils import timezone
+
+try:
+    from celery.exceptions import SoftTimeLimitExceeded
+except ImportError:  # pragma: no cover — окружение без celery
+    class SoftTimeLimitExceeded(Exception):
+        pass
 
 from apps.tenant.branch.models import ClientBranch
 
@@ -155,6 +162,10 @@ def _is_messages_allowed(config: SenlerConfig, vk_user_id: int) -> tuple[bool, s
             'access_token': config.vk_community_token,
             'v':            '5.131',
         })
+    except SoftTimeLimitExceeded:
+        # Таймаут celery НЕ глотать как «ошибку получателя» — он должен дойти
+        # до run_broadcast_task, который поставит продолжение рассылки.
+        raise
     except Exception as exc:
         return False, f'Пропущено: не удалось проверить доступ ({exc})'
     if 'error' in data:
@@ -216,6 +227,10 @@ def send_vk_message(
         # VK returns message_id as the response value
         vk_message_id = data.get('response')
         return True, '', vk_message_id
+    except SoftTimeLimitExceeded:
+        # См. _is_messages_allowed: таймаут celery пробрасываем наверх —
+        # иначе рассылка молча умирает (инцидент 2026-08-21).
+        raise
     except Exception as exc:
         return False, str(exc), None
 
@@ -366,6 +381,41 @@ def create_send(
     )
 
 
+def _sync_send_counts(send: BroadcastSend, *, status: str | None = None,
+                      finished: bool = False) -> None:
+    """
+    Пересчитывает счётчики запуска из фактических статусов получателей.
+
+    Даёт живой прогресс в админке во время отправки и корректные итоги при
+    продолжении рассылки после celery-таймаута (in-memory счётчики этого
+    не переживают).
+    """
+    agg = BroadcastRecipient.objects.filter(send=send).aggregate(
+        n_sent=Count('id', filter=Q(status=RecipientStatus.SENT)),
+        n_failed=Count('id', filter=Q(status=RecipientStatus.FAILED)),
+        n_skipped=Count('id', filter=Q(status=RecipientStatus.SKIPPED)),
+    )
+    send.sent_count    = agg['n_sent']
+    send.failed_count  = agg['n_failed']
+    send.skipped_count = agg['n_skipped']
+    fields = ['sent_count', 'failed_count', 'skipped_count']
+    if status is not None:
+        send.status = status
+        fields.append('status')
+    if finished:
+        send.finished_at = timezone.now()
+        fields.append('finished_at')
+    send.save(update_fields=fields)
+
+
+def _cancel_pending_recipients(send: BroadcastSend, reason: str) -> int:
+    return (
+        BroadcastRecipient.objects
+        .filter(send=send, status=RecipientStatus.PENDING)
+        .update(status=RecipientStatus.SKIPPED, error=reason[:512])
+    )
+
+
 def run_broadcast(send: BroadcastSend) -> None:
     """
     Resolves recipients, sends VK messages, records results.
@@ -374,12 +424,29 @@ def run_broadcast(send: BroadcastSend) -> None:
       - Admin "Send Now" action (synchronous, blocks the request)
       - Celery task (run_broadcast_task) — preferred for production
 
-    Updates BroadcastSend.sent_count, failed_count, skipped_count in real time.
-    Updates RFSegment.last_campaign_date for each targeted segment.
+    После инцидента 2026-08-21:
+      - отмена (status=cancelled) проверяется каждые 10 сообщений — кнопка
+        «Отменить» в админке останавливает и УЖЕ ИДУЩУЮ отправку;
+      - счётчики обновляются каждые 25 сообщений (живой прогресс в админке,
+        раньше писались только в самом конце);
+      - celery SoftTimeLimitExceeded больше не убивает рассылку молча:
+        прогресс сохраняется, исключение уходит в run_broadcast_task,
+        который ставит задачу-продолжение; повторный run_broadcast дошлёт
+        только PENDING-получателей (резюмируемость).
     """
-    # Mark as running
+    CANCEL_CHECK_EVERY = 10
+    FLUSH_EVERY        = 25
+
+    send.refresh_from_db()
+    if send.status == SendStatus.CANCELLED:
+        # Отменили до (пере)запуска — добиваем хвост и выходим без VK-вызовов.
+        if _cancel_pending_recipients(send, 'Отменено администратором'):
+            _sync_send_counts(send, finished=True)
+        return
+
     send.status = SendStatus.RUNNING
-    send.started_at = timezone.now()
+    if not send.started_at:
+        send.started_at = timezone.now()
     send.save(update_fields=['status', 'started_at'])
 
     # Require VK config
@@ -393,27 +460,29 @@ def run_broadcast(send: BroadcastSend) -> None:
         _fail(send, 'Рассылка VK отключена в настройках.')
         return
 
-    # Resolve audience
-    recipients_qs = resolve_recipients(send.broadcast)
-    recipient_list = list(recipients_qs)
-    send.recipients_count = len(recipient_list)
-    send.save(update_fields=['recipients_count'])
+    # Resolve audience — только при первом запуске. При продолжении после
+    # celery-таймаута записи получателей уже созданы: дошлём только PENDING.
+    if not BroadcastRecipient.objects.filter(send=send).exists():
+        recipients_qs = resolve_recipients(send.broadcast)
+        recipient_list = list(recipients_qs)
+        send.recipients_count = len(recipient_list)
+        send.save(update_fields=['recipients_count'])
 
-    if not recipient_list:
-        send.status = SendStatus.DONE
-        send.finished_at = timezone.now()
-        send.save(update_fields=['status', 'finished_at'])
-        return
+        if not recipient_list:
+            send.status = SendStatus.DONE
+            send.finished_at = timezone.now()
+            send.save(update_fields=['status', 'finished_at'])
+            return
 
-    # Bulk-create recipient records
-    BroadcastRecipient.objects.bulk_create([
-        BroadcastRecipient(
-            send=send,
-            client_branch=cb,
-            vk_id=cb.client.vk_id,
-        )
-        for cb in recipient_list
-    ])
+        # Bulk-create recipient records
+        BroadcastRecipient.objects.bulk_create([
+            BroadcastRecipient(
+                send=send,
+                client_branch=cb,
+                vk_id=cb.client.vk_id,
+            )
+            for cb in recipient_list
+        ])
 
     # Upload image once — reuse the attachment string for every recipient
     image_attachment: str | None = None
@@ -426,49 +495,70 @@ def run_broadcast(send: BroadcastSend) -> None:
             send.error_message = f'Фото не загружено: {upload_err}. Отправляется без изображения.'
             send.save(update_fields=['error_message'])
 
-    sent = failed = skipped = 0
-
-    for recipient in BroadcastRecipient.objects.filter(send=send, status=RecipientStatus.PENDING):
-        if not recipient.vk_id:
-            recipient.status = RecipientStatus.SKIPPED
-            recipient.save(update_fields=['status'])
-            skipped += 1
-            continue
-
-        ok, error_msg, vk_msg_id = send_vk_message(
-            config,
-            recipient.vk_id,
-            send.broadcast.message_text,
-            image_attachment,
+    processed = 0
+    try:
+        pending = list(
+            BroadcastRecipient.objects
+            .filter(send=send, status=RecipientStatus.PENDING)
+            .order_by('pk')
         )
+        for recipient in pending:
+            # Кнопка «Отменить» в админке останавливает идущую отправку.
+            if processed % CANCEL_CHECK_EVERY == 0:
+                live_status = (
+                    BroadcastSend.objects
+                    .filter(pk=send.pk)
+                    .values_list('status', flat=True)
+                    .first()
+                )
+                if live_status == SendStatus.CANCELLED:
+                    _cancel_pending_recipients(
+                        send, 'Отменено администратором во время отправки')
+                    _sync_send_counts(
+                        send, status=SendStatus.CANCELLED, finished=True)
+                    return
 
-        if ok:
-            recipient.status  = RecipientStatus.SENT
-            recipient.sent_at = timezone.now()
-            recipient.vk_message_id = vk_msg_id
-            recipient.save(update_fields=['status', 'sent_at', 'vk_message_id'])
-            sent += 1
-        elif _is_user_unreachable(error_msg):
-            recipient.status = RecipientStatus.SKIPPED
-            recipient.error  = error_msg[:512]
-            recipient.save(update_fields=['status', 'error'])
-            skipped += 1
-        else:
-            recipient.status = RecipientStatus.FAILED
-            recipient.error  = error_msg[:512]
-            recipient.save(update_fields=['status', 'error'])
-            failed += 1
+            if not recipient.vk_id:
+                recipient.status = RecipientStatus.SKIPPED
+                recipient.save(update_fields=['status'])
+                processed += 1
+                continue
 
-        # VK rate limit: ≤ 20 messages/second
-        time.sleep(0.05)
+            ok, error_msg, vk_msg_id = send_vk_message(
+                config,
+                recipient.vk_id,
+                send.broadcast.message_text,
+                image_attachment,
+            )
+
+            if ok:
+                recipient.status  = RecipientStatus.SENT
+                recipient.sent_at = timezone.now()
+                recipient.vk_message_id = vk_msg_id
+                recipient.save(update_fields=['status', 'sent_at', 'vk_message_id'])
+            elif _is_user_unreachable(error_msg):
+                recipient.status = RecipientStatus.SKIPPED
+                recipient.error  = error_msg[:512]
+                recipient.save(update_fields=['status', 'error'])
+            else:
+                recipient.status = RecipientStatus.FAILED
+                recipient.error  = error_msg[:512]
+                recipient.save(update_fields=['status', 'error'])
+
+            processed += 1
+            if processed % FLUSH_EVERY == 0:
+                _sync_send_counts(send)
+
+            # VK rate limit: ≤ 20 messages/second
+            time.sleep(0.05)
+    except SoftTimeLimitExceeded:
+        # Сохраняем прогресс (статус остаётся running) и отдаём таймаут
+        # наверх — run_broadcast_task поставит продолжение этой рассылки.
+        _sync_send_counts(send)
+        raise
 
     # Finalize
-    send.sent_count    = sent
-    send.failed_count  = failed
-    send.skipped_count = skipped
-    send.status        = SendStatus.DONE
-    send.finished_at   = timezone.now()
-    send.save(update_fields=['sent_count', 'failed_count', 'skipped_count', 'status', 'finished_at'])
+    _sync_send_counts(send, status=SendStatus.DONE, finished=True)
 
     # Update RFSegment.last_campaign_date for targeted segments
     targeted_segments = send.broadcast.rf_segments.all()
