@@ -189,6 +189,48 @@
 
   </div>
 
+  <!-- ── RFM-кампании (ТЗ «RFM-награды» §7): компактный блок из 4 карточек.
+       Грузится клиентом и ПОЛНОСТЬЮ скрыт, пока кампаний за период нет —
+       панель не перегружается у сетей, которые функцией не пользуются. -->
+  <div id="rfm-kpi-block" style="display:none;">
+    <div class="sec-label mb-2">🎯 RFM-кампании</div>
+    <div class="row g-3 mb-4" id="rfm-kpi-cards"></div>
+  </div>
+  <script>
+  (function () {
+    var qs = new URLSearchParams();
+    {% if start %}qs.set('start', '{{ start }}');{% endif %}
+    {% if end %}qs.set('end', '{{ end }}');{% endif %}
+    fetch('/api/v1/analytics/rf/campaigns/kpi/?' + qs.toString())
+      .then(function (r) { return r.json(); })
+      .then(function (k) {
+        if (!k || !k.campaigns) return;
+        function pct(v) { return v === null || v === undefined ? '—' : v + '%'; }
+        var cards = [
+          ['🎯 Назначено RFM-наград', k.assigned_unique,
+           'Кампаний за период: ' + k.campaigns, 'c-purple', 'acc-purple'],
+          ['🎁 Активировали RFM-подарок', k.gift_activated,
+           k.gift_assigned ? pct(k.gift_activation_rate) + ' от получивших подарок' : 'Подарочных кампаний не было', 'c-green', 'acc-green'],
+          ['🔄 Вернулись после награды', k.returned,
+           pct(k.return_rate) + (k.control_return_rate !== null ? ' · контроль ' + pct(k.control_return_rate) : ''), 'c-teal', 'acc-teal'],
+          ['📈 Улучшили RF-позицию', k.improved,
+           k.returned ? pct(k.improved_rate_of_returned) + ' от вернувшихся' : 'Возвратов пока нет', 'c-blue', 'acc-blue'],
+        ];
+        var html = cards.map(function (c) {
+          return '<div class="col-sm-6 col-md-4 col-xl-3">'
+            + '<div class="mc-card card ' + c[4] + ' position-relative"><div class="card-body">'
+            + '<div class="mc-label">' + c[0] + '</div>'
+            + '<div class="mc-val ' + c[3] + '">' + c[1] + '</div>'
+            + '<div class="mc-sub">' + c[2] + '</div>'
+            + '</div></div></div>';
+        }).join('');
+        document.getElementById('rfm-kpi-cards').innerHTML = html;
+        document.getElementById('rfm-kpi-block').style.display = '';
+      })
+      .catch(function () { /* блок просто не показывается */ });
+  })();
+  </script>
+
   <div class="sec-label mb-2">📥 Сканирования</div>
   <div class="row g-3 mb-4">
 
