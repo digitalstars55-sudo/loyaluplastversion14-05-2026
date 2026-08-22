@@ -967,6 +967,251 @@ class BranchSegmentSnapshotDelivery(TimeStampedModel):
         ]
 
 
+# ── RFMCampaign ───────────────────────────────────────────────────────────────
+
+class RFMCampaignStatus(models.TextChoices):
+    PROCESSING       = 'processing',       'Идёт начисление'
+    COMPLETED        = 'completed',        'Завершена'
+    PARTIALLY_FAILED = 'partially_failed', 'Завершена с ошибками'
+    CANCELLED        = 'cancelled',        'Отменена'
+
+
+class RFMRewardType(models.TextChoices):
+    GIFT   = 'gift',   'Подарок'
+    POINTS = 'points', 'Баллы'
+
+
+class RFMCampaign(TimeStampedModel):
+    """
+    RFM-кампания: массовое назначение награды зафиксированной аудитории
+    RF-ячейки (ТЗ «RFM-награды» §6).
+
+    Ключевой инвариант — SNAPSHOT: состав получателей фиксируется в момент
+    создания (строки RFMCampaignMember) и больше не меняется, даже если гости
+    мигрируют между сегментами. Начисление идёт асинхронно (celery) батчами,
+    идемпотентно по (campaign, client). Рассылка сообщений — ОТДЕЛЬНЫЙ шаг
+    существующим каналом (send-broadcast по snapshot кампании), награда
+    назначается сервером сразу, а не по факту открытия сообщения.
+
+    Контрольная группа: holdout_percent получателей помечаются is_control
+    при создании snapshot — им ничего не начисляется и не отправляется,
+    их возвраты сравниваются с основной группой (иначе метрика «вернулись»
+    неотличима от естественного возврата).
+    """
+
+    name = models.CharField(
+        max_length=255,
+        verbose_name='Название',
+        help_text='Авто: «RFM / Сегмент / Награда / дата». Можно править для истории.',
+    )
+    comment = models.TextField(
+        blank=True,
+        verbose_name='Комментарий',
+        help_text='Внутреннее поле, гостям не показывается.',
+    )
+    created_by = models.CharField(
+        max_length=150,
+        blank=True,
+        verbose_name='Кто запустил',
+        help_text='Снимок имени пользователя на момент запуска.',
+    )
+
+    # ── Ячейка-источник (снимок контекста RF-матрицы) ─────────────────────────
+
+    mode = models.CharField(
+        max_length=16,
+        default='restaurant',
+        verbose_name='Матрица',
+        help_text='restaurant — визиты в кафе, delivery — активации доставки.',
+    )
+    segment = models.ForeignKey(
+        RFSegment,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='rfm_campaigns',
+        verbose_name='Сегмент',
+    )
+    segment_label = models.CharField(
+        max_length=64,
+        blank=True,
+        verbose_name='Ячейка',
+        help_text='Снимок подписи, например «Засыпающие · R1F1».',
+    )
+    r_score = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='R')
+    f_score = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='F')
+    branch_ids = models.JSONField(
+        default=list, blank=True,
+        verbose_name='Точки',
+        help_text='Список id точек, по которым была построена ячейка. Пусто — все.',
+    )
+    period_start = models.DateField(null=True, blank=True, verbose_name='Период с')
+    period_end = models.DateField(null=True, blank=True, verbose_name='Период по')
+
+    # ── Награда ───────────────────────────────────────────────────────────────
+
+    reward_type = models.CharField(
+        max_length=8,
+        choices=RFMRewardType,
+        verbose_name='Тип награды',
+    )
+    catalog_item = models.ForeignKey(
+        'inventory.RewardCatalogItem',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='rfm_campaigns',
+        verbose_name='Позиция каталога наград',
+        help_text='Для reward_type=gift. У позиции должен быть привязан подарок.',
+    )
+    points_amount = models.PositiveIntegerField(
+        default=0,
+        verbose_name='Баллов',
+        help_text='Для reward_type=points. Начисляются на «домашнюю точку» гостя.',
+    )
+    lifetime_days = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name='Срок забора, дней',
+        help_text='Сколько дней есть на активацию подарка. 0 — срок позиции каталога.',
+    )
+    attribution_window_days = models.PositiveSmallIntegerField(
+        default=30,
+        verbose_name='Окно атрибуции, дней',
+        help_text='В этом окне визит после назначения считается возвратом кампании.',
+    )
+    holdout_percent = models.PositiveSmallIntegerField(
+        default=10,
+        verbose_name='Контрольная группа, %',
+        help_text='Доля аудитории, которой награда НЕ начисляется (для честной '
+                  'оценки эффекта). 0 — без контрольной группы.',
+    )
+
+    # ── Ход выполнения ────────────────────────────────────────────────────────
+
+    status = models.CharField(
+        max_length=20,
+        choices=RFMCampaignStatus,
+        default=RFMCampaignStatus.PROCESSING,
+        verbose_name='Статус',
+    )
+    audience_total = models.PositiveIntegerField(default=0, verbose_name='Аудитория (snapshot)')
+    assigned_count = models.PositiveIntegerField(default=0, verbose_name='Назначено')
+    skipped_count = models.PositiveIntegerField(default=0, verbose_name='Пропущено')
+    failed_count = models.PositiveIntegerField(default=0, verbose_name='Ошибок')
+    control_count = models.PositiveIntegerField(default=0, verbose_name='Контрольная группа')
+    started_at = models.DateTimeField(null=True, blank=True, verbose_name='Начало начисления')
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name='Конец начисления')
+
+    @property
+    def reward_label(self) -> str:
+        if self.reward_type == RFMRewardType.POINTS:
+            return f'{self.points_amount} баллов'
+        if self.catalog_item_id and self.catalog_item:
+            return self.catalog_item.display_name
+        return 'Подарок'
+
+    def __str__(self):
+        return f'{self.name} ({self.get_status_display()})'
+
+    class Meta:
+        verbose_name = 'RFM-кампания'
+        verbose_name_plural = 'RFM-кампании'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'created_at'], name='rfmcamp_status_created_idx'),
+        ]
+
+
+class RFMMemberStatus(models.TextChoices):
+    PENDING   = 'pending',   'Ожидает начисления'
+    ASSIGNED  = 'assigned',  'Назначено'
+    CONTROL   = 'control',   'Контрольная группа'
+    SKIPPED   = 'skipped',   'Пропущен'
+    FAILED    = 'failed',    'Ошибка'
+    CANCELLED = 'cancelled', 'Отменено'
+
+
+class RFMCampaignMember(models.Model):
+    """
+    Строка snapshot-аудитории RFM-кампании: один гость сети (guest.Client).
+
+    Идемпотентность начисления держится на unique (campaign, client):
+    повторный запуск таска обрабатывает только PENDING-строки, ретрай не
+    может начислить награду второй раз (ТЗ §9).
+    """
+
+    campaign = models.ForeignKey(
+        RFMCampaign,
+        on_delete=models.CASCADE,
+        related_name='members',
+        verbose_name='Кампания',
+    )
+    client = models.ForeignKey(
+        'guest.Client',
+        on_delete=models.CASCADE,
+        related_name='rfm_campaign_memberships',
+        verbose_name='Гость',
+    )
+    client_branch = models.ForeignKey(
+        'branch.ClientBranch',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='rfm_campaign_memberships',
+        verbose_name='Домашняя точка',
+        help_text='Профиль гость×точка, куда начислена награда (последний визит).',
+    )
+    is_control = models.BooleanField(default=False, verbose_name='Контрольная группа')
+    status = models.CharField(
+        max_length=12,
+        choices=RFMMemberStatus,
+        default=RFMMemberStatus.PENDING,
+        verbose_name='Статус',
+    )
+    reason = models.CharField(
+        max_length=64,
+        blank=True,
+        verbose_name='Причина',
+        help_text='Машинная причина пропуска/ошибки: duplicate_active_gift, '
+                  'limit_exhausted, no_branch, error:…',
+    )
+    inventory_item = models.ForeignKey(
+        'inventory.InventoryItem',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='rfm_memberships',
+        verbose_name='Выданный подарок',
+    )
+    coin_tx = models.ForeignKey(
+        'branch.CoinTransaction',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='rfm_memberships',
+        verbose_name='Транзакция баллов',
+    )
+    assigned_at = models.DateTimeField(null=True, blank=True, verbose_name='Начислено')
+
+    # ── Эффект (заполняется аналитикой, фаза 6) ───────────────────────────────
+    first_return_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Первый возврат',
+        help_text='Первый визит/активация доставки после назначения в окне атрибуции.',
+    )
+    segment_after = models.CharField(
+        max_length=16, blank=True,
+        verbose_name='Сегмент после возврата',
+        help_text='Код ячейки (например R2F1) после первого возврата.',
+    )
+
+    def __str__(self):
+        return f'{self.campaign_id} · client {self.client_id} · {self.status}'
+
+    class Meta:
+        verbose_name = 'Получатель RFM-кампании'
+        verbose_name_plural = 'Получатели RFM-кампаний'
+        unique_together = ('campaign', 'client')
+        indexes = [
+            models.Index(fields=['campaign', 'status'], name='rfmmember_camp_status_idx'),
+        ]
+
+
 # ── Signal: автосинхронизация границ RFSegment при изменении RFSettings ────────
 # RFSegment.recency/frequency_min/max — производные от порогов в RFSettings,
 # хранятся в БД только для удобства отображения в админке. Любая правка

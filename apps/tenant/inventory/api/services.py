@@ -65,6 +65,11 @@ class InventoryCooldownActive(Exception):
         self.cooldown = cooldown
 
 
+class GiftClaimExpired(Exception):
+    """Срок забора подарка (claim_expires_at) вышел — подарок сгорел."""
+    pass
+
+
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _get_client_branch(vk_id: int, branch_id: int) -> ClientBranch:
@@ -159,6 +164,30 @@ def _validate_birthday_code(branch, code: str | None) -> None:
     ).first()
     if not daily or daily.code != code.upper().strip():
         raise InvalidCode
+
+
+def _validate_rf_gift_code(code: str | None):
+    """
+    Код дня для RF/RFM-подарка — СЕТЕВОЙ (как у сториз/сайта): принимает
+    игровой код дня любой активной точки и возвращает эту точку — там гость
+    физически находится, туда пишется себестоимость активации.
+    """
+    if not code:
+        raise InvalidCode
+    daily = (
+        DailyCode.objects
+        .filter(
+            purpose=DailyCodePurpose.GAME,
+            valid_date=current_code_date(),
+            code=code.upper().strip(),
+            branch__is_active=True,
+        )
+        .select_related('branch')
+        .first()
+    )
+    if not daily:
+        raise InvalidCode
+    return daily.branch
 
 
 def _get_inventory_cooldown(client_branch: ClientBranch) -> Cooldown | None:
@@ -283,13 +312,16 @@ def activate_item(
     Activates a pending InventoryItem so the guest can show it to staff.
 
     Birthday items  → require today's birthday DailyCode; no cooldown applied.
+    RF/RFM rewards  → require today's NETWORK game DailyCode (any active branch,
+                      как у сториз — решение владельца 22.08); no cooldown.
     All other items → check INVENTORY cooldown is not active; set it after activate.
 
     Raises:
         ClientNotFound         — no profile for (vk_id, branch_id)
         InventoryItemNotFound  — item doesn't exist or belongs to another client
+        GiftClaimExpired       — срок забора вышел, подарок сгорел
         AlreadyActivated       — item is not in PENDING state
-        InvalidCode            — birthday item but code wrong or not supplied
+        InvalidCode            — birthday/RF item but code wrong or not supplied
         InventoryCooldownActive — non-birthday item and cooldown is still running
     """
     try:
@@ -312,11 +344,17 @@ def activate_item(
     except InventoryItem.DoesNotExist:
         raise InventoryItemNotFound
 
+    if item.is_claim_expired:
+        raise GiftClaimExpired
     if item.status != ItemStatus.PENDING:
         raise AlreadyActivated
 
+    activated_branch = None
     if item.acquired_from == AcquisitionSource.BIRTHDAY:
         _validate_birthday_code(cb.branch, code)
+        item.activate()
+    elif item.acquired_from in (AcquisitionSource.RFM, AcquisitionSource.RF_AUTO):
+        activated_branch = _validate_rf_gift_code(code)
         item.activate()
     else:
         cooldown = _get_inventory_cooldown(cb)
@@ -330,9 +368,12 @@ def activate_item(
     ContactPointEvent.record(cb, ContactPointEvent.Stage.ACTIVATE)
 
     # Снимок себестоимости подарка для «Экономики клиента» (ТЗ §3.2).
+    # Для RF/RFM-подарка (сетевой код) — на точку, чей код ввели: там гость
+    # реально забирает подарок.
     from apps.tenant.inventory.models import GiftCostEvent
     GiftCostEvent.record(
-        client_branch=cb, product=item.product, branch=cb.branch,
+        client_branch=cb, product=item.product,
+        branch=activated_branch or cb.branch,
         kind=GiftCostEvent.Kind.INVENTORY, activated_at=item.activated_at,
     )
 

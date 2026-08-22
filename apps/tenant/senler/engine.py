@@ -54,7 +54,11 @@ class Candidate:
     client_branch: object
     vk_id: int
     entity_key: str = ''          # 'gift:123' для дедупа по объекту
-    gift = None                   # StoryGiftEntry, если событие про подарок
+    # StoryGiftEntry или InventoryItem, если событие про подарок.
+    # ⚠️ Аннотация обязательна: без неё это атрибут класса, а не поле dataclass,
+    # и Candidate(gift=...) в резолверах падал TypeError (латентный баг —
+    # не всплывал, пока правила «подарок не забран» были выключены).
+    gift: object = None
 
 
 @dataclass
@@ -352,6 +356,49 @@ def _tenant_gift_reminder_days() -> int:
         return 0
 
 
+def _rf_gift_expiring_resolver(rule, now):
+    """
+    RF/RFM-подарок ждёт активации, и до сгорания (claim_expires_at) осталось
+    ≤ delay_days дней. Одно напоминание на подарок (DEDUP_ENTITY); если в день
+    срабатывания напоминание задержал антиспам-оркестратор, окно продолжает
+    матчиться на следующих тиках — до самого сгорания.
+    """
+    from apps.tenant.inventory.models import AcquisitionSource, InventoryItem
+
+    delay = rule.delay_days
+    if delay is None or delay <= 0:
+        delay = 2
+
+    qs = (
+        InventoryItem.objects
+        .filter(
+            acquired_from__in=(AcquisitionSource.RFM, AcquisitionSource.RF_AUTO),
+            activated_at__isnull=True,
+            used_at__isnull=True,
+            claim_expires_at__gt=now,                                # ещё не сгорел
+            claim_expires_at__lte=now + timedelta(days=delay),        # но скоро
+            client_branch__is_employee=False,
+            client_branch__client__vk_id__isnull=False,
+        )
+        .select_related(
+            'product', 'client_branch',
+            'client_branch__client', 'client_branch__branch',
+        )
+    )
+    out = []
+    for item in qs:
+        cb = item.client_branch
+        if not _match_audience_obj(cb, rule):
+            continue
+        out.append(Candidate(
+            client_branch=cb,
+            vk_id=cb.client.vk_id,
+            entity_key=f'invgift:{item.pk}',
+            gift=item,
+        ))
+    return out
+
+
 # ── Каталог событий ──────────────────────────────────────────────────────────
 
 def get_events() -> dict:
@@ -394,6 +441,13 @@ def get_events() -> dict:
         T.FOLLOW_UP: EventSpec(
             label='Догоняющее (не отреагировал на другое правило)', dedup=DEDUP_ENTITY,
             resolver=_follow_up_resolver, placeholders=('{имя}', '{адреса}', '{баланс}'),
+        ),
+        # ── Фаза 5: RF/RFM-награды ────────────────────────────────────────────
+        T.RF_GIFT_EXPIRING: EventSpec(
+            label='RF-подарок скоро сгорит (напоминание)', dedup=DEDUP_ENTITY,
+            resolver=_rf_gift_expiring_resolver,
+            placeholders=('{имя}', '{подарок}', '{дней_осталось}', '{адреса}', '{баланс}'),
+            default_delay_days=2,
         ),
     }
 
@@ -464,6 +518,140 @@ def rule_stats(rule) -> dict:
     return out
 
 
+# ── Подарочный шаг правила (фаза 5, ТЗ §8 / §15.4) ───────────────────────────
+
+# Пороги алгоритма назначения подарка (ТЗ §8).
+RF_GIFT_BALANCE_CAP = 3000          # баланс 3000+ → магазин вместо подарка
+RF_GIFT_BLOCK_UNREDEEMED = 2        # 2 несгоревших-неактивированных RF-подарка…
+RF_GIFT_BLOCK_DAYS = 90             # …за 90 дней → блок новых подарков
+RF_GIFT_BDAY_MARGIN_DAYS = 3        # ДР раньше конца срока подарка + 3 дня → без подарка
+RF_GIFT_RECENT_EXCLUDE = 3          # не повторять 3 последних подарка гостя
+
+
+def _rule_gift_tiers(rule) -> list:
+    """Тиры подарочного шага правила: 'G1,G2' → ['G1', 'G2']. Пусто — шага нет."""
+    raw = (getattr(rule, 'gift_tier', '') or '').strip()
+    if not raw:
+        return []
+    return [t.strip().upper() for t in raw.split(',') if t.strip()]
+
+
+def _next_birthday(birth_date, today):
+    """Ближайший ДР (29 февраля → 1 марта в невисокосный год)."""
+    def _safe(year):
+        try:
+            return birth_date.replace(year=year)
+        except ValueError:
+            return birth_date.replace(year=year, month=3, day=1)
+
+    bd = _safe(today.year)
+    if bd < today:
+        bd = _safe(today.year + 1)
+    return bd
+
+
+def _prepare_rf_gift(rule, c, now):
+    """
+    Пытается назначить кандидату подарок по алгоритму ТЗ §8 / §15.4.
+
+    Возвращает (InventoryItem, '') при успехе или (None, machine_reason),
+    если подарочный шаг заблокирован гейтом — тогда правило уходит на
+    запасной текст M0 (или пропускает гостя, если запасного текста нет).
+    Гейты:
+      • активный (несгоревший/неиспользованный) RF/RFM- или story-подарок;
+      • баланс гостя 3000+ (мотивируем магазином, а не новым подарком);
+      • 2 сгоревших без активации RF-подарка за 90 дней → блок;
+      • нет доступной позиции каталога / исчерпан лимит;
+      • ДР гостя раньше, чем конец срока подарка + 3 дня.
+    """
+    from django.db.models import Q as _Q
+    from apps.tenant.inventory import reward_catalog
+    from apps.tenant.inventory.models import AcquisitionSource, InventoryItem, StoryGiftEntry
+
+    cb = c.client_branch
+    client_id = cb.client_id
+
+    rf_sources = (AcquisitionSource.RFM, AcquisitionSource.RF_AUTO)
+
+    # Активный промо-подарок нашего контура уже на руках (ТЗ: не дублировать).
+    # Покупки за баллы гостя не блокируют — это его собственность, не промо.
+    has_active_rf = (
+        InventoryItem.objects
+        .filter(client_branch__client_id=client_id,
+                acquired_from__in=rf_sources, used_at__isnull=True)
+        .filter(
+            _Q(activated_at__isnull=True)
+            & (_Q(claim_expires_at__isnull=True) | _Q(claim_expires_at__gt=now))
+            | _Q(activated_at__isnull=False)
+            & (_Q(expires_at__isnull=True) | _Q(expires_at__gt=now))
+        )
+        .exists()
+    )
+    if has_active_rf:
+        return None, 'active_gift'
+
+    # Неактивированный story/website-подарок в силе — тоже активный промо.
+    has_active_story = (
+        StoryGiftEntry.objects
+        .filter(client_branch__client_id=client_id,
+                received_at__isnull=False, activated_at__isnull=True)
+        .filter(_Q(claim_expires_at__isnull=True) | _Q(claim_expires_at__gt=now))
+        .exists()
+    )
+    if has_active_story:
+        return None, 'active_story_gift'
+
+    if _coin_balance(cb) >= RF_GIFT_BALANCE_CAP:
+        return None, 'balance_3000'
+
+    # Два RF-подарка сгорели без активации за 90 дней → гостю подарки
+    # не заходят, 90-дневный блок новых (ТЗ §8).
+    unredeemed = (
+        InventoryItem.objects
+        .filter(client_branch__client_id=client_id,
+                acquired_from__in=rf_sources,
+                activated_at__isnull=True, used_at__isnull=True,
+                claim_expires_at__gt=now - timedelta(days=RF_GIFT_BLOCK_DAYS),
+                claim_expires_at__lte=now)
+        .count()
+    )
+    if unredeemed >= RF_GIFT_BLOCK_UNREDEEMED:
+        return None, 'gift_block_90d'
+
+    # Не повторять три последних подарка гостя (по позициям каталога).
+    recent_ids = list(
+        InventoryItem.objects
+        .filter(client_branch__client_id=client_id, catalog_item__isnull=False)
+        .order_by('-created_at')
+        .values_list('catalog_item_id', flat=True)[:RF_GIFT_RECENT_EXCLUDE]
+    )
+
+    item = reward_catalog.pick_reward(
+        _rule_gift_tiers(rule), cb.branch, exclude_ids=recent_ids,
+    )
+    if item is None:
+        return None, 'no_gift_available'
+
+    days = rule.gift_lifetime_days or item.default_lifetime_days or 0
+
+    # Правило ближайшего ДР (ТЗ §4): ДР раньше конца срока подарка + 3 дня —
+    # подарочный шаг не запускается (иначе два промоподарка подряд).
+    if cb.birth_date and days:
+        today = timezone.localdate()
+        if _next_birthday(cb.birth_date, today) <= today + timedelta(days=days + RF_GIFT_BDAY_MARGIN_DAYS):
+            return None, 'birthday_near'
+
+    issued = reward_catalog.issue_to_guest(
+        item, cb,
+        source=AcquisitionSource.RF_AUTO,
+        lifetime_days=days,
+        description=f'RF-правило «{rule.name}» #{rule.pk}',
+    )
+    if issued is None:
+        return None, 'limit_exhausted'
+    return issued, ''
+
+
 # ── Частотный кэп (предохранитель) ───────────────────────────────────────────
 
 def _weekly_cap() -> int:
@@ -526,7 +714,7 @@ RF_BIRTHDAY_FREEZE_DAYS = 7    # заморозка D-7..D+7 вокруг дня
 
 def _rf_events() -> set:
     from apps.tenant.senler.models import AutoBroadcastType as T
-    return {T.NO_VISIT_DAYS, T.SUBSCRIBED_DAYS, T.FOLLOW_UP}
+    return {T.NO_VISIT_DAYS, T.SUBSCRIBED_DAYS, T.FOLLOW_UP, T.RF_GIFT_EXPIRING}
 
 
 def _orchestrator_enabled() -> bool:
@@ -710,14 +898,19 @@ def _coin_balance(client_branch) -> int:
     return (agg['income'] or 0) - (agg['expense'] or 0)
 
 
-def render_text(rule, c: Candidate, variant=None) -> str:
+def render_text(rule, c: Candidate, variant=None, template_override=None) -> str:
     """
     Подстановка переменных. Недоступные для события переменные просто пустеют.
     variant — если у правила идёт A/B, берём текст варианта вместо текста правила.
+    template_override — готовый шаблон вместо текста правила/варианта
+    (запасной M0-текст подарочного шага, когда подарок выдать нельзя).
     """
     gift = c.gift
     days_left = getattr(gift, 'days_left_to_claim', None) if gift else None
-    template = (variant.message_text if variant else rule.message_text) or ''
+    if template_override is not None:
+        template = template_override
+    else:
+        template = (variant.message_text if variant else rule.message_text) or ''
     if '{баланс}' in template:
         # Лениво: баланс считается только когда переменная реально в тексте.
         template = template.replace('{баланс}', str(_coin_balance(c.client_branch)))
@@ -898,9 +1091,43 @@ def run_rule(rule, now=None, dry_run: bool = False) -> dict:
         else:
             attachment = None
 
-        ok, err, vk_msg_id = send_vk_message(
-            senler_cfg, c.vk_id, render_text(rule, c, variant), attachment,
-        )
+        # ── Подарочный шаг (фаза 5): назначить подарок ПЕРЕД отправкой ──────
+        # (ТЗ §8: подарок появляется в «Моих подарках» одновременно с
+        # сообщением). Сбой отправки компенсируется отзывом (§15.6).
+        gift_issued = None
+        template_override = None
+        if _rule_gift_tiers(rule):
+            gift_issued, gift_reason = _prepare_rf_gift(rule, c, now)
+            if gift_issued is not None:
+                c.gift = gift_issued
+            else:
+                fallback = (rule.gift_fallback_text or '').strip()
+                if not fallback:
+                    logger.info(
+                        'Auto-rule %s: подарок недоступен (%s), vk_id=%s пропущен',
+                        rule.pk, gift_reason, c.vk_id,
+                    )
+                    continue
+                template_override = fallback
+
+        try:
+            ok, err, vk_msg_id = send_vk_message(
+                senler_cfg, c.vk_id,
+                render_text(rule, c, variant, template_override=template_override),
+                attachment,
+            )
+        except SoftTimeLimitExceeded:
+            # Таймаут между выдачей и отправкой: подарок без сообщения
+            # висеть не должен (§15.6) — отзываем и уходим в общий обработчик.
+            if gift_issued is not None:
+                from apps.tenant.inventory.reward_catalog import revoke_issued_item
+                revoke_issued_item(gift_issued)
+            raise
+        if not ok and gift_issued is not None:
+            # Сообщение не ушло — компенсация: подарок отозван, лимит возвращён.
+            from apps.tenant.inventory.reward_catalog import revoke_issued_item
+            revoke_issued_item(gift_issued)
+            c.gift = None
         if ok:
             # ⚠️ trigger_type=rule.event — тот же ключ, что пишет legacy-задача.
             AutoBroadcastLog.objects.create(
@@ -909,7 +1136,11 @@ def run_rule(rule, now=None, dry_run: bool = False) -> dict:
                 entity_key=c.entity_key,
                 rule=rule,
             )
-            if c.gift is not None and not c.gift.reminder_sent_at:
+            # reminder_sent_at есть только у StoryGiftEntry (общий дедуп с
+            # legacy-задачей); у InventoryItem (RF/RFM-подарки) поля нет —
+            # их дедуп держит entity_key-лог.
+            if c.gift is not None and hasattr(c.gift, 'reminder_sent_at') \
+                    and not c.gift.reminder_sent_at:
                 c.gift.reminder_sent_at = timezone.now()
                 c.gift.save(update_fields=['reminder_sent_at'])
             BroadcastRecipient.objects.create(

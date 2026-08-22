@@ -20,6 +20,7 @@ RF-наград/авторассылок, а сюда передаёт гото�
 
 import logging
 import random
+from datetime import timedelta
 
 from django.db.models import F, Q
 from django.utils import timezone
@@ -33,6 +34,8 @@ __all__ = [
     'pick_reward',
     'register_issue',
     'release_issue',
+    'issue_to_guest',
+    'revoke_issued_item',
 ]
 
 
@@ -183,6 +186,76 @@ def register_issue(item) -> bool:
         item.refresh_from_db(fields=['issued_count'])
     except Exception:
         item.issued_count = (item.issued_count or 0) + 1
+    return True
+
+
+def issue_to_guest(item, client_branch, *, source, lifetime_days=None, description=''):
+    """
+    Полная цепочка выдачи награды гостю: занять место в лимите позиции и
+    положить подарок в «Мои подарки» (InventoryItem) со сроком забора.
+
+    item          — RewardCatalogItem (обычно из pick_reward() либо выбранная
+                    админом позиция RFM-кампании). У позиции должен быть
+                    привязан подарок (product) — иначе гостю нечего показать.
+    client_branch — ClientBranch, кому выдаём (его точка = где подарок виден).
+    source        — AcquisitionSource.RFM | AcquisitionSource.RF_AUTO.
+    lifetime_days — срок забора в днях; None/0 → default_lifetime_days позиции.
+    description   — внутренняя заметка (например «RFM-кампания «Возврат» #12»).
+
+    Возвращает InventoryItem или None, если позиция непригодна (нет product)
+    либо лимит выдач уже исчерпан — вызывающий код уходит на сообщение без
+    подарка / помечает получателя пропущенным. Если создание записи гостю
+    сорвалось после захвата лимита — место возвращается (release_issue),
+    исключение летит дальше (§15.6: подарок не должен «повиснуть» ни в одну
+    сторону).
+    """
+    from .models import InventoryItem
+
+    if item is None or not getattr(item, 'product_id', None):
+        if item is not None:
+            logger.warning(
+                'reward_catalog.issue_to_guest: у позиции %s нет product — выдать нечего',
+                item.pk,
+            )
+        return None
+
+    if not register_issue(item):
+        return None
+
+    days = lifetime_days or item.default_lifetime_days or 0
+    try:
+        return InventoryItem.objects.create(
+            client_branch=client_branch,
+            product=item.product,
+            acquired_from=source,
+            catalog_item=item,
+            claim_expires_at=(timezone.now() + timedelta(days=days)) if days else None,
+            min_order_amount=int(item.min_order_amount or 0),
+            description=description,
+        )
+    except Exception:
+        release_issue(item)
+        raise
+
+
+def revoke_issued_item(inventory_item) -> bool:
+    """
+    Отозвать НЕактивированный подарок, выданный из каталога (отмена кампании,
+    компенсация при сбое отправки сообщения): вернуть место в лимит позиции
+    и удалить запись из «Моих подарков».
+
+    Возвращает False, если подарок уже активирован/использован — такие не
+    отзываются (по ТЗ отмена возможна только до активации).
+    """
+    if inventory_item is None or not getattr(inventory_item, 'pk', None):
+        return False
+    if inventory_item.activated_at or inventory_item.used_at:
+        return False
+
+    catalog_item = inventory_item.catalog_item
+    inventory_item.delete()
+    if catalog_item is not None:
+        release_issue(catalog_item)
     return True
 
 

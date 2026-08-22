@@ -795,6 +795,7 @@ class TransactionSource(models.TextChoices):
     BIRTHDAY = 'birthday', 'День рождения'
     DELIVERY = 'delivery', 'Доставка'
     MANUAL   = 'manual',   'Вручную'
+    RFM      = 'rfm',      'RFM-кампания'
 
 
 class CoinTransactionManager(models.Manager):

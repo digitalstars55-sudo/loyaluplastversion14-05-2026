@@ -694,6 +694,7 @@ _EVENT_ICONS = {
     AutoBroadcastType.NO_VISIT_DAYS:    '💤',
     AutoBroadcastType.SUBSCRIBED_DAYS:  '👋',
     AutoBroadcastType.FOLLOW_UP:        '🔁',
+    AutoBroadcastType.RF_GIFT_EXPIRING: '⏳',
 }
 
 
@@ -740,6 +741,18 @@ class AutoBroadcastRuleAdmin(admin.ModelAdmin):
         }),
         ('Сообщение', {
             'fields': ['message_text', '_vars_hint', '_ai_btn', 'image'],
+        }),
+        ('Подарочный шаг (RF-награды)', {
+            'fields': ['gift_tier', 'gift_lifetime_days', 'gift_fallback_text'],
+            'classes': ['collapse'],
+            'description': (
+                'Задайте тир (G1 / G2 / G3 или G1,G2) — вместе с сообщением гостю '
+                'автоматически положится подарок из «Каталога наград» со сроком '
+                'сгорания; в тексте заработают {подарок} и {дней_осталось}. '
+                'Если подарок выдать нельзя (уже есть активный, баланс 3000+, '
+                'скоро день рождения, каталог пуст) — уйдёт запасной текст; '
+                'при пустом запасном тексте гость будет пропущен.'
+            ),
         }),
         ('Догоняющее письмо (только для события «Догоняющее»)', {
             'fields': ['parent_rule', 'follow_up_condition'],

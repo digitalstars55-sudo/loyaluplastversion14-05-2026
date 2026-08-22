@@ -141,6 +141,8 @@ class AcquisitionSource(models.TextChoices):
     SUPER_PRIZE = 'super_prize', 'Суперприз'
     BIRTHDAY    = 'birthday',    'Подарок на ДР'
     MANUAL      = 'manual',      'Выдано вручную'
+    RFM         = 'rfm',         'RFM-кампания'
+    RF_AUTO     = 'rf_auto',     'RF-авторассылка'
 
 
 class ItemStatus(models.TextChoices):
@@ -189,6 +191,34 @@ class InventoryItem(TimeStampedModel):
         help_text='Только для внутреннего использования.',
     )
 
+    # ── RF/RFM-награды (фаза 5) ───────────────────────────────────────────────
+
+    catalog_item = models.ForeignKey(
+        'inventory.RewardCatalogItem',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='issued_items',
+        verbose_name='Позиция каталога наград',
+        help_text='Заполнена у наград, выданных из «Каталога наград» (RFM-кампании, '
+                  'RF-авторассылки). Нужна для лимитов, компенсаций и правила '
+                  '«не повторять три последних подарка».',
+    )
+    claim_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name='Забрать до',
+        help_text='Срок, до которого подарок нужно активировать. Не активировали — '
+                  'сгорает (статус «Истёк» без активации). Пусто — бессрочно; '
+                  'у подарков, выданных до появления поля, всегда пусто.',
+    )
+    min_order_amount = models.PositiveIntegerField(
+        default=0,
+        verbose_name='Мин. сумма заказа, ₽',
+        help_text='Снимок условия из каталога наград на момент выдачи. 0 — без ограничения.',
+    )
+
     # Duration in minutes; 0 means the prize never expires after activation
     duration = models.PositiveIntegerField(
         default=40,
@@ -215,6 +245,29 @@ class InventoryItem(TimeStampedModel):
     # ── Computed state ────────────────────────────────────────────────────────
 
     @property
+    def is_claim_expired(self) -> bool:
+        """Срок забора вышел, а подарок так и не активировали → сгорел."""
+        return bool(
+            self.claim_expires_at
+            and not self.activated_at
+            and timezone.now() >= self.claim_expires_at
+        )
+
+    @property
+    def days_left_to_claim(self) -> int | None:
+        """
+        Сколько дней осталось активировать подарок (округление вверх — «остался
+        1 день» держится до конца последних суток). None — бессрочный или уже
+        активирован. 0 — сгорел.
+        """
+        if not self.claim_expires_at or self.activated_at:
+            return None
+        delta = self.claim_expires_at - timezone.now()
+        if delta.total_seconds() <= 0:
+            return 0
+        return math.ceil(delta.total_seconds() / 86400)
+
+    @property
     def status(self) -> str:
         if self.used_at:
             return ItemStatus.USED
@@ -222,6 +275,10 @@ class InventoryItem(TimeStampedModel):
             if self.expires_at and timezone.now() >= self.expires_at:
                 return ItemStatus.EXPIRED
             return ItemStatus.ACTIVE
+        # Сгорание до активации (лениво, без фоновой задачи — как у сториз):
+        # activate() при этом статусе откажет сам, т.к. ждёт PENDING.
+        if self.is_claim_expired:
+            return ItemStatus.EXPIRED
         return ItemStatus.PENDING
 
     @property

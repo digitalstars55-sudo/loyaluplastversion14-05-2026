@@ -19,7 +19,7 @@ from .serializers import (
 )
 from .services import (
     AlreadyActivated, AlreadyClaimed, BirthdayTooRecent,
-    ClientNotFound, InvalidCode, InventoryCooldownActive,
+    ClientNotFound, GiftClaimExpired, InvalidCode, InventoryCooldownActive,
     InventoryItemNotFound, NotBirthdayWindow, ProductNotFound, SuperPrizeNotFound,
     activate_inventory_cooldown, activate_item,
     claim_birthday_prize, claim_super_prize,
@@ -152,6 +152,11 @@ class InventoryActivateView(APIView):
                 {'detail': 'Предмет инвентаря не найден.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
+        except GiftClaimExpired:
+            return Response(
+                {'detail': 'Срок подарка истёк — он сгорел.', 'reason': 'claim_expired'},
+                status=status.HTTP_409_CONFLICT,
+            )
         except AlreadyActivated:
             return Response(
                 {'detail': 'Предмет уже активирован или использован.'},
@@ -159,7 +164,7 @@ class InventoryActivateView(APIView):
             )
         except InvalidCode:
             return Response(
-                {'detail': 'Неверный код дня рождения.'},
+                {'detail': 'Неверный или не указанный код дня.', 'reason': 'bad_code'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except InventoryCooldownActive as e:

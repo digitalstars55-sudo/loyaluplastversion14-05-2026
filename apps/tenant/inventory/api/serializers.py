@@ -41,6 +41,15 @@ class InventoryItemSerializer(serializers.Serializer):
     activated_at      = serializers.DateTimeField(allow_null=True)
     expires_at        = serializers.DateTimeField(allow_null=True)
     created_at        = serializers.DateTimeField()
+    # RF/RFM-награды: срок забора и условия (у прочих подарков — null/0/false).
+    claim_expires_at  = serializers.DateTimeField(allow_null=True, default=None)
+    days_left_to_claim = serializers.IntegerField(allow_null=True, default=None)  # @property
+    min_order_amount  = serializers.IntegerField(default=0)
+    needs_code        = serializers.SerializerMethodField()
+
+    def get_needs_code(self, obj) -> bool:
+        """Активация требует код дня (ДР — код точки, RF/RFM — сетевой)."""
+        return obj.acquired_from in ('birthday', 'rfm', 'rf_auto')
 
     def get_product_image_url(self, obj) -> str | None:
         if not obj.product:

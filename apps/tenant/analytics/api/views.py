@@ -1049,6 +1049,20 @@ class SendSegmentBroadcastAPIView(APIView):
             except RFSegment.DoesNotExist:
                 return Response({'error': 'Сегмент не найден'}, status=status.HTTP_404_NOT_FOUND)
 
+        # «Перейти к рассылке» после RFM-кампании: аудитория = SNAPSHOT
+        # кампании (только реально получившие награду), а не живая ячейка —
+        # между начислением и отправкой состав меняться не должен (ТЗ §2).
+        # Контрольная группа в snapshot не входит и сообщение не получает.
+        campaign = None
+        campaign_id = _int_param('campaign_id')
+        if campaign_id:
+            from apps.tenant.analytics.models import RFMCampaign, RFMMemberStatus
+            try:
+                campaign = RFMCampaign.objects.get(pk=campaign_id)
+            except RFMCampaign.DoesNotExist:
+                return Response({'error': 'RFM-кампания не найдена'},
+                                status=status.HTTP_404_NOT_FOUND)
+
         # Resolve target branches
         branch_id_list: list[int] | None = None
         if branch_ids:
@@ -1079,7 +1093,18 @@ class SendSegmentBroadcastAPIView(APIView):
         # ресторанному FK независимо от режима — из «Доставки» (показан
         # 1 гость) рассылка ушла по ресторанному сегменту (1433).
         segment_client_ids: list[int] | None = None
-        if segment is not None:
+        if campaign is not None:
+            segment_client_ids = list(
+                campaign.members
+                .filter(status=RFMMemberStatus.ASSIGNED)
+                .values_list('client_id', flat=True)
+            )
+            if not segment_client_ids:
+                return Response(
+                    {'error': 'В кампании нет получателей с начисленной наградой'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif segment is not None:
             segment_client_ids = services.resolve_rf_cell_client_ids(
                 branch_id_list or None, mode=mode, segment=segment,
                 r_score=r_score, f_score=f_score,
@@ -1105,10 +1130,12 @@ class SendSegmentBroadcastAPIView(APIView):
                     )
 
         mode_label = ' (доставка)' if mode == 'delivery' else ''
-        broadcast_label = (
-            f'RF{mode_label}: {segment.emoji} {segment.name} ({segment.code})' if segment
-            else 'Рассылка всем оцифрованным гостям'
-        )
+        if campaign is not None:
+            broadcast_label = f'RFM-кампания: {campaign.name}'
+        elif segment:
+            broadcast_label = f'RF{mode_label}: {segment.emoji} {segment.name} ({segment.code})'
+        else:
+            broadcast_label = 'Рассылка всем оцифрованным гостям'
         triggered_by = getattr(request.user, 'username', 'api')
 
         # Файл >2.5МБ Django держит temp-файлом на диске и при первом save()
@@ -1148,15 +1175,14 @@ class SendSegmentBroadcastAPIView(APIView):
                 ).select_related('client')
                 if gender_filter != GenderFilter.ALL:
                     cb_qs = cb_qs.filter(client__gender=gender_filter)
-                if segment is not None:
-                    if segment_client_ids is not None:
-                        cb_qs = cb_qs.filter(client_id__in=segment_client_ids)
-                    else:
-                        # Fallback (нестандартный код сегмента): фильтр по
-                        # сохранённому FK, но с учётом режима.
-                        seg_rel = ('client__rf_score_delivery__segment'
-                                   if mode == 'delivery' else 'client__rf_score__segment')
-                        cb_qs = cb_qs.filter(**{seg_rel: segment})
+                if segment_client_ids is not None:
+                    cb_qs = cb_qs.filter(client_id__in=segment_client_ids)
+                elif segment is not None:
+                    # Fallback (нестандартный код сегмента): фильтр по
+                    # сохранённому FK, но с учётом режима.
+                    seg_rel = ('client__rf_score_delivery__segment'
+                               if mode == 'delivery' else 'client__rf_score__segment')
+                    cb_qs = cb_qs.filter(**{seg_rel: segment})
                 cb_qs = cb_qs.exclude(client__vk_id__in=seen_vk_ids)
 
                 cb_list = list(cb_qs)
@@ -1198,15 +1224,14 @@ class SendSegmentBroadcastAPIView(APIView):
                 ).select_related('client')
                 if gender_filter != GenderFilter.ALL:
                     cb_qs = cb_qs.filter(client__gender=gender_filter)
-                if segment is not None:
-                    if segment_client_ids is not None:
-                        cb_qs = cb_qs.filter(client_id__in=segment_client_ids)
-                    else:
-                        # Fallback (нестандартный код сегмента): фильтр по
-                        # сохранённому FK, но с учётом режима.
-                        seg_rel = ('client__rf_score_delivery__segment'
-                                   if mode == 'delivery' else 'client__rf_score__segment')
-                        cb_qs = cb_qs.filter(**{seg_rel: segment})
+                if segment_client_ids is not None:
+                    cb_qs = cb_qs.filter(client_id__in=segment_client_ids)
+                elif segment is not None:
+                    # Fallback (нестандартный код сегмента): фильтр по
+                    # сохранённому FK, но с учётом режима.
+                    seg_rel = ('client__rf_score_delivery__segment'
+                               if mode == 'delivery' else 'client__rf_score__segment')
+                    cb_qs = cb_qs.filter(**{seg_rel: segment})
                 cb_qs = cb_qs.exclude(client__vk_id__in=seen_vk_ids_split)
 
                 cb_objs = list(cb_qs)
@@ -1245,7 +1270,12 @@ class SendSegmentBroadcastAPIView(APIView):
                         },
                     })
 
-        segment_label = f'{segment.emoji} {segment.name}' if segment else 'Все оцифрованные гости'
+        if campaign is not None:
+            segment_label = campaign.name
+        elif segment:
+            segment_label = f'{segment.emoji} {segment.name}'
+        else:
+            segment_label = 'Все оцифрованные гости'
         total_recipients = sum(p['count'] for p in pending)
 
         # Порог: мало получателей — шлём синхронно (мгновенные счётчики,
@@ -1520,3 +1550,345 @@ class GenerateReportCommentAPIView(APIView):
                 {'error': f'Ошибка генерации: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+# ── RFM-кампании (назначение наград сегменту, фаза 5) ─────────────────────────
+
+def _rfm_campaign_summary(campaign, *, request=None):
+    """Компактная карточка кампании для списка/деталей (веб + мобилка)."""
+    from django.conf import settings as dj_settings
+
+    data = {
+        'id': campaign.pk,
+        'name': campaign.name,
+        'created_at': campaign.created_at.isoformat() if campaign.created_at else None,
+        'created_by': campaign.created_by,
+        'mode': campaign.mode,
+        'segment_label': campaign.segment_label,
+        'r_score': campaign.r_score,
+        'f_score': campaign.f_score,
+        'branch_ids': campaign.branch_ids or [],
+        'reward_type': campaign.reward_type,
+        'reward_label': campaign.reward_label,
+        'points_amount': campaign.points_amount,
+        'lifetime_days': campaign.lifetime_days,
+        'holdout_percent': campaign.holdout_percent,
+        'status': campaign.status,
+        'status_label': campaign.get_status_display(),
+        'audience_total': campaign.audience_total,
+        'assigned_count': campaign.assigned_count,
+        'skipped_count': campaign.skipped_count,
+        'failed_count': campaign.failed_count,
+        'control_count': campaign.control_count,
+        'finished_at': campaign.finished_at.isoformat() if campaign.finished_at else None,
+    }
+    if campaign.catalog_item_id and campaign.catalog_item:
+        item = campaign.catalog_item
+        data['catalog_item'] = {
+            'id': item.pk,
+            'name': item.display_name,
+            'tier': item.tier,
+            'cost_price': float(item.effective_cost_price or 0),
+        }
+    if request is not None:
+        # Ссылки «Мои подарки» по точкам кампании — для «Скопировать ссылку».
+        # Ограниченный режим мини-аппа по этой ссылке — фаза мини-аппа;
+        # source=rfm уже принят бэкендом и НЕ пишет визит.
+        from apps.tenant.branch.models import Branch
+        vk_app_id = getattr(dj_settings, 'VK_MINI_APP_ID', '')
+        tenant = getattr(request, 'tenant', None)
+        company_id = getattr(tenant, 'client_id', '') if tenant else ''
+        b_qs = Branch.objects.filter(is_active=True)
+        if campaign.branch_ids:
+            b_qs = b_qs.filter(pk__in=campaign.branch_ids)
+        data['links'] = [
+            {
+                'branch': b.name,
+                'url': (
+                    f'https://vk.com/app{vk_app_id}/#/'
+                    f'?company={company_id}&branch={b.branch_id}&source=rfm'
+                ),
+            }
+            for b in b_qs.order_by('pk')
+        ]
+    return data
+
+
+class RFMRewardCatalogAPIView(APIView):
+    """
+    GET /api/v1/analytics/rf/reward-catalog/
+
+    Позиции «Каталога наград», доступные для назначения RFM-кампанией:
+    активные, не архивные, available_for_rfm, с привязанным подарком
+    (без product гостю нечего показать в «Моих подарках»).
+    """
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    def get(self, request):
+        from django.utils import timezone as tz
+        from apps.tenant.inventory.models import RewardCatalogItem
+
+        now = tz.now()
+        items = (
+            RewardCatalogItem.objects
+            .filter(is_active=True, is_archived=False,
+                    available_for_rfm=True, product__isnull=False)
+            .select_related('product', 'branch')
+            .order_by('tier', 'name', 'pk')
+        )
+        out = []
+        for item in items:
+            if not item.is_within_period(now):
+                continue
+            out.append({
+                'id': item.pk,
+                'name': item.display_name,
+                'tier': item.tier,
+                'cost_price': float(item.effective_cost_price or 0),
+                'min_order_amount': float(item.min_order_amount or 0),
+                'default_lifetime_days': item.default_lifetime_days,
+                'remaining_issues': item.remaining_issues,
+                'branch': item.branch.name if item.branch_id else None,
+            })
+        return Response({'items': out})
+
+
+class RFMCampaignAPIView(APIView):
+    """
+    GET  /api/v1/analytics/rf/campaigns/   — история кампаний (последние 100)
+    POST /api/v1/analytics/rf/campaigns/   — создать кампанию и запустить начисление
+
+    POST body (JSON):
+      segment_id     — RFSegment PK (обязателен: кампания всегда из ячейки)
+      mode           — restaurant | delivery
+      branch_ids     — CSV точек (как в send-broadcast)
+      r_score, f_score, expected_count, start, end — контекст ячейки матрицы
+      reward_type    — gift | points
+      catalog_item_id — позиция каталога наград (для gift)
+      points_amount  — целое > 0 (для points)
+      lifetime_days  — срок забора подарка; 0/пусто — срок позиции
+      holdout_percent — контрольная группа, % (по умолчанию 10)
+      name, comment  — опционально
+
+    Начисление идёт асинхронно (celery); прогресс — GET detail.
+    Snapshot аудитории фиксируется здесь и больше не меняется.
+    """
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    def get(self, request):
+        from apps.tenant.analytics.models import RFMCampaign
+
+        campaigns = (
+            RFMCampaign.objects
+            .select_related('catalog_item__product')
+            .order_by('-created_at')[:100]
+        )
+        return Response({'campaigns': [_rfm_campaign_summary(c) for c in campaigns]})
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
+    def post(self, request):
+        from django.db import connection
+        from apps.tenant.analytics.models import RFSegment, RFMRewardType
+        from apps.tenant.analytics import rfm_campaigns
+        from apps.tenant.analytics.tasks import run_rfm_campaign_task
+        from apps.tenant.inventory.models import RewardCatalogItem
+
+        def _int_param(name):
+            raw = request.data.get(name)
+            try:
+                return int(raw) if raw not in (None, '') else None
+            except (TypeError, ValueError):
+                return None
+
+        def _date_param(name):
+            from datetime import date as _date
+            raw = request.data.get(name)
+            try:
+                return _date.fromisoformat(raw) if raw else None
+            except (TypeError, ValueError):
+                return None
+
+        mode = request.data.get('mode', 'restaurant')
+        if mode not in ('restaurant', 'delivery'):
+            mode = 'restaurant'
+
+        segment_id = _int_param('segment_id')
+        if not segment_id:
+            return Response({'error': 'Кампания создаётся из ячейки матрицы: нужен segment_id'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            segment = RFSegment.objects.get(pk=segment_id)
+        except RFSegment.DoesNotExist:
+            return Response({'error': 'Сегмент не найден'}, status=status.HTTP_404_NOT_FOUND)
+
+        reward_type = request.data.get('reward_type')
+        if reward_type not in (RFMRewardType.GIFT, RFMRewardType.POINTS):
+            return Response({'error': 'reward_type должен быть gift или points'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        catalog_item = None
+        points_amount = _int_param('points_amount') or 0
+        if reward_type == RFMRewardType.GIFT:
+            item_id = _int_param('catalog_item_id')
+            if not item_id:
+                return Response({'error': 'Для подарка нужен catalog_item_id'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            try:
+                catalog_item = RewardCatalogItem.objects.select_related('product').get(pk=item_id)
+            except RewardCatalogItem.DoesNotExist:
+                return Response({'error': 'Позиция каталога наград не найдена'},
+                                status=status.HTTP_404_NOT_FOUND)
+            if not catalog_item.product_id:
+                return Response(
+                    {'error': 'У позиции не привязан подарок из каталога призов — '
+                              'гостю нечего показать в «Моих подарках»'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not catalog_item.is_available_now():
+                return Response({'error': 'Позиция сейчас недоступна (архив/период/лимит)'},
+                                status=status.HTTP_400_BAD_REQUEST)
+        else:
+            if points_amount <= 0:
+                return Response({'error': 'points_amount должен быть положительным'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        branch_ids = request.data.get('branch_ids', '')
+        branch_id_list: list[int] | None = None
+        if branch_ids:
+            try:
+                branch_id_list = [int(x) for x in str(branch_ids).split(',') if x.strip()]
+            except ValueError:
+                branch_id_list = None
+
+        eff = effective_branch_ids(request.user, current_schema_name(), branch_id_list or [])
+        branch_id_list = list(eff) if eff else None
+        if branch_id_list == [-1]:
+            return Response({'error': 'Нет доступа к выбранным точкам'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        r_score = _int_param('r_score')
+        f_score = _int_param('f_score')
+        expected_count = _int_param('expected_count')
+        start_date = _date_param('start')
+        end_date = _date_param('end')
+
+        # Аудитория = ровно показанная ячейка (паритет с send-broadcast).
+        client_ids = services.resolve_rf_cell_client_ids(
+            branch_id_list or None, mode=mode, segment=segment,
+            r_score=r_score, f_score=f_score,
+            start_date=start_date, end_date=end_date,
+        )
+        if client_ids is None:
+            return Response({'error': 'Не удалось определить аудиторию ячейки'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not client_ids:
+            return Response({'error': 'В выбранном сегменте сейчас нет получателей'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if expected_count is not None and len(client_ids) > max(expected_count * 2, expected_count + 10):
+            return Response(
+                {'error': (
+                    f'Аудитория сегмента изменилась: показано {expected_count}, '
+                    f'фактически {len(client_ids)}. Обновите экран и повторите.'
+                )},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        mode_label = ' (доставка)' if mode == 'delivery' else ''
+        cell = f'{segment.emoji} {segment.name}'
+        if r_score is not None and f_score is not None:
+            cell += f' · R{r_score}F{f_score}'
+        segment_label = cell + mode_label
+
+        campaign = rfm_campaigns.create_campaign_snapshot(
+            client_ids=client_ids,
+            mode=mode,
+            segment=segment,
+            segment_label=segment_label,
+            r_score=r_score,
+            f_score=f_score,
+            branch_ids=branch_id_list or [],
+            period_start=start_date,
+            period_end=end_date,
+            reward_type=reward_type,
+            catalog_item=catalog_item,
+            points_amount=points_amount,
+            lifetime_days=_int_param('lifetime_days') or 0,
+            holdout_percent=(
+                _int_param('holdout_percent')
+                if _int_param('holdout_percent') is not None else 10
+            ),
+            name=(request.data.get('name') or '').strip(),
+            comment=(request.data.get('comment') or '').strip(),
+            created_by=getattr(request.user, 'username', 'api'),
+        )
+        run_rfm_campaign_task.delay(connection.schema_name, campaign.pk)
+
+        return Response({
+            'ok': True,
+            'queued': True,
+            'campaign': _rfm_campaign_summary(campaign, request=request),
+        })
+
+
+class RFMCampaignDetailAPIView(APIView):
+    """GET /api/v1/analytics/rf/campaigns/<pk>/ — детали + живые метрики."""
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    def get(self, request, pk):
+        from django.utils import timezone as tz
+        from apps.tenant.analytics.models import RFMCampaign, RFMRewardType
+
+        try:
+            campaign = RFMCampaign.objects.select_related('catalog_item__product').get(pk=pk)
+        except RFMCampaign.DoesNotExist:
+            return Response({'error': 'Кампания не найдена'}, status=status.HTTP_404_NOT_FOUND)
+
+        data = _rfm_campaign_summary(campaign, request=request)
+
+        # Живая воронка подарков (лениво, по факту): активировали / сгорели.
+        if campaign.reward_type == RFMRewardType.GIFT:
+            now = tz.now()
+            items = campaign.members.filter(inventory_item__isnull=False).values_list(
+                'inventory_item__activated_at', 'inventory_item__used_at',
+                'inventory_item__claim_expires_at',
+            )
+            activated = expired = waiting = 0
+            for act, used, claim_till in items:
+                if act or used:
+                    activated += 1
+                elif claim_till and claim_till <= now:
+                    expired += 1
+                else:
+                    waiting += 1
+            data['gift_funnel'] = {
+                'assigned': campaign.assigned_count,
+                'activated': activated,
+                'claim_expired': expired,
+                'waiting': waiting,
+            }
+        return Response(data)
+
+
+class RFMCampaignCancelAPIView(APIView):
+    """
+    POST /api/v1/analytics/rf/campaigns/<pk>/cancel/
+
+    Отмена кампании (ТЗ §9): начисление останавливается, неактивированные
+    подарки отзываются с возвратом лимита, баллы откатываются в пределах
+    неиспользованного остатка. Активированные подарки остаются у гостей.
+    """
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
+    def post(self, request, pk):
+        from apps.tenant.analytics.models import RFMCampaign
+        from apps.tenant.analytics import rfm_campaigns
+
+        try:
+            campaign = RFMCampaign.objects.get(pk=pk)
+        except RFMCampaign.DoesNotExist:
+            return Response({'error': 'Кампания не найдена'}, status=status.HTTP_404_NOT_FOUND)
+
+        summary = rfm_campaigns.cancel_campaign(
+            campaign.pk, actor=getattr(request.user, 'username', 'api'),
+        )
+        return Response({'ok': True, **summary})

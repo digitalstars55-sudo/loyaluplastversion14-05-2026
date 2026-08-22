@@ -116,9 +116,10 @@ class ClientRegistrationRequestSerializer(serializers.Serializer):
     birth_date        = serializers.DateField(required=False, allow_null=True, default=None)
     source            = serializers.ChoiceField(
         # restaurant/story — физический скан QR в заведении (пишем визит);
-        # delivery/website/vk_catalog — сетевые входы (визит НЕ пишем, у них
+        # delivery/website/vk_catalog/rfm — сетевые входы (визит НЕ пишем, у них
         # свои метрики), иначе они задваивались бы в «Сканах в кафе».
-        choices=['restaurant', 'delivery', 'website', 'vk_catalog', 'story'],
+        # rfm — переход по ссылке из сообщения RFM-кампании/RF-рассылки.
+        choices=['restaurant', 'delivery', 'website', 'vk_catalog', 'story', 'rfm'],
         required=False, default='restaurant',
     )
     invited_by_cb_id  = serializers.IntegerField(required=False, allow_null=True, default=None)
@@ -172,10 +173,10 @@ class VKAuthRequestSerializer(serializers.Serializer):
     state         = serializers.CharField()
     branch_id     = serializers.IntegerField()
     birth_date    = serializers.DateField(required=False, allow_null=True, default=None)
-    # Источник входа (как в POST /client/): сетевые (website/vk_catalog/delivery)
+    # Источник входа (как в POST /client/): сетевые (website/vk_catalog/delivery/rfm)
     # не пишут визит-скан. src — метка отслеживаемого QR («точка контакта»).
     source        = serializers.ChoiceField(
-        choices=['restaurant', 'delivery', 'website', 'vk_catalog', 'story'],
+        choices=['restaurant', 'delivery', 'website', 'vk_catalog', 'story', 'rfm'],
         required=False, default='restaurant',
     )
     src           = serializers.CharField(

@@ -327,3 +327,55 @@ def send_draft_reminders_task() -> dict:
                 tenant.schema_name, e,
             )
     return summary
+
+
+# ════════════════════════════════════════════════════════════════════
+# RFM-кампании: массовое начисление наград snapshot-аудитории (фаза 5)
+# ════════════════════════════════════════════════════════════════════
+
+try:
+    from celery.exceptions import SoftTimeLimitExceeded
+except Exception:  # pragma: no cover
+    class SoftTimeLimitExceeded(BaseException):
+        pass
+
+
+@shared_task(
+    name='apps.tenant.analytics.tasks.run_rfm_campaign_task',
+    bind=True,
+)
+def run_rfm_campaign_task(self, schema_name: str, campaign_id: int, requeue_depth: int = 0) -> dict:
+    """
+    Начисляет награды получателям RFM-кампании.
+
+    Один серийный таск на кампанию. При celery-таймауте (SoftTimeLimit)
+    ставит продолжение самого себя: process_campaign обрабатывает только
+    PENDING-строки, поэтому дублей не бывает. MAX_REQUEUES — предохранитель
+    от бесконечной цепочки.
+    """
+    from django_tenants.utils import schema_context
+    from apps.tenant.analytics import rfm_campaigns
+
+    MAX_REQUEUES = 40
+
+    try:
+        with schema_context(schema_name):
+            return rfm_campaigns.process_campaign(campaign_id)
+    except SoftTimeLimitExceeded:
+        if requeue_depth >= MAX_REQUEUES:
+            logger.error(
+                'run_rfm_campaign_task: requeue limit reached (schema=%s, campaign=%s)',
+                schema_name, campaign_id,
+            )
+            with schema_context(schema_name):
+                return rfm_campaigns.finalize_campaign(campaign_id)
+        logger.warning(
+            'run_rfm_campaign_task: soft time limit, requeue %s (schema=%s, campaign=%s)',
+            requeue_depth + 1, schema_name, campaign_id,
+        )
+        run_rfm_campaign_task.apply_async(
+            args=[schema_name, campaign_id],
+            kwargs={'requeue_depth': requeue_depth + 1},
+            countdown=5,
+        )
+        return {'campaign': campaign_id, 'requeued': requeue_depth + 1}

@@ -8,6 +8,8 @@ from .views import (
     SendSegmentBroadcastAPIView, GenerateBroadcastTextAPIView,
     GenerateReportCommentAPIView, RFMigrationsListAPIView,
     LoyaltyReportAPIView, ContactPointsAPIView,
+    RFMRewardCatalogAPIView, RFMCampaignAPIView, RFMCampaignDetailAPIView,
+    RFMCampaignCancelAPIView,
 )
 
 urlpatterns = [
@@ -24,6 +26,10 @@ urlpatterns = [
     path('analytics/campaigns/<int:pk>/', CampaignDetailAPIView.as_view(),       name='analytics-campaign-detail'),
     path('analytics/segments/',           RFSegmentListAPIView.as_view(),       name='analytics-segments'),
     path('analytics/rf/send-broadcast/',       SendSegmentBroadcastAPIView.as_view(),    name='analytics-rf-send-broadcast'),
+    path('analytics/rf/reward-catalog/',       RFMRewardCatalogAPIView.as_view(),        name='analytics-rf-reward-catalog'),
+    path('analytics/rf/campaigns/',            RFMCampaignAPIView.as_view(),             name='analytics-rf-campaigns'),
+    path('analytics/rf/campaigns/<int:pk>/',   RFMCampaignDetailAPIView.as_view(),       name='analytics-rf-campaign-detail'),
+    path('analytics/rf/campaigns/<int:pk>/cancel/', RFMCampaignCancelAPIView.as_view(),  name='analytics-rf-campaign-cancel'),
     path('analytics/rf/generate-broadcast-text/', GenerateBroadcastTextAPIView.as_view(), name='analytics-rf-generate-text'),
     path('analytics/report/generate-comment/',    GenerateReportCommentAPIView.as_view(), name='analytics-report-generate-comment'),
     path('analytics/branches/',         BranchListAPIView.as_view(),   name='analytics-branches'),

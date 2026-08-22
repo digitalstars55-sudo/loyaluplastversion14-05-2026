@@ -986,3 +986,71 @@ class DailyOrderStatAdmin(admin.ModelAdmin):
     date_hierarchy = 'date'
     search_fields = ('branch__name', 'cafe_name_raw')
     readonly_fields = ('created_at', 'updated_at')
+
+
+# ── RFM-кампании (история назначений наград, фаза 5) ─────────────────────────
+
+from .models import RFMCampaign, RFMCampaignMember, RFMCampaignStatus  # noqa: E402
+
+
+class RFMCampaignMemberInline(admin.TabularInline):
+    model = RFMCampaignMember
+    extra = 0
+    can_delete = False
+    fields = ('client', 'client_branch', 'is_control', 'status', 'reason',
+              'inventory_item', 'assigned_at')
+    readonly_fields = fields
+    show_change_link = False
+    max_num = 0  # только просмотр, без добавления
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(RFMCampaign, site=tenant_admin)
+class RFMCampaignAdmin(admin.ModelAdmin):
+    list_display = ('name', 'reward_summary', 'segment_label', 'audience_total',
+                    'assigned_count', 'skipped_count', 'failed_count',
+                    'control_count', 'status_badge', 'created_at')
+    list_filter = ('status', 'reward_type', 'mode')
+    search_fields = ('name', 'segment_label')
+    readonly_fields = [f.name for f in RFMCampaign._meta.fields]
+    inlines = [RFMCampaignMemberInline]
+    actions = ['action_cancel']
+
+    def has_add_permission(self, request):
+        # Кампании создаются только из RF-матрицы (API) — там snapshot и celery.
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description='Награда')
+    def reward_summary(self, obj):
+        return obj.reward_label
+
+    @admin.display(description='Статус')
+    def status_badge(self, obj):
+        colors = {
+            RFMCampaignStatus.PROCESSING: '#f59e0b',
+            RFMCampaignStatus.COMPLETED: '#10b981',
+            RFMCampaignStatus.PARTIALLY_FAILED: '#f97316',
+            RFMCampaignStatus.CANCELLED: '#6b7280',
+        }
+        return format_html(
+            '<span style="color:{};font-weight:600">{}</span>',
+            colors.get(obj.status, '#374151'), obj.get_status_display(),
+        )
+
+    @admin.action(description='⛔ Отменить кампанию (отозвать неактивированное)')
+    def action_cancel(self, request, queryset):
+        from apps.tenant.analytics import rfm_campaigns
+        done = 0
+        for campaign in queryset:
+            if campaign.status == RFMCampaignStatus.CANCELLED:
+                continue
+            rfm_campaigns.cancel_campaign(
+                campaign.pk, actor=getattr(request.user, 'username', 'admin'),
+            )
+            done += 1
+        messages.success(request, f'Отменено кампаний: {done}')
