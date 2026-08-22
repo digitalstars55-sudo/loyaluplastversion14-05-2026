@@ -21,6 +21,7 @@ RFM-кампании: snapshot аудитории, массовое начисл
 
 import logging
 import random
+from datetime import timedelta
 
 from django.db import transaction
 from django.db.models import Count, Q
