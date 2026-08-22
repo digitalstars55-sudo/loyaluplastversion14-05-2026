@@ -9,7 +9,7 @@ from .views import (
     GenerateReportCommentAPIView, RFMigrationsListAPIView,
     LoyaltyReportAPIView, ContactPointsAPIView,
     RFMRewardCatalogAPIView, RFMCampaignAPIView, RFMCampaignDetailAPIView,
-    RFMCampaignCancelAPIView,
+    RFMCampaignCancelAPIView, RFMCampaignKPIAPIView,
 )
 
 urlpatterns = [
@@ -28,6 +28,7 @@ urlpatterns = [
     path('analytics/rf/send-broadcast/',       SendSegmentBroadcastAPIView.as_view(),    name='analytics-rf-send-broadcast'),
     path('analytics/rf/reward-catalog/',       RFMRewardCatalogAPIView.as_view(),        name='analytics-rf-reward-catalog'),
     path('analytics/rf/campaigns/',            RFMCampaignAPIView.as_view(),             name='analytics-rf-campaigns'),
+    path('analytics/rf/campaigns/kpi/',        RFMCampaignKPIAPIView.as_view(),          name='analytics-rf-campaigns-kpi'),
     path('analytics/rf/campaigns/<int:pk>/',   RFMCampaignDetailAPIView.as_view(),       name='analytics-rf-campaign-detail'),
     path('analytics/rf/campaigns/<int:pk>/cancel/', RFMCampaignCancelAPIView.as_view(),  name='analytics-rf-campaign-cancel'),
     path('analytics/rf/generate-broadcast-text/', GenerateBroadcastTextAPIView.as_view(), name='analytics-rf-generate-text'),

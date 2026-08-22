@@ -433,3 +433,132 @@ def _cancel_member(campaign, member, *, actor=''):
             member.status = RFMMemberStatus.CANCELLED
             member.reason = f'refund:{refund}'
             member.save(update_fields=['status', 'reason'])
+
+
+# ── Атрибуция эффекта (фаза 6, ТЗ §7) ─────────────────────────────────────────
+
+def attribute_returns(campaign_id, *, now=None) -> dict:
+    """
+    Заполняет first_return_at / segment_after у получателей кампании.
+
+    Возврат = первый квалифицирующий визит ПОСЛЕ начисления в окне
+    attribution_window_days: mode=restaurant — ClientBranchVisit,
+    mode=delivery — активация Delivery. Для контрольной группы точкой
+    отсчёта служит старт кампании (награды у неё нет) — только так
+    возвраты основной и контрольной групп сравнимы честно.
+
+    segment_after — позиция гостя по ХРАНИМОМУ RF-скору на момент вызова
+    (пересчёт ночной, 03:00) — «сразу после возврата» с точностью до суток.
+
+    Лениво и идемпотентно: трогает только строки без first_return_at;
+    зовётся из detail-вью и KPI (best-effort). Возвращает сводку.
+    """
+    from apps.tenant.branch.models import ClientBranchVisit
+    from apps.tenant.delivery.models import Delivery
+    from apps.tenant.analytics.models import GuestRFScore, GuestRFScoreDelivery
+
+    now = now or timezone.now()
+    campaign = RFMCampaign.objects.get(pk=campaign_id)
+    base_ref = campaign.started_at or campaign.created_at
+    window = timedelta(days=campaign.attribution_window_days or 30)
+
+    members = list(
+        campaign.members
+        .filter(status__in=(RFMMemberStatus.ASSIGNED, RFMMemberStatus.CONTROL),
+                first_return_at__isnull=True)
+    )
+    if members:
+        client_ids = [m.client_id for m in members]
+        min_ref = min((m.assigned_at or base_ref) for m in members)
+
+        # Все кандидаты-возвраты одним запросом; раскладка по гостям в Python
+        # (окно ≤ 30-60 дней, объёмы небольшие).
+        if campaign.mode == 'delivery':
+            rows = (
+                Delivery.objects
+                .filter(activated_by__client_id__in=client_ids,
+                        activated_at__gt=min_ref, activated_at__lte=now)
+                .values_list('activated_by__client_id', 'activated_at')
+            )
+        else:
+            rows = (
+                ClientBranchVisit.objects
+                .filter(client__client_id__in=client_ids,
+                        visited_at__gt=min_ref, visited_at__lte=now)
+                .values_list('client__client_id', 'visited_at')
+            )
+        visits: dict = {}
+        for cid, ts in rows:
+            visits.setdefault(cid, []).append(ts)
+        for lst in visits.values():
+            lst.sort()
+
+        score_model = GuestRFScoreDelivery if campaign.mode == 'delivery' else GuestRFScore
+        scores = {
+            cid: f'R{r}F{f}'
+            for cid, r, f in score_model.objects
+            .filter(client_id__in=client_ids)
+            .values_list('client_id', 'r_score', 'f_score')
+        }
+
+        changed = []
+        for m in members:
+            ref = m.assigned_at or base_ref
+            hit = next((ts for ts in visits.get(m.client_id, ())
+                        if ref < ts <= ref + window), None)
+            if hit is None:
+                continue
+            m.first_return_at = hit
+            m.segment_after = scores.get(m.client_id, '')
+            changed.append(m)
+        if changed:
+            RFMCampaignMember.objects.bulk_update(
+                changed, ['first_return_at', 'segment_after'], batch_size=500,
+            )
+
+    return campaign_returns_summary(campaign)
+
+
+def campaign_returns_summary(campaign) -> dict:
+    """
+    Сводка «вернулись/улучшили позицию» с честным сравнением против
+    контрольной группы (ТЗ §7, §7.2: R_after>=R и F_after>=F, хотя бы одна
+    строго выше; за точку «до» берётся ячейка кампании).
+    """
+    rows = list(
+        campaign.members
+        .filter(status__in=(RFMMemberStatus.ASSIGNED, RFMMemberStatus.CONTROL))
+        .values_list('status', 'first_return_at', 'segment_after')
+    )
+
+    def _improved(seg_after):
+        if not seg_after or campaign.r_score is None or campaign.f_score is None:
+            return False
+        try:
+            r_after, f_after = int(seg_after[1]), int(seg_after[3])
+        except (ValueError, IndexError):
+            return False
+        return (r_after >= campaign.r_score and f_after >= campaign.f_score
+                and (r_after > campaign.r_score or f_after > campaign.f_score))
+
+    out = {}
+    for status_key, label in ((RFMMemberStatus.ASSIGNED, 'assigned'),
+                              (RFMMemberStatus.CONTROL, 'control')):
+        grp = [r for r in rows if r[0] == status_key]
+        returned = [r for r in grp if r[1]]
+        out[f'{label}_base'] = len(grp)
+        out[f'{label}_returned'] = len(returned)
+        out[f'{label}_return_rate'] = (
+            round(len(returned) * 100 / len(grp), 1) if grp else None
+        )
+        out[f'{label}_improved'] = sum(1 for r in returned if _improved(r[2]))
+
+    # Инкрементальный эффект: на сколько процентных пунктов основная группа
+    # возвращается чаще контрольной. None — контрольной группы нет.
+    if out['control_base'] and out['assigned_base']:
+        out['uplift_pp'] = round(
+            (out['assigned_return_rate'] or 0) - (out['control_return_rate'] or 0), 1,
+        )
+    else:
+        out['uplift_pp'] = None
+    return out

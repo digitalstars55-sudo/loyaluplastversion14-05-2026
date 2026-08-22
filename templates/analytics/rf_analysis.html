@@ -226,6 +226,19 @@
       {% endif %}
     </div>
 
+    <!-- ── История RFM-кампаний (ТЗ «RFM-награды» §9) ────────────────
+         Свёрнут по умолчанию: список подгружается только при раскрытии,
+         чтобы не дёргать API на каждом заходе на страницу. -->
+    <div class="migration-card" id="rfm-campaigns-card" style="grid-column: 1 / -1;">
+      <div class="migration-header" style="cursor:pointer;user-select:none;" onclick="toggleRFMCampaigns()">
+        <div class="migration-title">🎁 История RFM-кампаний</div>
+        <span class="migration-link" id="rfm-campaigns-toggle">Показать ▾</span>
+      </div>
+      <div id="rfm-campaigns-body" style="display:none;">
+        <div class="empty-state" style="padding:24px;"><div class="icon">⏳</div>Загрузка...</div>
+      </div>
+    </div>
+
   </div><!-- /rf-content -->
 </div><!-- /rf-wrap -->
 
@@ -238,6 +251,15 @@
     </div>
     <div class="modal-body">
       <div class="modal-segment-info" id="modal-segment-info"></div>
+
+      <!-- Рассылка по snapshot RFM-кампании. Показывается только когда модалку
+           открыли с экрана результата «Назначить награду» — тогда в отправку
+           уходит campaign_id и бэкенд шлёт ровно получившим награду. -->
+      <div id="modal-campaign-note" style="display:none;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12.5px;color:#4c1d95;line-height:1.45;">
+        <div style="font-weight:800;">🎁 Рассылка по RFM-кампании</div>
+        <div id="modal-campaign-note-name" style="margin-top:2px;"></div>
+        <div style="margin-top:4px;">Сообщение уйдёт ровно тем гостям, которые получили награду. Контрольная группа исключена.</div>
+      </div>
 
       <!-- Жирное предупреждение для режима «всем» -->
       <div id="modal-warning" style="display:none;background:#fee2e2;border:2px solid #dc2626;border-radius:8px;padding:12px 14px;margin-bottom:12px;">
@@ -291,6 +313,95 @@
   </div>
 </div>
 
+<!-- ── Reward modal (ТЗ «RFM-награды» §2-§3) ────────────────────────── -->
+<div class="modal-overlay" id="reward-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-header-title" id="reward-modal-title">🎁 Назначить награду сегменту</div>
+      <button class="modal-close" onclick="closeRewardModal()">&times;</button>
+    </div>
+
+    <!-- ── Форма назначения ─────────────────────────────────────────── -->
+    <div class="modal-body" id="reward-form">
+      <div class="modal-segment-info" id="reward-segment-info"></div>
+
+      <!-- Тип награды -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:6px;">Тип награды</div>
+        <div style="display:flex;gap:8px;">
+          <button type="button" id="reward-type-gift" onclick="setRewardType('gift')"
+                  style="flex:1;padding:9px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font-size:13px;font-weight:700;cursor:pointer;color:#334155;">
+            🎁 Подарок
+          </button>
+          <button type="button" id="reward-type-points" onclick="setRewardType('points')"
+                  style="flex:1;padding:9px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font-size:13px;font-weight:700;cursor:pointer;color:#334155;">
+            🪙 Баллы
+          </button>
+        </div>
+      </div>
+
+      <!-- Подарок: позиция каталога наград -->
+      <div id="reward-gift-block" style="margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:6px;">Позиция каталога наград</div>
+        <select id="reward-catalog-select" onchange="onRewardCatalogChange()"
+                style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;color:#0f172a;background:#fff;box-sizing:border-box;">
+        </select>
+        <div id="reward-catalog-note" style="display:none;font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:9px 11px;margin-top:8px;line-height:1.45;"></div>
+        <div id="reward-catalog-meta" style="font-size:12px;color:#64748b;margin-top:6px;line-height:1.45;"></div>
+      </div>
+
+      <!-- Баллы -->
+      <div id="reward-points-block" style="display:none;margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:6px;">Сколько баллов начислить</div>
+        <input type="number" id="reward-points-amount" min="1" step="1" value="100" oninput="renderRewardPreview()"
+               style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;color:#0f172a;background:#fff;box-sizing:border-box;">
+        <div style="font-size:12px;color:#64748b;margin-top:5px;line-height:1.4;">Целое число больше нуля.</div>
+      </div>
+
+      <!-- Срок действия подарка -->
+      <div id="reward-lifetime-block" style="margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:6px;">Срок действия подарка, дней</div>
+        <input type="number" id="reward-lifetime-days" min="1" step="1" placeholder=""
+               style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;color:#0f172a;background:#fff;box-sizing:border-box;">
+        <div style="font-size:12px;color:#64748b;margin-top:5px;line-height:1.4;">Пусто — берётся срок, заданный у выбранной позиции каталога.</div>
+      </div>
+
+      <!-- Контрольная группа -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:6px;">Контрольная группа, %</div>
+        <input type="number" id="reward-holdout" min="0" max="50" step="1" value="10" oninput="renderRewardPreview()"
+               style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;color:#0f172a;background:#fff;box-sizing:border-box;">
+        <div style="font-size:12px;color:#64748b;margin-top:5px;line-height:1.4;">Этой доле гостей награда не начисляется — для честного замера возврата.</div>
+      </div>
+
+      <!-- Название и комментарий -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:6px;">Название кампании</div>
+        <input type="text" id="reward-name" maxlength="200" oninput="onRewardNameInput()"
+               style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;color:#0f172a;background:#fff;box-sizing:border-box;">
+      </div>
+      <div style="margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:6px;">Комментарий <span style="font-weight:500;color:#94a3b8;">(необязательно)</span></div>
+        <input type="text" id="reward-comment" maxlength="500"
+               style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;color:#0f172a;background:#fff;box-sizing:border-box;">
+      </div>
+
+      <!-- Предпросмотр перед подтверждением -->
+      <div id="reward-preview" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;font-size:13px;color:#334155;line-height:1.6;"></div>
+    </div>
+
+    <!-- ── Экран результата ─────────────────────────────────────────── -->
+    <div class="modal-body" id="reward-result" style="display:none;"></div>
+
+    <div class="modal-status" id="reward-status"></div>
+    <div class="modal-footer" id="reward-footer">
+      <button class="modal-btn modal-btn-send" id="btn-reward-submit" onclick="submitRewardCampaign()" style="margin-left:auto;">
+        🎁 Назначить
+      </button>
+    </div>
+  </div>
+</div>
+
 <script id="rf-branches-data" type="application/json">[{% for b in branches %}{"id":{{ b.id }},"name":"{{ b.name|escapejs }}"}{% if not forloop.last %},{% endif %}{% endfor %}]</script>
 <script id="rf-active-branch-ids" type="application/json">[{% for id in active_branch_ids %}{{ id }}{% if not forloop.last %},{% endif %}{% endfor %}]</script>
 <script>
@@ -306,5 +417,5 @@ const ALL_BRANCHES = JSON.parse(document.getElementById('rf-branches-data').text
 const ACTIVE_BRANCH_IDS = JSON.parse(document.getElementById('rf-active-branch-ids').textContent);
 const matrixData = ACTIVE_MODE === 'delivery' ? RF_DELIVERY_DATA : RF_DATA;
 </script>
-<script src="{% static 'analytics/js/rf_analysis.js' %}?v=20260522a"></script>
+<script src="{% static 'analytics/js/rf_analysis.js' %}?v=20260822a"></script>
 {% endblock %}

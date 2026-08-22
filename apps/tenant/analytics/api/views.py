@@ -1837,6 +1837,7 @@ class RFMCampaignDetailAPIView(APIView):
     def get(self, request, pk):
         from django.utils import timezone as tz
         from apps.tenant.analytics.models import RFMCampaign, RFMRewardType
+        from apps.tenant.analytics import rfm_campaigns
 
         try:
             campaign = RFMCampaign.objects.select_related('catalog_item__product').get(pk=pk)
@@ -1844,6 +1845,16 @@ class RFMCampaignDetailAPIView(APIView):
             return Response({'error': 'Кампания не найдена'}, status=status.HTTP_404_NOT_FOUND)
 
         data = _rfm_campaign_summary(campaign, request=request)
+
+        # Возвраты и сравнение с контрольной группой (лениво, best-effort —
+        # сбой атрибуции не должен ронять карточку кампании).
+        try:
+            data['returns'] = rfm_campaigns.attribute_returns(campaign.pk)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'RFM returns attribution failed (campaign=%s)', campaign.pk,
+            )
 
         # Живая воронка подарков (лениво, по факту): активировали / сгорели.
         if campaign.reward_type == RFMRewardType.GIFT:
@@ -1892,3 +1903,93 @@ class RFMCampaignCancelAPIView(APIView):
             campaign.pk, actor=getattr(request.user, 'username', 'api'),
         )
         return Response({'ok': True, **summary})
+
+
+class RFMCampaignKPIAPIView(APIView):
+    """
+    GET /api/v1/analytics/rf/campaigns/kpi/?start=YYYY-MM-DD&end=YYYY-MM-DD
+
+    Компактный блок «RFM-кампании» для общей панели (ТЗ RFM §7, 4 карточки):
+      assigned      — уникальные гости, которым успешно начислена награда;
+      activated     — активировали RFM-подарок (+% от получателей подарков);
+      returned      — вернулись после награды (+% и сравнение с контролем);
+      improved      — улучшили RF-позицию (+% от вернувшихся).
+
+    Период — по дате создания кампании; по умолчанию последние 30 дней.
+    """
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    def get(self, request):
+        from datetime import date as _date, timedelta as _td
+        from django.utils import timezone as tz
+        from apps.tenant.analytics.models import (
+            RFMCampaign, RFMCampaignStatus, RFMMemberStatus, RFMRewardType,
+        )
+        from apps.tenant.analytics import rfm_campaigns
+
+        def _d(name):
+            raw = request.query_params.get(name)
+            try:
+                return _date.fromisoformat(raw) if raw else None
+            except (TypeError, ValueError):
+                return None
+
+        end = _d('end') or tz.localdate()
+        start = _d('start') or (end - _td(days=29))
+
+        campaigns = list(
+            RFMCampaign.objects
+            .filter(created_at__date__gte=start, created_at__date__lte=end)
+            .exclude(status=RFMCampaignStatus.CANCELLED)
+        )
+
+        assigned_clients: set = set()
+        gift_assigned = gift_activated = 0
+        returned = returned_base = improved = 0
+        control_returned = control_base = 0
+
+        for campaign in campaigns:
+            try:
+                rfm_campaigns.attribute_returns(campaign.pk)
+            except Exception:
+                pass
+            rows = list(
+                campaign.members
+                .filter(status__in=(RFMMemberStatus.ASSIGNED, RFMMemberStatus.CONTROL))
+                .values_list('status', 'client_id', 'first_return_at',
+                             'segment_after', 'inventory_item__activated_at',
+                             'inventory_item__used_at')
+            )
+            summary = rfm_campaigns.campaign_returns_summary(campaign)
+            returned += summary['assigned_returned']
+            returned_base += summary['assigned_base']
+            improved += summary['assigned_improved']
+            control_returned += summary['control_returned']
+            control_base += summary['control_base']
+            for status_key, client_id, first_return, _seg, act, used in rows:
+                if status_key != RFMMemberStatus.ASSIGNED:
+                    continue
+                assigned_clients.add(client_id)
+                if campaign.reward_type == RFMRewardType.GIFT:
+                    gift_assigned += 1
+                    if act or used:
+                        gift_activated += 1
+
+        def _pct(part, base):
+            return round(part * 100 / base, 1) if base else None
+
+        return Response({
+            'start': start.isoformat(),
+            'end': end.isoformat(),
+            'campaigns': len(campaigns),
+            'assigned_unique': len(assigned_clients),
+            'gift_assigned': gift_assigned,
+            'gift_activated': gift_activated,
+            'gift_activation_rate': _pct(gift_activated, gift_assigned),
+            'returned': returned,
+            'return_rate': _pct(returned, returned_base),
+            'control_returned': control_returned,
+            'control_return_rate': _pct(control_returned, control_base),
+            'improved': improved,
+            'improved_rate_of_returned': _pct(improved, returned),
+        })
