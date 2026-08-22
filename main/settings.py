@@ -98,6 +98,7 @@ TENANT_APPS = [
     'apps.tenant.telegram.apps.TelegramConfig',
     'apps.tenant.mobile.apps.MobileConfig',
     'apps.tenant.loyalty.apps.LoyaltyConfig',
+    'apps.tenant.marketer.apps.MarketerAppConfig',
 ]
 
 INSTALLED_APPS = list(SHARED_APPS) + [

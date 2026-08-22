@@ -106,6 +106,13 @@ app.conf.beat_schedule = {
         'task': 'apps.tenant.analytics.tasks.send_draft_reminders_task',
         'schedule': 1800.0,  # 30 minutes
     },
+    # AI-маркетолог: часовой диспетчер дайджестов «Что нового?». Работает
+    # только у тенантов с MarketerSettings.is_enabled=True (по умолчанию
+    # НИ У КОГО) — пустой тик ничего не стоит.
+    'marketer-digest-hourly': {
+        'task': 'apps.tenant.marketer.tasks.run_marketer_digest_task',
+        'schedule': crontab(minute=10),  # every hour at :10
+    },
     # LU-42: еженедельный авто-reconcile УБРАН. Он догонял ВСЮ историю VK и
     # засыпал владельцев пушами за старьё (sentiment по умолчанию WAITING ->
     # reclassify перемалывал backlog). reconcile_all_vk_messages_task остаётся
