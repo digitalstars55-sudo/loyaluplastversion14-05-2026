@@ -92,7 +92,8 @@ def generate_post(knowledge: dict, *, task: str = _DIGEST_TASK,
             raw = raw[4:]
 
     try:
-        result = json.loads(raw)
+        # strict=False — модель кладёт в "text" литеральные переводы строк
+        result = json.loads(raw, strict=False)
         text = (result.get('text') or '').strip()
     except json.JSONDecodeError:
         # ИИ ответил просто текстом — берём как есть (без обломков JSON)
