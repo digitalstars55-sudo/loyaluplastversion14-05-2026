@@ -707,7 +707,7 @@ def fresh_vk_subscription_status(vk_id: int, branch_id: int) -> dict:
     logger = logging.getLogger(__name__)
 
     try:
-        profile = _profile_qs().get(client__vk_id=vk_id, branch__branch_id=branch_id)
+        profile = _profile_qs().get(client__vk_id=vk_id, branch__branch_id=branch_id, client__is_active=True)
     except ClientBranch.DoesNotExist:
         raise ClientNotFound
 
@@ -769,11 +769,15 @@ def get_client_profile(vk_id: int, branch_id: int) -> ClientBranch:
 
     Raises:
         ClientNotFound — no profile exists for this combination
+        ClientBlocked  — profile exists but the guest is blocked platform-wide
     """
     try:
         profile = _profile_qs().get(client__vk_id=vk_id, branch__branch_id=branch_id)
     except ClientBranch.DoesNotExist:
         raise ClientNotFound
+    # Симметрия с register_or_get_client: GET отдаёт ту же 403, что и POST.
+    if not profile.client.is_active:
+        raise ClientBlocked
 
     try:
         _resync_vk_status_cached(profile)

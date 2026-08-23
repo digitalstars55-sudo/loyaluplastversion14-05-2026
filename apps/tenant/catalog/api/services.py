@@ -49,7 +49,7 @@ def _image_url(field) -> str | None:
 def _get_client_branch(vk_id: int, branch_id: int) -> ClientBranch:
     try:
         return ClientBranch.objects.select_related('branch').get(
-            client__vk_id=vk_id, branch__branch_id=branch_id,
+            client__vk_id=vk_id, branch__branch_id=branch_id, client__is_active=True,
         )
     except ClientBranch.DoesNotExist:
         raise ClientNotFound
@@ -144,7 +144,7 @@ def buy_product(vk_id: int, branch_id: int, product_id: int) -> InventoryItem:
             ClientBranch.objects
             .select_for_update()
             .select_related('branch')
-            .get(client__vk_id=vk_id, branch__branch_id=branch_id)
+            .get(client__vk_id=vk_id, branch__branch_id=branch_id, client__is_active=True)
         )
     except ClientBranch.DoesNotExist:
         raise ClientNotFound

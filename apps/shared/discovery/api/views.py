@@ -5,6 +5,9 @@
 Базовый путь: /api/v1/discovery/...
 """
 
+import logging
+
+from django.db import DataError
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
@@ -12,6 +15,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .. import services as svc
+
+logger = logging.getLogger(__name__)
 
 
 def _vk_id(data) -> int | None:
@@ -87,6 +92,14 @@ class DiscoveryClaimView(APIView):
         except svc.NoWelcomeGift:
             return Response({'detail': 'В этом городе пока нет приветственного подарка.'},
                             status=status.HTTP_409_CONFLICT)
+        except svc.GuestBlocked:
+            return Response({'detail': 'Аккаунт заблокирован.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        except DataError:
+            # Страховка от неучтимых значений (история: vk_id > int4 давал голый 500).
+            logger.exception('discovery claim DataError vk_id=%s client_id=%s', vk_id, client_id)
+            return Response({'detail': 'Некорректные данные профиля VK.'},
+                            status=status.HTTP_400_BAD_REQUEST)
         return Response(data)
 
 
@@ -114,6 +127,9 @@ class DiscoveryActivateView(APIView):
             data = svc.activate(vk_id, code)
         except svc.NotClaimed:
             return Response({'detail': 'Сначала выберите город.'}, status=status.HTTP_409_CONFLICT)
+        except svc.GuestBlocked:
+            return Response({'detail': 'Аккаунт заблокирован.'},
+                            status=status.HTTP_403_FORBIDDEN)
         except svc.ActivationDenied as denied:
             return Response(
                 {'detail': 'Нужен код дня.', 'reason': denied.reason,

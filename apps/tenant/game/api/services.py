@@ -81,7 +81,7 @@ def _coin_reward_for(attempt_num: int) -> tuple[int, int]:
 def _get_client_branch(vk_id: int, branch_id: int) -> ClientBranch:
     try:
         return ClientBranch.objects.select_related('branch').get(
-            client__vk_id=vk_id, branch__branch_id=branch_id,
+            client__vk_id=vk_id, branch__branch_id=branch_id, client__is_active=True,
         )
     except ClientBranch.DoesNotExist:
         raise ClientNotFound

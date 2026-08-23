@@ -46,6 +46,11 @@ class ActivationDenied(DiscoveryError):
         self.reason = reason
 
 
+class GuestBlocked(DiscoveryError):
+    """Гость заблокирован на платформе (Client.is_active=False) — приз не выдаём."""
+    pass
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _participating_companies():
@@ -160,10 +165,14 @@ def _create_welcome_gift(vk_id: int, *, first_name='', last_name='', photo_url='
 
     # Клиент (public) + профиль на точке (tenant). БЕЗ записи визита/скана —
     # это онлайн-приз, а не посещение кафе (метрики сканов не трогаем).
-    client, _ = Client.objects.get_or_create(
+    client, client_created = Client.objects.get_or_create(
         vk_id=vk_id,
         defaults={'first_name': first_name, 'last_name': last_name, 'photo_url': photo_url},
     )
+    # Зеркало register_or_get_client: заблокированный на платформе гость не должен
+    # получать профиль и приз через каталог (новый Client всегда is_active=True).
+    if not client_created and not client.is_active:
+        raise GuestBlocked
     cb, _ = ClientBranch.objects.get_or_create(client=client, branch=branch)
 
     settings = _resolve_story_settings(cb)
@@ -308,6 +317,10 @@ def activate(vk_id: int, code: str | None) -> dict:
     with tenant_context(company):
         try:
             entry = ss.activate_story_gift(vk_id, claim_obj.home_branch_id, code)
+        # Резолв профиля отсекает заблокированных (client__is_active=True) —
+        # для гостя с claim'ом «нет профиля» означает именно блокировку.
+        except ss.ClientNotFound:
+            raise GuestBlocked
         except ss.StoryActivationDenied as denied:
             raise ActivationDenied(
                 instruction_text=getattr(denied, 'instruction_text', ''),

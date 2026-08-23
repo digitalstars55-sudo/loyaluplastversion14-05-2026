@@ -313,3 +313,24 @@ LOYALUP_RELAY_SECRET = os.getenv("LOYALUP_RELAY_SECRET", "")
 # CheckUp inbound URL (where outbound _safe_relay_to_checkup POSTs).
 CHECKUP_RELAY_URL = os.getenv("CHECKUP_RELAY_URL", "http://localhost:8000/api/v1/loyalup/inbound/")
 
+
+
+# ── Логирование ────────────────────────────────────────────────────────────────
+# До 23.08.2026 блока LOGGING не было вовсе: при DEBUG=False traceback'и 500-ок
+# выбрасывались (дефолтный console-хендлер закрыт фильтром require_debug_true),
+# и «integer out of range» на vk_id > int4 месяцами ловился только по логам
+# Postgres. Пишем ошибки запросов в stderr — их видно в `docker logs web`.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {'format': '{levelname} {asctime} {name} {message}', 'style': '{'},
+    },
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'verbose'},
+    },
+    'root': {'handlers': ['console'], 'level': 'WARNING'},
+    'loggers': {
+        'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
+    },
+}

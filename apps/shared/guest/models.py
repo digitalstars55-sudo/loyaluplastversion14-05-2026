@@ -14,7 +14,7 @@ class Client(TimeStampedModel):
     Хранится в public-схеме и доступен из любого тенанта.
     """
 
-    vk_id = models.PositiveIntegerField(
+    vk_id = models.PositiveBigIntegerField(
         unique=True,
         verbose_name='VK ID',
         help_text='Уникальный числовой ID пользователя ВКонтакте',

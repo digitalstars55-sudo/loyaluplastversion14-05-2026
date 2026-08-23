@@ -110,7 +110,7 @@ _DEFAULT_SAVED_TEXT = (
 def _get_client_branch(vk_id: int, branch_id: int) -> ClientBranch:
     try:
         return ClientBranch.objects.select_related('branch', 'branch__config').get(
-            client__vk_id=vk_id, branch__branch_id=branch_id,
+            client__vk_id=vk_id, branch__branch_id=branch_id, client__is_active=True,
         )
     except ClientBranch.DoesNotExist:
         raise ClientNotFound
@@ -295,7 +295,7 @@ def play_story_game(
             ClientBranch.objects
             .select_for_update()
             .select_related('branch')
-            .get(client__vk_id=vk_id, branch__branch_id=branch_id)
+            .get(client__vk_id=vk_id, branch__branch_id=branch_id, client__is_active=True)
         )
     except ClientBranch.DoesNotExist:
         raise ClientNotFound
@@ -352,7 +352,7 @@ def select_story_gift(vk_id: int, branch_id: int, product_id: int) -> StoryGiftE
             ClientBranch.objects
             .select_for_update()
             .select_related('branch')
-            .get(client__vk_id=vk_id, branch__branch_id=branch_id)
+            .get(client__vk_id=vk_id, branch__branch_id=branch_id, client__is_active=True)
         )
     except ClientBranch.DoesNotExist:
         raise ClientNotFound
@@ -465,7 +465,7 @@ def activate_story_gift(vk_id: int, branch_id: int, code: str | None = None) -> 
             ClientBranch.objects
             .select_for_update()
             .select_related('branch')
-            .get(client__vk_id=vk_id, branch__branch_id=branch_id)
+            .get(client__vk_id=vk_id, branch__branch_id=branch_id, client__is_active=True)
         )
     except ClientBranch.DoesNotExist:
         raise ClientNotFound

@@ -123,7 +123,7 @@ def activate_delivery(*, short_code: str, vk_id: int, branch_id: int) -> Deliver
     """
     try:
         client_branch = ClientBranch.objects.select_related('branch').get(
-            client__vk_id=vk_id, branch__branch_id=branch_id,
+            client__vk_id=vk_id, branch__branch_id=branch_id, client__is_active=True,
         )
     except ClientBranch.DoesNotExist:
         raise ClientNotFound

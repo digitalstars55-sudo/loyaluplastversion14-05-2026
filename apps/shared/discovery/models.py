@@ -28,7 +28,7 @@ class DiscoveryStage(models.TextChoices):
 class DiscoveryEvent(models.Model):
     """Событие воронки сетевого входа (open / play / claim_open)."""
 
-    vk_id = models.PositiveIntegerField(db_index=True, verbose_name='VK ID гостя')
+    vk_id = models.PositiveBigIntegerField(db_index=True, verbose_name='VK ID гостя')
     stage = models.CharField(
         max_length=16, choices=DiscoveryStage.choices, db_index=True,
         verbose_name='Стадия воронки',
@@ -61,7 +61,7 @@ class DiscoveryClaim(models.Model):
     StoryGiftEntry). redeemed_at заполняется при активации на кассе.
     """
 
-    vk_id = models.PositiveIntegerField(unique=True, verbose_name='VK ID гостя')
+    vk_id = models.PositiveBigIntegerField(unique=True, verbose_name='VK ID гостя')
     company = models.ForeignKey(
         'clients.Company',
         on_delete=models.CASCADE,

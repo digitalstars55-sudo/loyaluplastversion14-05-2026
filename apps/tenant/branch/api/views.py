@@ -1,3 +1,6 @@
+import logging
+
+from django.db import DataError
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -30,6 +33,8 @@ from .services import (
     handle_vk_callback, register_or_get_client,
     submit_app_review, sync_vk_status_now, update_client_profile, upload_story, vk_web_auth,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class BranchInfoView(APIView):
@@ -84,6 +89,11 @@ class ClientView(APIView):
                 {'detail': 'Профиль гостя не найден.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
+        except ClientBlocked:
+            return Response(
+                {'detail': 'Аккаунт заблокирован.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         return Response(ClientProfileResponseSerializer(profile).data)
 
     @extend_schema(request=ClientRegistrationRequestSerializer, responses={200: ClientProfileResponseSerializer, 201: ClientProfileResponseSerializer, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT})
@@ -106,6 +116,16 @@ class ClientView(APIView):
             return Response(
                 {'detail': 'Аккаунт заблокирован.'},
                 status=status.HTTP_403_FORBIDDEN,
+            )
+        except DataError:
+            # Страховка от неучтимых значений (история: vk_id > int4 давал голый 500).
+            logger.exception(
+                'register_or_get_client DataError vk_id=%s branch_id=%s',
+                s.validated_data.get('vk_id'), s.validated_data.get('branch_id'),
+            )
+            return Response(
+                {'detail': 'Некорректные данные профиля VK.'},
+                status=status.HTTP_400_BAD_REQUEST,
             )
         resp_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
         return Response(ClientProfileResponseSerializer(profile).data, status=resp_status)

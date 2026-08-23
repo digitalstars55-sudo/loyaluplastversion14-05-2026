@@ -345,7 +345,7 @@ class BroadcastRecipient(models.Model):
         related_name='received_broadcasts',
         verbose_name='Гость',
     )
-    vk_id   = models.PositiveIntegerField(verbose_name='VK ID')
+    vk_id   = models.PositiveBigIntegerField(verbose_name='VK ID')
     status  = models.CharField(
         max_length=7,
         choices=RecipientStatus.choices,
@@ -459,7 +459,7 @@ class AutoBroadcastLog(models.Model):
         verbose_name='Триггер',
         db_index=True,
     )
-    vk_id = models.PositiveIntegerField(verbose_name='VK ID', db_index=True)
+    vk_id = models.PositiveBigIntegerField(verbose_name='VK ID', db_index=True)
     sent_at = models.DateTimeField(auto_now_add=True, verbose_name='Отправлено')
 
     # Дедуп по КОНКРЕТНОМУ объекту, а не по периоду: для «подарок не забран» это

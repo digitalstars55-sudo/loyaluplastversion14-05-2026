@@ -175,6 +175,15 @@ class GetClientProfileTest(TestCase):
             get_client_profile(vk_id=1, branch_id=99)
 
     @patch('apps.tenant.branch.api.services._profile_qs')
+    def test_raises_client_blocked_for_inactive_guest(self, mock_qs):
+        profile = _profile_mock()
+        profile.client.is_active = False
+        mock_qs.return_value.get.return_value = profile
+
+        with self.assertRaises(ClientBlocked):
+            get_client_profile(vk_id=111, branch_id=42)
+
+    @patch('apps.tenant.branch.api.services._profile_qs')
     def test_returns_profile_on_success(self, mock_qs):
         expected = _profile_mock()
         mock_qs.return_value.get.return_value = expected
