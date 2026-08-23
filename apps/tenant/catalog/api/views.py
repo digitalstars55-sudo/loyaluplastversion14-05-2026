@@ -41,7 +41,7 @@ class CatalogView(APIView):
             )
         except BranchInactive:
             return Response(
-                {'detail': 'Торговая точка неактивна.'},
+                {'detail': 'Торговая точка неактивна.', 'code': 'branch_inactive'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         return Response(ProductSerializer(products, many=True, context={'request': request}).data)

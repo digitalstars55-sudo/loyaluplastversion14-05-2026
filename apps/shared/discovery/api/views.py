@@ -93,12 +93,12 @@ class DiscoveryClaimView(APIView):
             return Response({'detail': 'В этом городе пока нет приветственного подарка.'},
                             status=status.HTTP_409_CONFLICT)
         except svc.GuestBlocked:
-            return Response({'detail': 'Аккаунт заблокирован.'},
+            return Response({'detail': 'Аккаунт заблокирован.', 'code': 'client_blocked'},
                             status=status.HTTP_403_FORBIDDEN)
         except DataError:
             # Страховка от неучтимых значений (история: vk_id > int4 давал голый 500).
             logger.exception('discovery claim DataError vk_id=%s client_id=%s', vk_id, client_id)
-            return Response({'detail': 'Некорректные данные профиля VK.'},
+            return Response({'detail': 'Некорректные данные профиля VK.', 'code': 'vk_data_invalid'},
                             status=status.HTTP_400_BAD_REQUEST)
         return Response(data)
 
@@ -128,7 +128,7 @@ class DiscoveryActivateView(APIView):
         except svc.NotClaimed:
             return Response({'detail': 'Сначала выберите город.'}, status=status.HTTP_409_CONFLICT)
         except svc.GuestBlocked:
-            return Response({'detail': 'Аккаунт заблокирован.'},
+            return Response({'detail': 'Аккаунт заблокирован.', 'code': 'client_blocked'},
                             status=status.HTTP_403_FORBIDDEN)
         except svc.ActivationDenied as denied:
             return Response(

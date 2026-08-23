@@ -114,6 +114,10 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    # Подпись запуска мини-аппа ВК: после TenantMainMiddleware (тенант уже
+    # определён) и обязательно ПОСЛЕ CorsMiddleware — иначе на 403 из middleware
+    # не навесятся CORS-заголовки и фронт увидит сетевую ошибку вместо кода.
+    'apps.shared.guest.middleware.VKLaunchParamsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -247,7 +251,7 @@ TENANT_DOMAIN_MODEL = 'clients.Domain'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-VK_SECRET = os.getenv('VK_SECRET')
+VK_SECRET = os.getenv('VK_SECRET', '')
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
 
 # Сервис-API лояльности для внешнего ordering-BFF (приложение заказа).
@@ -257,6 +261,25 @@ LOYALTY_SERVICE_API_KEY = os.getenv('LOYALTY_SERVICE_API_KEY')
 LOYALTY_ACCRUAL_PERCENT = int(os.getenv('LOYALTY_ACCRUAL_PERCENT', 10))
 VK_MINI_APP_ID=os.getenv('VK_MINI_APP_ID', 53418653)
 VK_WEB_APP_ID=os.getenv('VK_WEB_APP_ID', 54473505)
+
+# ── Подпись запуска мини-аппа ВК (apps/shared/guest/middleware.py) ────────────
+# 'off' (дефолт) — только считаем нарушения в лог (`grep -c 'vk_sign '`),
+# 'on' — 403 {"code": "vk_sign_invalid"}. Включать спустя несколько дней после
+# деплоя фронта с заголовком X-VK-Launch-Params, когда лог покажет ~0 легитимных
+# запросов без подписи (у гостей висит кэш старого бандла).
+VK_SIGN_ENFORCE = os.getenv('VK_SIGN_ENFORCE', 'off')
+# Домены Телеграм-мини-аппа: тот же фронт-бандл, но подписи ВК там нет —
+# такие запуски enforce не трогает (см. TODO про initData в middleware).
+TELEGRAM_MINI_APP_HOSTS = tuple(
+    h.strip().lower()
+    for h in os.getenv('TELEGRAM_MINI_APP_HOSTS', 'loyalupp.ru,www.loyalupp.ru').split(',')
+    if h.strip()
+)
+# Аварийный клапан: префиксы гостевых путей, которые enforce не проверяет вовсе
+# (например если после включения 'on' всплывёт легитимный флоу без подписи).
+VK_SIGN_EXEMPT_PATHS = tuple(
+    p.strip() for p in os.getenv('VK_SIGN_EXEMPT_PATHS', '').split(',') if p.strip()
+)
 
 # ---------------------------------------------------------------------------
 # Celery

@@ -27,6 +27,45 @@ Django multi-tenant (django-tenants) SaaS бэкенд для системы л�
 - Гость в мини-приложении вводит последние 5 цифр кода → `POST /api/v1/code/` (tenant scope) → `DeliveryCodeView` → `activate_delivery(short_code, vk_id, branch_id)`.
 - Реально работает только в `asap_bryansk` и `asap_orel` (Dooglys), `levone` (iiko). У остальных тенантов POS-id в `Branch` не заполнены → `Delivery` всегда пустая → активация = 404.
 
+## Гость: `is_active` и подпись запуска ВК
+
+### `guest_client.is_active=False` = «гость забанен на всей платформе»
+
+`guest.Client.is_active` (public-схема) значит РОВНО одно: гость заблокирован во
+всех тенантах и всех гостевых флоу (`/api/v1/client/`, discovery/claim, welcome
+gift, 16 резолвов профиля → 403 `client_blocked` / fail-secure 404). Флаг ставится
+**только вручную** администратором.
+
+**Любой импорт/скрипт/`get_or_create`, создающий гостей, обязан писать
+`is_active=True` явно.** История 11.02.2026: импорт молча записал `is_active=False`
+853 гостям — полгода они получали «Аккаунт заблокирован» и долбили API ретраями;
+нашли только 23.08.2026. Никаких других смыслов (неактивный/спящий/удалённый) у
+флага нет — для «скрыть, но сохранить» есть архивирование (см. паттерн 3).
+
+### Подпись launch-параметров мини-аппа (23.08.2026)
+
+`apps/shared/guest/vk_sign.py` + `apps/shared/guest/middleware.py`
+(`VKLaunchParamsMiddleware`, зарегистрирован после `CorsMiddleware` — иначе на 403
+не навесятся CORS-заголовки). Фронт шлёт query-строку запуска заголовком
+`X-VK-Launch-Params`; middleware кладёт доказанный `request.vk_user_id` и
+`request.vk_sign_status` (`valid` / `invalid` / `missing` / `telegram` /
+`unconfigured` / `skipped`) и сверяет `vk_id` из query и JSON-тела с подписью.
+
+- Проверяются только гостевые пути (`_GUEST_PREFIXES`); мобилка (JWT), loyalty
+  (сервис-ключ), `vk/auth`, `vk/callback`, аналитика и админка — не трогаются.
+- `VK_SIGN_ENFORCE=off` (дефолт) — только счётчик в лог: `docker logs web 2>&1 |
+  grep -c 'vk_sign '`, разрез по `path=` / статусу / `origin=`. `on` — 403
+  `{"code": "vk_sign_invalid"}`. **Включать `on` только после того, как лог
+  покажет ~0 легитимных `missing`**: у гостей висит кэш старого бандла, а
+  веб-версия на VK ID OAuth (`VK_WEB_APP_ID=54473505`) launch-параметров не имеет
+  в принципе — ей enforce противопоказан (аварийный клапан: `VK_SIGN_EXEMPT_PATHS`).
+- Телеграм-мини-апп (loyalupp.ru, тот же бандл) определяется по
+  `Origin`/`Referer`/`Host` из `TELEGRAM_MINI_APP_HOSTS` либо по заголовку
+  `X-Telegram-Init-Data` → статус `telegram`, enforce его не трогает. TODO:
+  валидировать initData (HMAC от токена бота) и включать ТГ отдельным флагом.
+- Подпись покрывает **весь** набор `vk_*`, включая `vk_testing_group_id` —
+  выкидывать параметры при сортировке нельзя. Свежесть `vk_ts` ВК проверять не требует.
+
 ## Архитектурные паттерны (вводились в бэклоге LU-01..14, 2026-05-28)
 
 Эти паттерны переиспользуются в новых задачах — не изобретать заново.

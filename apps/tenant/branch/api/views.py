@@ -56,7 +56,7 @@ class BranchInfoView(APIView):
             )
         except BranchInactive:
             return Response(
-                {'detail': 'Торговая точка неактивна.'},
+                {'detail': 'Торговая точка неактивна.', 'code': 'branch_inactive'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         # logotype_url НЕ делаем абсолютным: фронт миниаппа сам подставляет
@@ -91,7 +91,7 @@ class ClientView(APIView):
             )
         except ClientBlocked:
             return Response(
-                {'detail': 'Аккаунт заблокирован.'},
+                {'detail': 'Аккаунт заблокирован.', 'code': 'client_blocked'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         return Response(ClientProfileResponseSerializer(profile).data)
@@ -109,12 +109,12 @@ class ClientView(APIView):
             )
         except BranchInactive:
             return Response(
-                {'detail': 'Торговая точка неактивна.'},
+                {'detail': 'Торговая точка неактивна.', 'code': 'branch_inactive'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         except ClientBlocked:
             return Response(
-                {'detail': 'Аккаунт заблокирован.'},
+                {'detail': 'Аккаунт заблокирован.', 'code': 'client_blocked'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         except DataError:
@@ -124,7 +124,7 @@ class ClientView(APIView):
                 s.validated_data.get('vk_id'), s.validated_data.get('branch_id'),
             )
             return Response(
-                {'detail': 'Некорректные данные профиля VK.'},
+                {'detail': 'Некорректные данные профиля VK.', 'code': 'vk_data_invalid'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         resp_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
@@ -196,7 +196,7 @@ class EmployeeView(APIView):
             )
         except BranchInactive:
             return Response(
-                {'detail': 'Торговая точка неактивна.'},
+                {'detail': 'Торговая точка неактивна.', 'code': 'branch_inactive'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         return Response(EmployeeSerializer(employees, many=True).data)
@@ -221,7 +221,7 @@ class PromotionView(APIView):
             )
         except BranchInactive:
             return Response(
-                {'detail': 'Торговая точка неактивна.'},
+                {'detail': 'Торговая точка неактивна.', 'code': 'branch_inactive'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         return Response(PromotionSerializer(promotions, many=True, context={'request': request}).data)
@@ -373,12 +373,12 @@ class VKAuthView(APIView):
             )
         except BranchInactive:
             return Response(
-                {'detail': 'Торговая точка неактивна.'},
+                {'detail': 'Торговая точка неактивна.', 'code': 'branch_inactive'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         except ClientBlocked:
             return Response(
-                {'detail': 'Аккаунт заблокирован.'},
+                {'detail': 'Аккаунт заблокирован.', 'code': 'client_blocked'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         resp_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
