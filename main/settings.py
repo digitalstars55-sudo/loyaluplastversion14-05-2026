@@ -49,6 +49,12 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r'^https://vk\.com$',
 ]
 
+# Кастомный заголовок подписи запуска мини-аппа (X-VK-Launch-Params) делает
+# кросс-доменные запросы «непростыми» → preflight OPTIONS. Без явного разрешения
+# заголовка django-cors-headers его отвергнет и ляжет ВСЁ гостевое API.
+from corsheaders.defaults import default_headers  # noqa: E402
+CORS_ALLOW_HEADERS = (*default_headers, 'x-vk-launch-params')
+
 # ---------------------------------------------------------------------------
 # Applications
 # ---------------------------------------------------------------------------
