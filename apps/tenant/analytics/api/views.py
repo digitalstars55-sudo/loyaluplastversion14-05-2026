@@ -25,6 +25,7 @@ class GeneralStatsAPIView(APIView):
       start      — YYYY-MM-DD  (overrides period)
       end        — YYYY-MM-DD  (overrides period)
     """
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(parameters=[StatsQuerySerializer], responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -57,6 +58,7 @@ class ContactPointsAPIView(APIView):
     Воронка по точкам контакта (отслеживаемым QR) для мобильного приложения.
     Параметры как у GeneralStats: branch_ids / period / start / end.
     """
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(parameters=[StatsQuerySerializer], responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -100,6 +102,7 @@ class RFStatsAPIView(APIView):
       r_score    — when combined with f_score, returns guest list for that cell
       f_score    — see r_score
     """
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(parameters=[RFQuerySerializer], responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -310,6 +313,7 @@ class RecalculateRFView(APIView):
       mode       — restaurant | delivery  (default: restaurant)
       branch_ids — comma-separated Branch PKs (omit = all active branches)
     """
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(request=RFQuerySerializer, responses={200: OpenApiTypes.OBJECT})
     def post(self, request):
@@ -992,6 +996,7 @@ class SlowStatsAPIView(APIView):
 
     Query params: same as GeneralStatsAPIView (branch_ids, period, start, end)
     """
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(parameters=[StatsQuerySerializer], responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -1021,6 +1026,7 @@ class BranchListAPIView(APIView):
 
     Returns all active branches for the branch-filter UI.
     """
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -1047,6 +1053,7 @@ class SendSegmentBroadcastAPIView(APIView):
     создаётся Broadcast БЕЗ rf_segments (audience_type=ALL → все оцифрованные
     в данной точке).
     """
+    permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT})
@@ -1417,6 +1424,7 @@ class GenerateBroadcastTextAPIView(APIView):
                    с подсказкой по сегменту. Без него — общий текст для всех
                    оцифрованных гостей.
     """
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT, 500: OpenApiTypes.OBJECT})
     def post(self, request):
@@ -1545,6 +1553,7 @@ class GenerateReportCommentAPIView(APIView):
       section_title — section title
       metrics_json  — JSON string of section metrics data
     """
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 500: OpenApiTypes.OBJECT})
     def post(self, request):
@@ -1699,6 +1708,7 @@ class RFMRewardCatalogAPIView(APIView):
     активные, не архивные, available_for_rfm, с привязанным подарком
     (без product гостю нечего показать в «Моих подарках»).
     """
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -1750,6 +1760,7 @@ class RFMCampaignAPIView(APIView):
     Начисление идёт асинхронно (celery); прогресс — GET detail.
     Snapshot аудитории фиксируется здесь и больше не меняется.
     """
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -1909,6 +1920,7 @@ class RFMCampaignAPIView(APIView):
 
 class RFMCampaignDetailAPIView(APIView):
     """GET /api/v1/analytics/rf/campaigns/<pk>/ — детали + живые метрики."""
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request, pk):
@@ -1965,6 +1977,7 @@ class RFMCampaignCancelAPIView(APIView):
     подарки отзываются с возвратом лимита, баллы откатываются в пределах
     неиспользованного остатка. Активированные подарки остаются у гостей.
     """
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
     def post(self, request, pk):
@@ -1994,6 +2007,7 @@ class RFMCampaignKPIAPIView(APIView):
 
     Период — по дате создания кампании; по умолчанию последние 30 дней.
     """
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request):

@@ -454,3 +454,45 @@ class SendVkReplyKeyboardTest(SimpleTestCase):
         body = mock_urlopen.call_args.kwargs['data'].decode('utf-8')
         self.assertNotIn('keyboard', body)
         self.assertFalse(MockMsg.objects.create.call_args.kwargs['is_ai_generated'])
+
+
+class AnalyticsApiRequiresAuthTest(SimpleTestCase):
+    """
+    Все ручки /api/v1/analytics/* закрыты для анонима.
+
+    09.09.2026: в settings нет DEFAULT_PERMISSION_CLASSES (= AllowAny), и 14 вьюх
+    аналитики — включая массовую рассылку rf/send-broadcast — отвечали без
+    авторизации. Тест не даёт новой вьюхе снова родиться открытой.
+    """
+
+    def test_every_analytics_api_view_declares_is_authenticated(self):
+        import inspect
+
+        from rest_framework.permissions import IsAuthenticated
+        from rest_framework.views import APIView
+
+        from apps.tenant.analytics.api import views as v
+
+        checked = 0
+        for name, cls in inspect.getmembers(v, inspect.isclass):
+            if cls is APIView or not issubclass(cls, APIView) or cls.__module__ != v.__name__:
+                continue
+            checked += 1
+            with self.subTest(view=name):
+                self.assertIn(IsAuthenticated, cls.permission_classes)
+        self.assertGreaterEqual(checked, 22)
+
+    def test_anonymous_requests_are_rejected(self):
+        from rest_framework.test import APIRequestFactory
+
+        from apps.tenant.analytics.api.views import BranchListAPIView, SendSegmentBroadcastAPIView
+
+        factory = APIRequestFactory()
+
+        resp = SendSegmentBroadcastAPIView.as_view()(
+            factory.post('/api/v1/analytics/rf/send-broadcast/', {'message_text': 'x'}),
+        )
+        self.assertIn(resp.status_code, (401, 403))
+
+        resp = BranchListAPIView.as_view()(factory.get('/api/v1/analytics/branches/'))
+        self.assertIn(resp.status_code, (401, 403))
