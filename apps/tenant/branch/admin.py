@@ -18,6 +18,7 @@ from .models import (
     Cooldown, CooldownFeature,
     DailyCode, DailyCodePurpose, Promotions,
     QRCode, QRScan,
+    ReviewAutoReplyConfig,
     TestimonialConversation, TestimonialMessage,
 )
 
@@ -1241,3 +1242,70 @@ class QRCodeAdmin(admin.ModelAdmin):
                 )
                 extra_context['qr_name'] = obj.name
         return super().change_view(request, object_id, form_url, extra_context)
+
+
+# ── Авто-ответы ИИ: настройки (синглтон) ──────────────────────────────────────
+
+@admin.register(ReviewAutoReplyConfig, site=tenant_admin)
+class ReviewAutoReplyConfigAdmin(admin.ModelAdmin):
+    """
+    Одна запись на тенант. Список сразу открывает эту запись, добавить вторую
+    и удалить единственную — нельзя (иначе get_singleton() создаст дубликат).
+    """
+    readonly_fields = ('updated_at',)
+    fieldsets = (
+        ('Черновики ИИ', {
+            'fields': (
+                'enabled',
+                'ai_tone',
+                'reminder_minutes',
+                'sentiment_positive',
+                'sentiment_negative',
+                'sentiment_partially_negative',
+                'sentiment_neutral',
+                'sentiment_pending',
+                'branch_enabled',
+            ),
+            'description': (
+                'ИИ готовит черновик ответа, отправляет его человек. '
+                'Это существующее поведение — менять ничего не нужно.'
+            ),
+        }),
+        ('Автоотправка позитивных (ИИ отвечает сам)', {
+            'fields': (
+                'auto_send_enabled',
+                'auto_send_delay_minutes',
+                'auto_send_attach_links',
+                'auto_send_links_text',
+                'auto_send_daily_limit',
+                'auto_send_branch_enabled',
+            ),
+            'description': (
+                '⚠️ Мастер-флаг «Автоотправка позитивных ответов» по умолчанию ВЫКЛЮЧЕН. '
+                'Включите — и ИИ будет САМ отвечать гостю на позитивные отзывы: '
+                'только POSITIVE, только если в отзыве нет вопроса или просьбы, '
+                'и только после окна отмены (сотруднику приходит push «ИИ ответит в HH:MM»). '
+                'Выключите — и всё вернётся к режиму «черновик + ответ вручную».'
+            ),
+        }),
+        ('Служебное', {'fields': ('updated_at',), 'classes': ('collapse',)}),
+    )
+
+    def has_add_permission(self, request):
+        # Второй записи быть не должно — синглтон.
+        return not ReviewAutoReplyConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        # Списка из одной строки не нужно — сразу открываем настройки.
+        if request.GET.get('_popup'):
+            return super().changelist_view(request, extra_context)
+        obj = ReviewAutoReplyConfig.get_singleton()
+        return HttpResponseRedirect(
+            reverse(
+                f'{self.admin_site.name}:branch_reviewautoreplyconfig_change',
+                args=[obj.pk],
+            )
+        )

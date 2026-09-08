@@ -441,6 +441,14 @@ class AutoReplySettingsAPIView(APIView):
       branch_enabled     — dict{branch_id(str): bool}
       reminder_minutes   — 30 | 60 | 180 | 720
       ai_tone            — 'formal' | 'friendly' | 'neutral'
+
+    Автоотправка позитивных ответов (ИИ отвечает сам; дефолт — всё выключено):
+      auto_send_enabled        — bool, мастер-флаг автоотправки
+      auto_send_delay_minutes  — 5 | 15 | 30 | 60 (окно отмены)
+      auto_send_attach_links   — bool, кнопки «Яндекс Карты»/«2ГИС»
+      auto_send_links_text     — str ≤200, фраза перед кнопками
+      auto_send_daily_limit    — int 1..500
+      auto_send_branch_enabled — dict{branch_id(str): bool}
     """
     permission_classes = [IsAuthenticated]
 
@@ -522,6 +530,75 @@ class AutoReplySettingsAPIView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             cfg.ai_tone = tone
+
+        # ── Автоотправка позитивных ответов ───────────────────────────────────
+        if 'auto_send_enabled' in d:
+            cfg.auto_send_enabled = bool(d['auto_send_enabled'])
+
+        if 'auto_send_attach_links' in d:
+            cfg.auto_send_attach_links = bool(d['auto_send_attach_links'])
+
+        if 'auto_send_delay_minutes' in d:
+            try:
+                dm = int(d['auto_send_delay_minutes'])
+            except (TypeError, ValueError):
+                return Response(
+                    {'error': 'auto_send_delay_minutes должен быть числом'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if dm not in (5, 15, 30, 60):
+                return Response(
+                    {'error': 'auto_send_delay_minutes: допустимы [5, 15, 30, 60]'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            cfg.auto_send_delay_minutes = dm
+
+        if 'auto_send_links_text' in d:
+            lt = d['auto_send_links_text']
+            if lt is None:
+                lt = ''
+            if not isinstance(lt, str):
+                return Response(
+                    {'error': 'auto_send_links_text должен быть строкой'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if len(lt) > 200:
+                return Response(
+                    {'error': 'auto_send_links_text: максимум 200 символов'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            cfg.auto_send_links_text = lt
+
+        if 'auto_send_daily_limit' in d:
+            try:
+                dl = int(d['auto_send_daily_limit'])
+            except (TypeError, ValueError):
+                return Response(
+                    {'error': 'auto_send_daily_limit должен быть числом'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not (1 <= dl <= 500):
+                return Response(
+                    {'error': 'auto_send_daily_limit: допустим диапазон 1..500'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            cfg.auto_send_daily_limit = dl
+
+        if 'auto_send_branch_enabled' in d:
+            abe = d.get('auto_send_branch_enabled') or {}
+            if not isinstance(abe, dict):
+                return Response(
+                    {'error': 'auto_send_branch_enabled должен быть объектом'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            try:
+                normalized = {str(int(k)): bool(v) for k, v in abe.items()}
+            except (TypeError, ValueError):
+                return Response(
+                    {'error': 'auto_send_branch_enabled: ключи должны быть числовыми branch_id'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            cfg.auto_send_branch_enabled = normalized
 
         cfg.save()
 

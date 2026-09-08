@@ -124,12 +124,35 @@
           {% if msg.phone %}<div class="msg-meta">📞 {{ msg.phone }}</div>{% endif %}
           {% if msg.table_number %}<div class="msg-meta">🪑 Стол {{ msg.table_number }}</div>{% endif %}
           <div class="msg-meta">
-            {% if msg.source == 'APP' %}из приложения{% elif msg.source == 'VK_MESSAGE' %}ВКонтакте{% else %}администратор{% endif %}
+            {% if msg.source == 'APP' %}из приложения{% elif msg.source == 'VK_MESSAGE' %}ВКонтакте{% elif msg.is_ai_generated %}🤖 Ответ ИИ{% else %}администратор{% endif %}
             · {{ msg.created_at|date:"d.m H:i" }}
           </div>
         </div>
         {% endfor %}
       </div>
+
+      <!-- Автоотправка ИИ: статус треда (пусто у всех, пока владелец не включил флаг) -->
+      {% if conv.auto_send_status == 'scheduled' %}
+      <div class="px-3 py-2 border-top d-flex align-items-center justify-content-between flex-wrap gap-2"
+           id="autosend-banner-{{ conv.id }}"
+           style="background:#eef2ff;font-size:12px;color:#3730a3;">
+        <span>🤖 ИИ ответит автоматически в <strong>{{ conv.auto_send_at|time:"H:i" }}</strong></span>
+        <button class="btn btn-sm btn-outline-danger py-0" style="font-size:11px;"
+                onclick="cancelAutoSend({{ conv.id }}, this)">Отменить автоответ</button>
+      </div>
+      {% elif conv.auto_send_status == 'sent' %}
+      <div class="px-3 py-2 border-top" style="background:#ecfdf5;font-size:12px;color:#065f46;">
+        🤖 Ответил ИИ · {{ conv.auto_send_at|date:"d.m.Y H:i" }}
+      </div>
+      {% elif conv.auto_send_status == 'skipped' or conv.auto_send_status == 'failed' %}
+      <div class="px-3 py-1 border-top" style="font-size:11px;color:#9ca3af;">
+        🤖 автоответ не отправлен: {{ conv.auto_send_reason_human }}
+      </div>
+      {% elif conv.auto_send_status == 'cancelled' %}
+      <div class="px-3 py-1 border-top" style="font-size:11px;color:#9ca3af;">
+        🤖 автоответ отменён: {{ conv.auto_send_reason_human }}
+      </div>
+      {% endif %}
 
       <!-- Reply panel (hidden by default) -->
       {% if conv.vk_sender_id %}
@@ -165,6 +188,7 @@
 <script>
 const REVIEW_REPLY_URL = '{% url "analytics-reviews-reply" %}';
 const REVIEW_AI_URL = '{% url "analytics-reviews-ai-reply" %}';
+const REVIEW_CANCEL_AUTOSEND_URL = '{% url "analytics-reviews-cancel-auto-send" %}';
 
 // Вставка ссылок на отзыв-площадки (только позитивные отзывы, ссылки точки из админки).
 function insertReviewLinks(id, yandex, gis){

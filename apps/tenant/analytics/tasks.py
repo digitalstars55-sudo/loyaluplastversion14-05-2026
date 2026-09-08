@@ -251,19 +251,60 @@ def auto_generate_draft_task(conversation_id: int, schema_name: str) -> dict:
     """
     После AI-классификации тональности:
     — генерит черновик ответа (если auto-reply включён и фильтры пройдены)
+    — планирует автоотправку (если включён auto_send_enabled — дефолт выкл.)
     — шлёт push 'draft_ready' админам тенанта
     Идемпотентен: если черновик уже есть/отвергнут/отвечен — skip.
     """
     from django_tenants.utils import schema_context, get_tenant_model
     from apps.tenant.analytics.auto_reply import (
-        maybe_generate_auto_draft, push_draft_ready,
+        maybe_generate_auto_draft, push_draft_ready, schedule_auto_send,
     )
 
     try:
+        sched: dict = {}
         with schema_context(schema_name):
             text = maybe_generate_auto_draft(conversation_id)
+            if text:
+                # Автоотправка: планируется ТОЛЬКО отсюда и только при
+                # включённом мастер-флаге. Никогда не роняет генерацию черновика.
+                try:
+                    sched = schedule_auto_send(conversation_id, schema_name) or {}
+                except Exception:
+                    logger.warning(
+                        'schedule_auto_send failed conv=%s schema=%s',
+                        conversation_id, schema_name, exc_info=True,
+                    )
+                    sched = {}
         if not text:
             return {'skipped': True}
+
+        # Автоответ запланирован — вместо «черновик готов» уходит более полезный
+        # пуш 'auto_reply_pending' («ИИ ответит в 14:35 · Отменить»), его шлёт
+        # сам schedule_auto_send. Дублировать draft_ready не надо.
+        if sched.get('scheduled'):
+            return {'ok': True, 'draft_len': len(text), 'auto_send': sched}
+
+        # Свежий тред (< 10 мин): менеджеру только что ушёл push review_new,
+        # второй push «черновик готов» через 5 секунд — это шум. Черновик и так
+        # виден в карточке отзыва, а напоминание догонит через reminder_minutes
+        # (send_draft_reminders_task). Для СТАРОГО треда с новым сообщением
+        # гостя review_new не уходит — там draft_ready нужен.
+        try:
+            from datetime import timedelta
+            from django.utils import timezone as _tz
+            from apps.tenant.branch.models import TestimonialConversation as _TC
+            with schema_context(schema_name):
+                created_at = (
+                    _TC.objects.filter(pk=conversation_id)
+                    .values_list('created_at', flat=True).first()
+                )
+            if created_at and (_tz.now() - created_at) < timedelta(minutes=10):
+                return {
+                    'ok': True, 'draft_len': len(text),
+                    'push': {'sent': 0, 'reason': 'fresh_thread_review_new_already_sent'},
+                }
+        except Exception:
+            logger.warning('draft push freshness check failed conv=%s', conversation_id, exc_info=True)
 
         TenantModel = get_tenant_model()
         tenant = TenantModel.objects.filter(schema_name=schema_name).first()
@@ -275,6 +316,69 @@ def auto_generate_draft_task(conversation_id: int, schema_name: str) -> dict:
         logger.exception(
             'auto_generate_draft_task failed conv=%s schema=%s',
             conversation_id, schema_name,
+        )
+        return {'error': str(exc)}
+
+
+@shared_task(name='apps.tenant.analytics.tasks.auto_send_review_reply_task')
+def auto_send_review_reply_task(conversation_id: int, schema_name: str) -> dict:
+    """
+    Отправить автоответ ИИ на позитивный отзыв. Ставится с eta=auto_send_at
+    планировщиком schedule_auto_send (окно отмены для сотрудника).
+
+    Идемпотентна: работает только если auto_send_status всё ещё 'scheduled'
+    и хеш черновика не изменился. Повторный/дублирующий запуск — no-op.
+    В beat НЕ ставится: задача одноразовая, под конкретный отзыв.
+    """
+    from django_tenants.utils import schema_context
+    from apps.tenant.analytics.auto_reply import perform_auto_send
+
+    try:
+        with schema_context(schema_name):
+            return perform_auto_send(conversation_id, schema_name)
+    except Exception as exc:
+        logger.exception(
+            'auto_send_review_reply_task failed conv=%s schema=%s',
+            conversation_id, schema_name,
+        )
+        return {'sent': False, 'error': str(exc)}
+
+
+@shared_task(name='apps.tenant.analytics.tasks.auto_send_pending_push_task')
+def auto_send_pending_push_task(
+    conversation_id: int,
+    schema_name: str,
+    send_at_iso: str = '',
+    preview: str = '',
+) -> dict:
+    """
+    Отложенный push 'auto_reply_pending'. Нужен только когда автоответ
+    запланирован в тихие часы: сам пуш уезжает на 09:00 МСК, чтобы сотрудник
+    успел отменить отправку и при этом не был разбужен ночью.
+    """
+    from django_tenants.utils import schema_context
+    from apps.tenant.analytics.auto_reply import push_auto_reply_pending, _tenant_name
+
+    try:
+        from apps.tenant.branch.models import TestimonialConversation
+        with schema_context(schema_name):
+            conv = TestimonialConversation.objects.filter(pk=conversation_id).first()
+            if conv is None:
+                return {'skipped': True, 'reason': 'not_found'}
+            # За ночь могли отменить/ответить руками — тогда пуш не нужен.
+            if (conv.auto_send_status or '') != TestimonialConversation.AutoSendStatus.SCHEDULED:
+                return {'skipped': True, 'reason': 'not_scheduled'}
+            send_at = conv.auto_send_at
+            branch_id = conv.branch_id
+
+        return push_auto_reply_pending(
+            schema_name, _tenant_name(schema_name), conversation_id,
+            send_at or send_at_iso, preview=preview, branch_id=branch_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            'auto_send_pending_push_task failed conv=%s schema=%s: %s',
+            conversation_id, schema_name, exc,
         )
         return {'error': str(exc)}
 

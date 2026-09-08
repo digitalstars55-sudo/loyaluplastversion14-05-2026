@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (
     GeneralStatsView, ReviewsAnalyticsView, ReviewsDetailView,
-    ReviewsReplyView, ReviewsAIReplyView,
+    ReviewsReplyView, ReviewsAIReplyView, ReviewsCancelAutoSendView,
     RFAnalysisView, RFMigrationView, StatsDetailView,
     SegmentExportSenlerView, SegmentCreateBroadcastView,
     CreateBroadcastForAllGuestsView,
@@ -23,4 +23,6 @@ urlpatterns = [
     path('reviews/detail/',   ReviewsDetailView.as_view(),    name='analytics-reviews-detail'),
     path('reviews/reply/',    ReviewsReplyView.as_view(),     name='analytics-reviews-reply'),
     path('reviews/ai-reply/', ReviewsAIReplyView.as_view(),   name='analytics-reviews-ai-reply'),
+    # Отмена запланированного автоответа ИИ (баннер в карточке отзыва)
+    path('reviews/cancel-auto-send/', ReviewsCancelAutoSendView.as_view(), name='analytics-reviews-cancel-auto-send'),
 ]

@@ -112,3 +112,45 @@ function toggleReplied() {
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.chat-area').forEach(el => el.scrollTop = el.scrollHeight);
 });
+
+// ── Автоответ ИИ: отмена запланированной отправки ───────────────────────────
+// Баннер «🤖 ИИ ответит автоматически в HH:MM · Отменить автоответ» появляется
+// только у тредов с auto_send_status='scheduled' (то есть когда владелец
+// включил автоотправку в настройках). После успеха баннер заменяется строкой.
+function cancelAutoSend(convId, btn) {
+  const banner = document.getElementById('autosend-banner-' + convId);
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Отменяем...'; }
+
+  fetch(REVIEW_CANCEL_AUTOSEND_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+    body: JSON.stringify({ conversation_id: convId }),
+  })
+    .then(r => r.json().then(data => ({ status: r.status, data })))
+    .then(({ status, data }) => {
+      if (data.ok) {
+        if (banner) {
+          banner.style.background = '';
+          banner.style.color = '#9ca3af';
+          banner.style.fontSize = '11px';
+          banner.textContent = '🤖 автоответ отменён: отменено сотрудником';
+        }
+        return;
+      }
+      if (status === 409) {
+        if (banner) {
+          banner.style.background = '#ecfdf5';
+          banner.style.color = '#065f46';
+          banner.textContent = '🤖 ИИ уже отправил ответ';
+        }
+        return;
+      }
+      if (btn) { btn.disabled = false; btn.textContent = orig; }
+      alert(data.error || 'Не удалось отменить автоответ');
+    })
+    .catch(() => {
+      if (btn) { btn.disabled = false; btn.textContent = orig; }
+      alert('Сетевая ошибка');
+    });
+}

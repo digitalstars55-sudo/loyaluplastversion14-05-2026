@@ -612,6 +612,55 @@ class ReviewsReplyView(View):
 
 @method_decorator(staff_member_required, name='dispatch')
 @method_decorator(feature_required('reviews'), name='dispatch')
+class ReviewsCancelAutoSendView(View):
+    """
+    POST /analytics/reviews/cancel-auto-send/  body: {"conversation_id": N}
+
+    Отменяет запланированный автоответ ИИ («Отменить автоответ» в карточке).
+    Если ИИ уже отправил — 409, отменять нечего.
+    """
+    def post(self, request):
+        import json as _json
+        from django.http import JsonResponse
+        from apps.tenant.branch.models import TestimonialConversation
+
+        try:
+            body    = _json.loads(request.body)
+            conv_id = int(body.get('conversation_id', 0))
+        except (ValueError, TypeError, _json.JSONDecodeError):
+            return JsonResponse({'ok': False, 'error': 'Неверный запрос'}, status=400)
+
+        try:
+            conv = TestimonialConversation.objects.get(pk=conv_id)
+        except TestimonialConversation.DoesNotExist:
+            return JsonResponse({'ok': False, 'error': 'Диалог не найден'}, status=404)
+
+        S = TestimonialConversation.AutoSendStatus
+        current = conv.auto_send_status or ''
+        if current == S.SENT:
+            return JsonResponse(
+                {'ok': False, 'error': 'Ответ уже отправлен'}, status=409,
+            )
+        if current != S.SCHEDULED:
+            return JsonResponse({'ok': False, 'auto_send_status': current})
+
+        from apps.tenant.analytics.auto_reply import cancel_auto_send
+        if not cancel_auto_send(conv, 'cancelled_by_user'):
+            conv.refresh_from_db(fields=['auto_send_status'])
+            return JsonResponse({'ok': False, 'auto_send_status': conv.auto_send_status or ''})
+
+        from apps.tenant.branch.audit import log_audit
+        log_audit(
+            request.user, 'AUTO_REPLY_CANCEL',
+            target_type='review', target_id=conv.pk,
+            target_label=str(conv)[:255],
+            details='Автоответ ИИ отменён сотрудником',
+        )
+        return JsonResponse({'ok': True, 'auto_send_status': S.CANCELLED.value})
+
+
+@method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('reviews'), name='dispatch')
 class ReviewsAIReplyView(View):
     def post(self, request):
         import json as _json

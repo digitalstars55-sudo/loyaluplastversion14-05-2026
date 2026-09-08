@@ -178,6 +178,47 @@ gift, 16 резолвов профиля → 403 `client_blocked` / fail-secure 
 - **Anthropic API credits**: ПОПОЛНЕНЫ 2026-06-23 — AI-фичи (анализ отзывов в `ai_service.py`, AI-черновики ответов `regenerate-draft`) снова работают. Если в stderr снова польёт `BadRequestError 400` от `ai_service`/`anthropic` — значит кредиты опять кончились; до пополнения фильтруй (`grep -v "ai_service\|anthropic"`), не путай с настоящими багами.
 - **VK-отзывы: НЕ удалять диалоги ради «чистки», только нейтрализовать (LU-42)**. `poll` ресинкается с VK (`getConversations`) — удалённые треды возвращаются (особенно после рассылки: она делает всех гостей «активными» → poll видит их как новых и пересоздаёт). Чинить флаги (`is_replied`/`has_unread`/`last_message_at`) — старое само уходит вниз по реальной дате. Команды: `repair_vk_incident --no-delete --commit` (нейтрализация выкопанной истории + отсев рассылок-как-ADMIN_REPLY), `dedup_vk_convs --commit` (мердж дублей `(branch,vk_sender_id)` от гонок poll+Callback). **НИКОГДА** не гонять `reconcile_all_vk_messages_task` «на всю историю» и не вешать в beat: `TestimonialConversation.sentiment` default=`WAITING` + `reclassify_waiting_reviews_task` (теперь с recency-guard) = риск флуда синхронных пушей за старьё. Исторический импорт обязан быть тихим и `has_unread=False`.
 
+## Автоответы ИИ (автоотправка)
+
+Всё живёт в `ReviewAutoReplyConfig` (синглтон pk=1 в схеме тенанта, есть в `/admin/`):
+`enabled` — старое поведение «ИИ готовит черновик, отвечает человек»;
+`auto_send_enabled` (**дефолт False**) — мастер-флаг «ИИ отвечает сам».
+Рядом: `auto_send_delay_minutes` (окно отмены 5/15/30/60), `auto_send_attach_links`
++ `auto_send_links_text` (кнопки Яндекс/2ГИС), `auto_send_daily_limit`,
+`auto_send_branch_enabled` (карта точек).
+
+Цепочка: ingest (`submit_app_review` / `handle_vk_incoming_message`) →
+`analyze_and_save` (sentiment + новый `ai_needs_human`) → `_enqueue_ai_draft` →
+`auto_generate_draft_task` → `schedule_auto_send` (`auto_reply.py`) →
+`auto_send_review_reply_task` с `eta=auto_send_at` → `send_vk_reply(..., keyboard=, is_ai_generated=True)`.
+
+**Фикс диспатча черновиков (важно):** раньше `auto_generate_draft_task` ставился
+ТОЛЬКО из `process_ai_review_task`, а тот — из `reclassify_waiting_reviews_task`,
+который берёт лишь `sentiment=WAITING`. Но ingest зовёт `analyze_and_save`
+СИНХРОННО, тональность проставляется сразу → тред выпадает из WAITING → черновик
+рождался у ~6% отзывов. Теперь ingest сам дёргает `_enqueue_ai_draft` (задача
+идемпотентна, двойной вызов безопасен). Работает под старым флагом `enabled`.
+
+Отправляем только: POSITIVE, есть черновик, не отвечено, черновик не отклонён,
+не `ai_needs_human`, не «оценка-цифра без текста», есть `vk_sender_id`, точка не
+выключена, не исчерпан суточный лимит. Причины отказа лежат в `auto_send_reason`:
+`config_off, not_positive, manual_reply, rejected_draft, no_draft, needs_human,
+numeric_only, no_vk_sender, branch_disabled, daily_limit, draft_changed,
+cancelled_by_user, vk_error: …`. Ночью (тихие часы 22:00–09:00 МСК) гостю не
+пишем — отправка и пуш переносятся на 09:00 + delay.
+
+Любой ручной ответ (веб/мобилка/админка/ответ менеджера прямо в ВК), отклонение
+или регенерация черновика зовут `cancel_auto_send(conv, reason)` — робот молчит.
+Отмена руками: `POST /api/v1/mobile/reviews/<pk>/cancel-auto-send/` и
+`POST /analytics/reviews/cancel-auto-send/`.
+
+**Как выключить:** снять `auto_send_enabled` в `/admin/` или PATCH
+`/api/v1/analytics/auto-reply/settings/` — запланированные задачи при запуске
+перепроверяют конфиг и уходят в `skipped`. **Где смотреть:**
+`TestimonialConversation.auto_send_status/auto_send_at/auto_send_reason`,
+`AuditLog` с `AUTO_REPLY_SENT` / `AUTO_REPLY_CANCEL`, пуши `auto_reply_pending` /
+`auto_reply_sent`, `TestimonialMessage.is_ai_generated`.
+
 ## Локальная разработка
 
 ```bash

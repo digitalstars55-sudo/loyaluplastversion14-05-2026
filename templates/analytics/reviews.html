@@ -188,6 +188,10 @@
               {% elif conv.sentiment == 'SPAM' %}<span class="s-badge" style="background:#9ca3af;">Спам</span>
               {% else %}<span class="s-badge" style="background:#3b82f6;">Ожидает</span>
               {% endif %}
+              {# Автоответ ИИ: бейдж появляется только если владелец включил автоотправку #}
+              {% if conv.auto_send_status == 'scheduled' %}<span class="s-badge" style="background:#4f46e5;" title="Автоответ ИИ запланирован">🤖 авто в {{ conv.auto_send_at|time:"H:i" }}</span>
+              {% elif conv.auto_send_status == 'sent' %}<span class="s-badge" style="background:#0ea5e9;" title="Ответ отправил ИИ">🤖 ИИ ответил</span>
+              {% endif %}
             </td>
             <td class="text-muted">{{ conv.ai_comment|truncatechars:100 }}</td>
           </tr>

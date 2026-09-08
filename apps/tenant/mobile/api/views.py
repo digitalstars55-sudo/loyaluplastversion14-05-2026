@@ -223,6 +223,16 @@ class MobileReviewReplyAPIView(APIView):
                 conv.has_unread = False
                 conv.last_message_at = msg.created_at
                 conv.save(update_fields=['is_replied', 'has_unread', 'last_message_at'])
+            # Сотрудник ответил (пусть и локально) — автоответ ИИ снимаем.
+            # Для VK-пути это уже сделал send_vk_reply.
+            try:
+                from apps.tenant.analytics.auto_reply import cancel_auto_send
+                cancel_auto_send(conv, 'manual_reply')
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    'cancel_auto_send (mobile reply) не отработал conv=%s', conv.pk, exc_info=True,
+                )
 
         from apps.tenant.branch.audit import log_audit
         log_audit(
@@ -263,6 +273,16 @@ class MobileReviewResolveAPIView(APIView):
             )
         conv.has_unread = False
         conv.save(update_fields=['has_unread'])
+        # Сотрудник закрыл отзыв без ответа — запланированный автоответ ИИ
+        # снимаем: решение «не отвечать» принято человеком.
+        try:
+            from apps.tenant.analytics.auto_reply import cancel_auto_send
+            cancel_auto_send(conv, 'cancelled_by_user')
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                'cancel_auto_send (resolve) не отработал conv=%s', conv.pk, exc_info=True,
+            )
         from apps.tenant.branch.audit import log_audit
         log_audit(
             request.user, 'REVIEW_RESOLVE',
@@ -1031,10 +1051,34 @@ class RegenerateReviewDraftAPIView(APIView):
         if code != 200:
             return Response({'error': text}, status=code)
 
+        was_scheduled = (
+            (conv.auto_send_status or '')
+            == TestimonialConversation.AutoSendStatus.SCHEDULED
+        )
         conv.ai_draft = text
         conv.ai_draft_rejected = False
         conv.save(update_fields=['ai_draft', 'ai_draft_rejected', 'updated_at'])
-        return Response({'draft_text': text})
+
+        # Черновик переписан: старая запланированная отправка отправила бы «не то»
+        # (её защитит хеш), поэтому перепланируем автоответ на новый текст.
+        auto_send_status = conv.auto_send_status or ''
+        if was_scheduled:
+            try:
+                from django.db import connection
+                from apps.tenant.analytics.auto_reply import (
+                    cancel_auto_send, schedule_auto_send,
+                )
+                cancel_auto_send(conv, 'draft_changed')
+                result = schedule_auto_send(conv.pk, connection.schema_name) or {}
+                conv.refresh_from_db(fields=['auto_send_status'])
+                auto_send_status = conv.auto_send_status or ''
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    'Перепланирование автоответа не удалось conv=%s', conv.pk, exc_info=True,
+                )
+
+        return Response({'draft_text': text, 'auto_send_status': auto_send_status})
 
 
 class RejectReviewDraftAPIView(APIView):
@@ -1056,7 +1100,61 @@ class RejectReviewDraftAPIView(APIView):
             )
         conv.ai_draft_rejected = True
         conv.save(update_fields=['ai_draft_rejected', 'updated_at'])
+
+        # Черновик отклонён — автоответ по нему отправлять нельзя.
+        try:
+            from apps.tenant.analytics.auto_reply import cancel_auto_send
+            cancel_auto_send(conv, 'rejected_draft')
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                'cancel_auto_send (reject-draft) не отработал conv=%s', conv.pk, exc_info=True,
+            )
         return Response({'ok': True})
+
+
+class CancelAutoSendAPIView(APIView):
+    """
+    POST /api/v1/mobile/reviews/{pk}/cancel-auto-send/
+
+    Отменить запланированный автоответ ИИ («Отменить» из пуша/карточки отзыва).
+    200 {'ok': True, 'auto_send_status': 'cancelled'} — отменили.
+    200 {'ok': False, 'auto_send_status': '<текущий>'} — отменять было нечего.
+    409 — ИИ уже успел отправить ответ.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk: int):
+        conv = get_object_or_404(TestimonialConversation, pk=pk)
+        if not _check_conv_access(request, conv):
+            return Response({'detail': 'Нет доступа к этому отзыву'}, status=status.HTTP_403_FORBIDDEN)
+
+        S = TestimonialConversation.AutoSendStatus
+        current = conv.auto_send_status or ''
+
+        if current == S.SENT:
+            return Response(
+                {'ok': False, 'detail': 'Ответ уже отправлен'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if current != S.SCHEDULED:
+            return Response({'ok': False, 'auto_send_status': current})
+
+        from apps.tenant.analytics.auto_reply import cancel_auto_send
+        cancelled = cancel_auto_send(conv, 'cancelled_by_user')
+        if not cancelled:
+            conv.refresh_from_db(fields=['auto_send_status'])
+            return Response({'ok': False, 'auto_send_status': conv.auto_send_status or ''})
+
+        from apps.tenant.branch.audit import log_audit
+        log_audit(
+            request.user, 'AUTO_REPLY_CANCEL',
+            target_type='review', target_id=conv.pk,
+            target_label=str(conv)[:255],
+            details='Автоответ ИИ отменён сотрудником',
+        )
+        return Response({'ok': True, 'auto_send_status': S.CANCELLED.value})
 
 
 # ════════════════════════════════════════════════════════════════════

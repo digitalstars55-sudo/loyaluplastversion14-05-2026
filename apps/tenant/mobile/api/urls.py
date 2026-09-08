@@ -21,6 +21,7 @@ from .views import (
     GenerateDailyCodeAPIView,
     RegenerateReviewDraftAPIView,
     RejectReviewDraftAPIView,
+    CancelAutoSendAPIView,
     GlobalSearchAPIView,
     AuditLogAPIView,
     SubscriptionStatusAPIView,
@@ -192,6 +193,12 @@ urlpatterns = [
         'mobile/reviews/<int:review_id>/resolve/',
         MobileReviewResolveAPIView.as_view(),
         name='mobile-review-resolve',
+    ),
+    # Отмена запланированного автоответа ИИ (кнопка «Отменить» в мобилке)
+    path(
+        'mobile/reviews/<int:pk>/cancel-auto-send/',
+        CancelAutoSendAPIView.as_view(),
+        name='mobile-review-cancel-auto-send',
     ),
 
     # Авторассылки («конструктор»): список, вкл/выкл + текст, предпросмотр

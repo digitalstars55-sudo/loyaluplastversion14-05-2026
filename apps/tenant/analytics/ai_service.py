@@ -71,7 +71,29 @@ def _try_numeric_rating(text: str, source: str) -> dict | None:
     return {
         'sentiment': sentiment,
         'comment':   f'Оценка-цифра: {text.strip()} (без текста).',
+        # Голая цифра — вопросов/просьб внутри быть не может.
+        'needs_human': False,
     }
+
+
+# ── «Нужен человек»: вопрос / просьба внутри отзыва ───────────────────────────
+
+# Страховка поверх AI: даже если модель не выставила needs_human, эти маркеры
+# почти всегда значат, что гостю нужен живой ответ, а не благодарность от ИИ.
+_NEEDS_HUMAN_MARKERS = (
+    'забронир', 'перезвон', 'свяжитесь', 'свяжись', 'можно ли',
+    'подскажите', 'когда', 'сколько стоит',
+)
+
+
+def _heuristic_needs_human(text: str) -> bool:
+    """True, если в тексте гостя есть вопрос или явная просьба к заведению."""
+    if not text:
+        return False
+    low = text.lower()
+    if '?' in low:
+        return True
+    return any(m in low for m in _NEEDS_HUMAN_MARKERS)
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 
@@ -94,8 +116,16 @@ _BASE_SYSTEM_PROMPT = """Ты — аналитик отзывов рестора
 - Если есть и цифра, и осмысленный текст — анализируй В ПЕРВУЮ ОЧЕРЕДЬ текст,
   цифра вторична. Например, «10, но доставка долгая» — это PARTIALLY_NEGATIVE.
 
+Дополнительно определи флаг needs_human — «нужен живой человек»:
+- true, если гость задаёт ЛЮБОЙ вопрос (о меню, часах работы, ценах, доставке),
+  просит забронировать стол, просит перезвонить или связаться с ним,
+  сообщает о проблеме, которая требует действий (вернуть деньги, разобраться,
+  найти забытую вещь) — даже если тональность при этом ПОЗИТИВНАЯ.
+- false, если это просто благодарность, похвала, впечатление, оценка —
+  то есть отвечать нужно только вежливо, никаких действий заведения не требуется.
+
 Формат ответа — строго JSON без markdown, например:
-{"sentiment": "NEGATIVE", "comment": "Гость жалуется на долгое ожидание заказа и невежливый персонал."}
+{"sentiment": "NEGATIVE", "comment": "Гость жалуется на долгое ожидание заказа и невежливый персонал.", "needs_human": true}
 
 Никакого другого текста — только JSON."""
 
@@ -128,7 +158,11 @@ def analyze_message(text: str, source: str = '') -> dict:
     Анализирует текст сообщения через Claude.
 
     Returns:
-        {'sentiment': str, 'comment': str}
+        {'sentiment': str, 'comment': str, 'needs_human': bool}
+
+    needs_human — «в отзыве вопрос/просьба, отвечать должен человек».
+    Обратная совместимость: если модель ключ не вернула — считаем False,
+    но включаем эвристику-страховку по тексту гостя.
     Raises:
         RuntimeError если API ключ не задан или произошла ошибка API.
     """
@@ -170,6 +204,11 @@ def analyze_message(text: str, source: str = '') -> dict:
         if raw.startswith('json'):
             raw = raw[4:]
 
+    # Эвристика-страховка: считаем её ДО парсинга — она добавляется к решению
+    # модели по «ИЛИ» (лучше лишний раз позвать человека, чем ответить ИИ
+    # на вопрос гостя дежурным «спасибо за отзыв»).
+    heuristic_human = _heuristic_needs_human(text)
+
     try:
         result = json.loads(raw)
     except json.JSONDecodeError:
@@ -177,16 +216,24 @@ def analyze_message(text: str, source: str = '') -> dict:
         logger.warning('Claude returned non-JSON: %s', raw[:200])
         for s in _VALID_SENTIMENTS:
             if s in raw.upper():
-                return {'sentiment': s, 'comment': raw[:500]}
-        return {'sentiment': SENTIMENT_NEUTRAL, 'comment': raw[:500]}
+                return {'sentiment': s, 'comment': raw[:500], 'needs_human': heuristic_human}
+        return {
+            'sentiment':   SENTIMENT_NEUTRAL,
+            'comment':     raw[:500],
+            'needs_human': heuristic_human,
+        }
 
     sentiment = result.get('sentiment', '').upper()
     if sentiment not in _VALID_SENTIMENTS:
         sentiment = SENTIMENT_NEUTRAL
 
+    # Ключа нет (старый формат ответа) → False, дальше решает эвристика.
+    ai_human = bool(result.get('needs_human', False))
+
     return {
-        'sentiment': sentiment,
-        'comment':   result.get('comment', ''),
+        'sentiment':   sentiment,
+        'comment':     result.get('comment', ''),
+        'needs_human': ai_human or heuristic_human,
     }
 
 
@@ -211,6 +258,8 @@ def analyze_and_save(conversation_id: int, message_text: str, source: str = '') 
         TestimonialConversation.objects.filter(pk=conversation_id).update(
             sentiment=result['sentiment'],
             ai_comment=result['comment'],
+            # Аддитивно: старый код это поле не читает, автоотправка — читает.
+            ai_needs_human=bool(result.get('needs_human', False)),
         )
         return True
     except Exception as e:

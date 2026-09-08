@@ -1221,6 +1221,14 @@ class TestimonialConversation(TimeStampedModel):
         SPAM               = 'SPAM',               'Спам / Не по теме'
         WAITING            = 'WAITING',            'Ожидает анализа'
 
+    class AutoSendStatus(models.TextChoices):
+        """Состояние автоотправки ответа ИИ (пустая строка = не рассматривался)."""
+        SCHEDULED = 'scheduled', 'Запланирован'
+        SENT      = 'sent',      'Отправлен'
+        CANCELLED = 'cancelled', 'Отменён'
+        SKIPPED   = 'skipped',   'Пропущен'
+        FAILED    = 'failed',    'Ошибка отправки'
+
     branch = models.ForeignKey(
         Branch,
         on_delete=models.SET_NULL,
@@ -1279,6 +1287,42 @@ class TestimonialConversation(TimeStampedModel):
         'Курсор VK-поллинга', default=0,
         help_text='Наибольший vk_message_id, который мы уже пытались утянуть в этом треде. На следующем тике берём только сообщения с id > этого значения, чтобы не терять старые при наплыве рассылок.',
     )
+
+    # ── Автоотправка ответа ИИ (позитивные отзывы) ────────────────────────────
+    # Вся ветка работает ТОЛЬКО при ReviewAutoReplyConfig.auto_send_enabled=True
+    # (по умолчанию выключено). Поля заполняются планировщиком (schedule_auto_send)
+    # и celery-задачей auto_send_review_reply_task — см. analytics/auto_reply.py.
+    ai_needs_human = models.BooleanField(
+        'Нужен человек', default=False,
+        help_text='ИИ определил, что в отзыве вопрос/просьба — автоответ отправлять нельзя.',
+    )
+    auto_send_status = models.CharField(
+        'Статус автоответа',
+        max_length=12, blank=True, default='', db_index=True,
+        choices=AutoSendStatus.choices,
+        help_text='Пусто — автоответ не рассматривался. scheduled — запланирован, sent — отправлен, cancelled — отменён, skipped — не подошёл по условиям, failed — ошибка отправки.',
+    )
+    auto_send_at = models.DateTimeField(
+        'Время автоответа', null=True, blank=True,
+        help_text='Плановое время отправки (для scheduled) или фактическое (для sent).',
+    )
+    auto_send_reason = models.CharField(
+        'Причина', max_length=120, blank=True, default='',
+        help_text='Почему автоответ пропущен/отменён/упал: manual_reply, needs_human, numeric_only, daily_limit, vk_error: …',
+    )
+    auto_send_draft_hash = models.CharField(
+        'Хеш черновика', max_length=64, blank=True, default='',
+        help_text='sha256 черновика на момент планирования. Если черновик изменили — автоотправка отменяется.',
+    )
+
+    @property
+    def auto_send_reason_human(self) -> str:
+        """Русская расшифровка auto_send_reason — для шаблонов админки."""
+        try:
+            from apps.tenant.analytics.auto_reply import auto_send_reason_label
+            return auto_send_reason_label(self.auto_send_reason)
+        except Exception:
+            return self.auto_send_reason or ''
 
     def __str__(self):
         # Имя гостя: client → vk_guest (имя из ВК) → VK id (если имени нет).
@@ -1340,6 +1384,14 @@ class TestimonialMessage(models.Model):
     read_at = models.DateTimeField(
         'Прочитано', null=True, blank=True,
         help_text='Заполняется Celery-задачей при обнаружении прочтения через VK API.',
+    )
+
+    # ── Автоответ ИИ ───────────────────────────────────────────────────────────
+    # source ОСТАЁТСЯ ADMIN_REPLY (вся существующая логика «исходящее» цела),
+    # а этот флаг лишь помечает, что текст отправил ИИ, а не человек.
+    is_ai_generated = models.BooleanField(
+        'Отправлено ИИ', default=False,
+        help_text='Ответ отправлен автоматически (автоотправка ИИ), а не сотрудником.',
     )
 
     # ── Контекст: на что гость отвечал (LU-40) ─────────────────────────────────
@@ -1431,6 +1483,37 @@ class ReviewAutoReplyConfig(models.Model):
         default=Tone.FRIENDLY,
     )
 
+    # ── Автоотправка ответов на ПОЗИТИВНЫЕ отзывы ──────────────────────────────
+    # Мастер-флаг по умолчанию ВЫКЛЮЧЕН: без него ничего не планируется и
+    # не отправляется, поведение прода не меняется.
+    auto_send_enabled = models.BooleanField(
+        'Автоотправка позитивных ответов', default=False,
+        help_text='ИИ САМ отправляет гостю ответ на позитивный отзыв (без участия человека). Только POSITIVE, только если в отзыве нет вопроса/просьбы. Выключите — и всё вернётся к режиму «черновик, ответ вручную».',
+    )
+    auto_send_delay_minutes = models.PositiveSmallIntegerField(
+        'Окно отмены, мин', default=15,
+        choices=[(5, '5 минут'), (15, '15 минут'), (30, '30 минут'), (60, '60 минут')],
+        help_text='Сколько ждать перед отправкой — за это время сотрудник успеет отменить автоответ из пуша или из карточки отзыва.',
+    )
+    auto_send_attach_links = models.BooleanField(
+        'Кнопки «Яндекс Карты»/«2ГИС»', default=True,
+        help_text='Прикреплять к автоответу кнопки со ссылками на отзывы точки (или основной точки сети, если кафе не определено).',
+    )
+    auto_send_links_text = models.CharField(
+        'Фраза перед кнопками', max_length=200, blank=True,
+        default='Будем очень рады вашему отзыву на Яндекс Картах или в 2ГИС — кнопки ниже 👇',
+        help_text='Добавляется в конец автоответа ТОЛЬКО если кнопки включены и есть хотя бы одна ссылка.',
+    )
+    auto_send_daily_limit = models.PositiveIntegerField(
+        'Лимит автоответов в сутки', default=50,
+        help_text='Предохранитель: больше этого числа автоответов за сутки (МСК) ИИ не отправит — остальные останутся черновиками.',
+    )
+    auto_send_branch_enabled = models.JSONField(
+        'Автоотправка по точкам',
+        default=dict, blank=True,
+        help_text='Карта branch_id (str) → bool. Отсутствующие точки наследуют мастер-флаг. ВК-отзывы без точки отправляются при включённом мастер-флаге.',
+    )
+
     updated_at = models.DateTimeField('Обновлено', auto_now=True)
 
     @classmethod
@@ -1453,6 +1536,13 @@ class ReviewAutoReplyConfig(models.Model):
             'branch_enabled':   self.branch_enabled or {},
             'reminder_minutes': self.reminder_minutes,
             'ai_tone':          self.ai_tone,
+            # Автоотправка позитивных (по умолчанию всё выключено)
+            'auto_send_enabled':        self.auto_send_enabled,
+            'auto_send_delay_minutes':  self.auto_send_delay_minutes,
+            'auto_send_attach_links':   self.auto_send_attach_links,
+            'auto_send_links_text':     self.auto_send_links_text or '',
+            'auto_send_daily_limit':    self.auto_send_daily_limit,
+            'auto_send_branch_enabled': self.auto_send_branch_enabled or {},
         }
 
     def __str__(self):
@@ -1494,6 +1584,8 @@ class AuditLog(TimeStampedModel):
         STAFF_PERMS       = 'STAFF_PERMS',       'Изменены права'
         THRESHOLDS_SAVE   = 'THRESHOLDS_SAVE',   'Сохранены пороги RF'
         AUTO_REPLY_SAVE   = 'AUTO_REPLY_SAVE',   'Изменены настройки AI-ответов'
+        AUTO_REPLY_SENT   = 'AUTO_REPLY_SENT',   'ИИ отправил ответ гостю'
+        AUTO_REPLY_CANCEL = 'AUTO_REPLY_CANCEL', 'Отменён автоответ ИИ'
         DAILY_CODE_MANUAL = 'DAILY_CODE_MANUAL', 'Ручной код дня'
         AUTH_LOGIN        = 'AUTH_LOGIN',        'Вход'
         AUTH_LOGOUT       = 'AUTH_LOGOUT',       'Выход'

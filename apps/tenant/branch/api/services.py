@@ -1373,7 +1373,10 @@ def submit_app_review(
     conv.save(update_fields=['has_unread', 'is_replied', 'last_message_at'])
 
     from apps.tenant.analytics.ai_service import analyze_and_save
-    analyze_and_save(conv.id, review, TestimonialMessage.Source.APP)
+    if analyze_and_save(conv.id, review, TestimonialMessage.Source.APP):
+        # Классификация прошла синхронно — сами дёргаем генерацию черновика
+        # (иначе тред уже не WAITING и reclassify его не подхватит).
+        _enqueue_ai_draft(conv.id)
 
     # Жалоба (негатив либо низкая оценка) уходит в реестр CheckUp — там
     # у неё появятся ответственные и вердикт. Отправка отложенная,
@@ -1417,6 +1420,32 @@ def extract_vk_photo_attachments(raw_attachments: list | None) -> list[dict]:
         if len(result) >= 10:
             break
     return result
+
+
+def _enqueue_ai_draft(conversation_id: int) -> None:
+    """
+    Поставить генерацию AI-черновика сразу после синхронной классификации.
+
+    ЗАЧЕМ. Раньше `auto_generate_draft_task` диспатчился ТОЛЬКО из
+    `process_ai_review_task`, а тот запускается из `reclassify_waiting_reviews_task`,
+    который берёт исключительно sentiment=WAITING. Но в ingest мы зовём
+    `analyze_and_save` СИНХРОННО — тональность проставляется сразу, тред из
+    очереди WAITING выпадает, и черновик не рождался почти никогда (~6% отзывов
+    доходили до черновика — те, у кого AI в момент приёма промолчал).
+
+    Задача идемпотентна (есть черновик / отвергнут / уже отвечено → skip),
+    поэтому двойной вызов безопасен. Приём отзыва не роняем НИКОГДА.
+    """
+    try:
+        from django.db import connection
+        from apps.tenant.analytics.tasks import auto_generate_draft_task
+        auto_generate_draft_task.delay(conversation_id, connection.schema_name)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning(
+            'Не удалось поставить генерацию AI-черновика conv=%s',
+            conversation_id, exc_info=True,
+        )
 
 
 def _enqueue_attachment_download(message_pk: int) -> None:
@@ -1577,7 +1606,11 @@ def handle_vk_incoming_message(
         # AI-классификация и пуш — ТОЛЬКО для свежих сообщений.
         if text:
             from apps.tenant.analytics.ai_service import analyze_and_save
-            analyze_and_save(conv.id, text, TestimonialMessage.Source.VK_MESSAGE)
+            if analyze_and_save(conv.id, text, TestimonialMessage.Source.VK_MESSAGE):
+                # См. _enqueue_ai_draft: после синхронной классификации тред
+                # выпадает из очереди WAITING, и без этого вызова черновик
+                # не сгенерится никогда.
+                _enqueue_ai_draft(conv.id)
 
             # Та же отправка жалобы в CheckUp, что и для отзывов из
             # мини-аппа. У ВК-тредов точки нет (branch=None) — такие
@@ -1726,6 +1759,16 @@ def handle_vk_admin_reply_from_poll(
         if conv.last_message_at is None or effective_dt > conv.last_message_at:
             conv.last_message_at = effective_dt
         conv.save(update_fields=['is_replied', 'has_unread', 'last_message_at'])
+        # Менеджер ответил гостю прямо в ВК — запланированный автоответ ИИ
+        # отменяем, иначе гость получит второе сообщение «спасибо за отзыв».
+        try:
+            from apps.tenant.analytics.auto_reply import cancel_auto_send
+            cancel_auto_send(conv, 'manual_reply')
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                'cancel_auto_send не отработал (poll) conv=%s', conv.pk, exc_info=True,
+            )
     else:
         # Гость написал после этого ответа — статус не трогаем, но дату двигаем
         # вперёд только если этот ответ реально новее (монотонно).
@@ -1740,11 +1783,20 @@ def send_vk_reply(
     conversation: TestimonialConversation,
     reply_text: str,
     sender_name: str = 'Администратор',
+    keyboard: dict | None = None,
+    is_ai_generated: bool = False,
 ) -> TestimonialMessage:
     """
     Отправляет сообщение от имени группы в ВКонтакте и сохраняет его в тред.
     Требует SenlerConfig с vk_community_token для этой точки.
     Raises ValueError если нет токена или vk_sender_id.
+
+    keyboard — VK inline-клавиатура (dict), например кнопки «Яндекс Карты»/«2ГИС».
+               Уходит в messages.send параметром keyboard (JSON-строка).
+    is_ai_generated — ответ отправил ИИ (автоотправка), а не человек. Влияет
+               только на пометку сообщения: source остаётся ADMIN_REPLY.
+               Для НЕ-ИИ вызовов дополнительно снимается запланированный
+               автоответ (человек ответил первым — робот молчит).
     """
     import random
     import urllib.request
@@ -1783,8 +1835,14 @@ def send_vk_reply(
         'access_token': config.vk_community_token,
         'v':          '5.131',
     }
-    url = 'https://api.vk.com/method/messages.send?' + urllib.parse.urlencode(params)
-    with urllib.request.urlopen(url, timeout=10) as resp:
+    if keyboard:
+        params['keyboard'] = _json.dumps(keyboard, ensure_ascii=False)
+
+    # POST, а не GET: с клавиатурой запрос заметно длиннее, и класть его
+    # в URL (вместе с токеном) незачем. messages.send принимает POST штатно.
+    url = 'https://api.vk.com/method/messages.send'
+    body = urllib.parse.urlencode(params).encode('utf-8')
+    with urllib.request.urlopen(url, data=body, timeout=10) as resp:
         result = _json.loads(resp.read())
 
     if 'error' in result:
@@ -1796,12 +1854,24 @@ def send_vk_reply(
         source=TestimonialMessage.Source.ADMIN_REPLY,
         text=reply_text,
         vk_message_id=str(vk_msg_id) if vk_msg_id else '',
+        is_ai_generated=bool(is_ai_generated),
     )
 
     conversation.is_replied = True
     conversation.has_unread = False
     conversation.last_message_at = timezone.now()
     conversation.save(update_fields=['is_replied', 'has_unread', 'last_message_at'])
+
+    # Человек ответил раньше робота — снимаем запланированный автоответ.
+    if not is_ai_generated:
+        try:
+            from apps.tenant.analytics.auto_reply import cancel_auto_send
+            cancel_auto_send(conversation, 'manual_reply')
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                'cancel_auto_send не отработал для conv=%s', conversation.pk, exc_info=True,
+            )
 
     return msg
 

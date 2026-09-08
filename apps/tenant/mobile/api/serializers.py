@@ -58,6 +58,8 @@ class ReviewListSerializer(serializers.ModelSerializer):
     draft_created_at = serializers.SerializerMethodField()
     review_link_yandex = serializers.SerializerMethodField()
     review_link_2gis   = serializers.SerializerMethodField()
+    # Автоотправка ответа ИИ (пусто/false, пока владелец не включил флаг)
+    auto_send_at       = serializers.SerializerMethodField()
 
     class Meta:
         model = TestimonialConversation
@@ -81,7 +83,15 @@ class ReviewListSerializer(serializers.ModelSerializer):
             'draft_created_at',
             'review_link_yandex',
             'review_link_2gis',
+            # Автоотправка ИИ: '' | scheduled | sent | cancelled | skipped | failed
+            'auto_send_status',
+            'auto_send_at',
+            'auto_send_reason',
+            'ai_needs_human',
         ]
+
+    def get_auto_send_at(self, obj) -> str | None:
+        return obj.auto_send_at.isoformat() if obj.auto_send_at else None
 
     def get_review_link_yandex(self, obj) -> str:
         # Ссылки точки; если кафе не определено (общий VK-отзыв) — фолбэк основной точки.
@@ -205,6 +215,8 @@ class ReviewMessageSerializer(serializers.ModelSerializer):
         model = TestimonialMessage
         fields = [
             'id', 'source', 'text', 'rating', 'created_at', 'admin_name', 'attachments',
+            # Ответ отправил ИИ (source остаётся ADMIN_REPLY)
+            'is_ai_generated',
             # LU-40: контекст «на что ответил гость» (текст+дата предыдущего
             # сообщения — обычно авто-опрос «Понравилось?»). Пустые если нет.
             'reply_to_text', 'reply_to_date',
