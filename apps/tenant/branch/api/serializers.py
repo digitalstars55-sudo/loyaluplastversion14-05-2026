@@ -100,6 +100,23 @@ class ClientProfileResponseSerializer(serializers.Serializer):
         return getattr(obj, '_vk_bdate', None)
 
 
+class VKAuthResponseSerializer(ClientProfileResponseSerializer):
+    """
+    Ответ POST /api/v1/vk/auth/ — профиль гостя + токен веб-сессии.
+
+    Только для схемы (drf-spectacular): сам ответ вьюха собирает из
+    `ClientProfileResponseSerializer` и дописывает два поля — токен выдаётся
+    после сериализации профиля и не должен утекать в остальные эндпоинты,
+    которые используют тот же профильный сериализатор.
+
+    web_token            — доказательство личности вне ВК (заголовок
+                           `X-Web-Session`, см. apps/shared/guest/web_session.py);
+    web_token_expires_at — ISO-8601, когда токен протухнет.
+    """
+    web_token = serializers.CharField(read_only=True)
+    web_token_expires_at = serializers.DateTimeField(read_only=True)
+
+
 # ── Request serializers ───────────────────────────────────────────────────────
 
 class ClientGetRequestSerializer(serializers.Serializer):

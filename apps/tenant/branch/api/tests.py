@@ -1020,6 +1020,75 @@ class VKAuthViewTest(TestCase):
             with self.subTest(field=field):
                 self.assertIn(field, data)
 
+    # ── Токен веб-сессии (этап 1 «Антихрупкость входа») ───────────────────────
+
+    @patch('apps.tenant.branch.api.views.vk_web_auth')
+    def test_response_contains_web_token(self, mock_auth):
+        """Логин вне ВК выдаёт гостю собственное доказательство личности."""
+        from apps.shared.guest.web_session import verify_web_token
+
+        mock_auth.return_value = (_profile_mock(), True)
+        data = self._post().data
+
+        self.assertIn('web_token', data)
+        self.assertIn('web_token_expires_at', data)
+        self.assertEqual(verify_web_token(data['web_token']), 111)
+
+    @patch('apps.tenant.branch.api.views.vk_web_auth')
+    def test_web_token_expires_at_is_iso(self, mock_auth):
+        from datetime import datetime
+
+        mock_auth.return_value = (_profile_mock(), False)
+        raw = self._post().data['web_token_expires_at']
+
+        self.assertIsInstance(raw, str)
+        self.assertIsNotNone(datetime.fromisoformat(raw))
+
+    @patch('apps.tenant.branch.api.views.vk_web_auth')
+    def test_old_profile_fields_are_kept(self, mock_auth):
+        """Ответ только дополнен — существующие поля на месте."""
+        mock_auth.return_value = (_profile_mock(), True)
+        data = self._post().data
+        for field in ('id', 'vk_id', 'first_name', 'last_name', 'photo_url',
+                      'coins_balance', 'is_employee', 'birth_date', 'vk_bdate'):
+            with self.subTest(field=field):
+                self.assertIn(field, data)
+
+    @patch('apps.tenant.branch.api.views.issue_web_token')
+    @patch('apps.tenant.branch.api.views.vk_web_auth')
+    def test_login_survives_token_failure(self, mock_auth, mock_issue):
+        """Сбой выдачи токена не имеет права ломать вход."""
+        mock_auth.return_value = (_profile_mock(), True)
+        mock_issue.side_effect = RuntimeError('signing broken')
+
+        response = self._post()
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertNotIn('web_token', response.data)
+        self.assertIn('vk_id', response.data)
+
+    # ── source / src доезжают до регистрации ──────────────────────────────────
+
+    @patch('apps.tenant.branch.api.views.vk_web_auth')
+    def test_source_and_src_are_passed_to_service(self, mock_auth):
+        mock_auth.return_value = (_profile_mock(), True)
+
+        self._post(dict(_VK_AUTH_PAYLOAD, source='website', src='qr7'))
+
+        kwargs = mock_auth.call_args.kwargs
+        self.assertEqual(kwargs['source'], 'website')
+        self.assertEqual(kwargs['src'], 'qr7')
+
+    @patch('apps.tenant.branch.api.views.vk_web_auth')
+    def test_source_defaults_to_restaurant(self, mock_auth):
+        mock_auth.return_value = (_profile_mock(), True)
+
+        self._post()
+
+        kwargs = mock_auth.call_args.kwargs
+        self.assertEqual(kwargs['source'], 'restaurant')
+        self.assertEqual(kwargs['src'], '')
+
     @patch('apps.tenant.branch.api.views.vk_web_auth')
     def test_returns_400_on_vk_auth_error(self, mock_auth):
         mock_auth.side_effect = VKAuthError('Неверный code')

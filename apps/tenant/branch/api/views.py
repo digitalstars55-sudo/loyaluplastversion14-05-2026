@@ -9,6 +9,8 @@ from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 from drf_spectacular.types import OpenApiTypes
 
+from apps.shared.guest.web_session import issue_web_token
+
 from .serializers import (
     BranchIdRequestSerializer,
     BranchInfoSerializer,
@@ -21,6 +23,7 @@ from .serializers import (
     PromotionSerializer,
     TestimonialCreateSerializer,
     VKAuthRequestSerializer,
+    VKAuthResponseSerializer,
     VKStoryRequestSerializer,
     VKStoryResponseSerializer,
 )
@@ -345,8 +348,14 @@ class VKAuthView(APIView):
     Бэкенд:
       1. Обменивает code на access_token server-to-server (id.vk.ru/oauth2/auth)
       2. Получает профиль пользователя (id.vk.ru/oauth2/user_info)
-      3. Регистрирует / логинит гостя
-      4. Возвращает ClientProfile
+      3. Регистрирует / логинит гостя (с учётом source/src — сетевые входы и
+         отслеживаемые QR работают так же, как в POST /client/)
+      4. Возвращает ClientProfile + токен веб-сессии (`web_token`)
+
+    `web_token` — доказательство личности вне ВК: гость шлёт его заголовком
+    `X-Web-Session` в гостевое API, там его проверяет `VKLaunchParamsMiddleware`
+    (см. apps/shared/guest/web_session.py). Без него веб-путь остался бы
+    «верим vk_id на слово». Живёт `settings.WEB_SESSION_TTL_DAYS` дней.
 
     Responses:
       200 — гость уже зарегистрирован
@@ -358,7 +367,7 @@ class VKAuthView(APIView):
     authentication_classes = []
     permission_classes = []
 
-    @extend_schema(request=VKAuthRequestSerializer, responses={200: ClientProfileResponseSerializer, 201: ClientProfileResponseSerializer, 400: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT})
+    @extend_schema(request=VKAuthRequestSerializer, responses={200: VKAuthResponseSerializer, 201: VKAuthResponseSerializer, 400: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT})
     def post(self, request: Request) -> Response:
         s = VKAuthRequestSerializer(data=request.data)
         s.is_valid(raise_exception=True)
@@ -382,7 +391,19 @@ class VKAuthView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         resp_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-        return Response(ClientProfileResponseSerializer(profile).data, status=resp_status)
+        data = ClientProfileResponseSerializer(profile).data
+
+        # Токен веб-сессии — аддитивно к прежнему ответу (ничего не убираем).
+        # Сбой подписи не имеет права ломать логин: гость просто останется без
+        # web_token (внутри ВК он и не нужен — там подпись запуска).
+        try:
+            web_token, expires_at = issue_web_token(profile.client.vk_id)
+            data['web_token'] = web_token
+            data['web_token_expires_at'] = expires_at.isoformat()
+        except Exception:
+            logger.exception('vk_auth: не удалось выдать web_token')
+
+        return Response(data, status=resp_status)
 
 
 class VKSubscriptionStatusView(APIView):

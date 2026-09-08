@@ -53,7 +53,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 # кросс-доменные запросы «непростыми» → preflight OPTIONS. Без явного разрешения
 # заголовка django-cors-headers его отвергнет и ляжет ВСЁ гостевое API.
 from corsheaders.defaults import default_headers  # noqa: E402
-CORS_ALLOW_HEADERS = (*default_headers, 'x-vk-launch-params')
+CORS_ALLOW_HEADERS = (*default_headers, 'x-vk-launch-params', 'x-web-session')
 
 # ---------------------------------------------------------------------------
 # Applications
@@ -286,6 +286,12 @@ TELEGRAM_MINI_APP_HOSTS = tuple(
 VK_SIGN_EXEMPT_PATHS = tuple(
     p.strip() for p in os.getenv('VK_SIGN_EXEMPT_PATHS', '').split(',') if p.strip()
 )
+
+# ── Веб-сессия гостя вне ВК (apps/shared/guest/web_session.py) ────────────────
+# Сколько дней живёт токен, который выдаёт POST /api/v1/vk/auth/ и который гость
+# шлёт заголовком X-Web-Session. Уменьшение = более частый повторный вход через
+# VK ID; смена SECRET_KEY = разлогин всех веб-гостей разом.
+WEB_SESSION_TTL_DAYS = int(os.getenv('WEB_SESSION_TTL_DAYS', 30))
 
 # ---------------------------------------------------------------------------
 # Celery

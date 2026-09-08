@@ -48,8 +48,21 @@ gift, 16 резолвов профиля → 403 `client_blocked` / fail-secure 
 (`VKLaunchParamsMiddleware`, зарегистрирован после `CorsMiddleware` — иначе на 403
 не навесятся CORS-заголовки). Фронт шлёт query-строку запуска заголовком
 `X-VK-Launch-Params`; middleware кладёт доказанный `request.vk_user_id` и
-`request.vk_sign_status` (`valid` / `invalid` / `missing` / `telegram` /
-`unconfigured` / `skipped`) и сверяет `vk_id` из query и JSON-тела с подписью.
+`request.vk_sign_status` (`valid` / `invalid` / `missing` / `web` / `web_invalid` /
+`telegram` / `unconfigured` / `skipped`) и сверяет `vk_id` из query и JSON-тела
+с подписью.
+
+**Вне ВК доказательство — `X-Web-Session`** (`apps/shared/guest/web_session.py`,
+этап 1 «Антихрупкость входа»). Launch-параметров в браузере/Телеграме нет: гость
+логинится через VK ID (`POST /api/v1/vk/auth/`), ответ дополнительно содержит
+`web_token` + `web_token_expires_at`, дальше фронт шлёт токен заголовком
+`X-Web-Session`. Токен — `django.core.signing` (salt `guest-web-session`, ключ
+`SECRET_KEY`, TTL `WEB_SESSION_TTL_DAYS`, дефолт 30 дней), внутри только `vk_id`,
+БД не участвует. Приоритет всегда у подписи ВК: пришли оба заголовка — решает
+подпись. Дальше всё как у ВК-пути: сверка заявленных `vk_id`, нарушение → лог/403
+по `VK_SIGN_ENFORCE`. Заголовок добавлен в `CORS_ALLOW_HEADERS` (иначе preflight
+режет запросы). Отзыв отдельного токена невозможен — «разлогин всех» = смена
+`SECRET_KEY`.
 
 - Проверяются только гостевые пути (`_GUEST_PREFIXES`); мобилка (JWT), loyalty
   (сервис-ключ), `vk/auth`, `vk/callback`, аналитика и админка — не трогаются.
@@ -58,7 +71,8 @@ gift, 16 резолвов профиля → 403 `client_blocked` / fail-secure 
   `{"code": "vk_sign_invalid"}`. **Включать `on` только после того, как лог
   покажет ~0 легитимных `missing`**: у гостей висит кэш старого бандла, а
   веб-версия на VK ID OAuth (`VK_WEB_APP_ID=54473505`) launch-параметров не имеет
-  в принципе — ей enforce противопоказан (аварийный клапан: `VK_SIGN_EXEMPT_PATHS`).
+  в принципе — ей enforce противопоказан, пока она не шлёт `X-Web-Session`
+  (аварийный клапан: `VK_SIGN_EXEMPT_PATHS`).
 - Телеграм-мини-апп (loyalupp.ru, тот же бандл) определяется по
   `Origin`/`Referer`/`Host` из `TELEGRAM_MINI_APP_HOSTS` либо по заголовку
   `X-Telegram-Init-Data` → статус `telegram`, enforce его не трогает. TODO:

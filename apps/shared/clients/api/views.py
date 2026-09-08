@@ -81,6 +81,11 @@ class TenantDomainView(APIView):
 
     Возвращает домен тенанта по публичному ID компании.
     Используется при первом открытии приложения гостем.
+
+    Плюс флаги входа компании (`ClientConfig`, оба default=False):
+    `web_entry_enabled` (работать вне ВК через VK ID) и `degrade_enabled`
+    («Продолжить в браузере» при сбое ВК) — фронту они нужны ещё до того,
+    как он узнал домен тенанта.
     """
 
     def get(self, request: Request, client_id: int) -> Response:
