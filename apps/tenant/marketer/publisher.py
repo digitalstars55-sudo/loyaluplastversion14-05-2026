@@ -47,6 +47,13 @@ def publish_post(post: MarketerPost) -> bool:
         post.save(update_fields=['error', 'updated_at'])
         return False
 
+    # Запись FAILED с пустым текстом — это упавшая ГЕНЕРАЦИЯ (см. tasks.py),
+    # публиковать нечего; иначе улетит пустой wall.post.
+    if not (post.text or '').strip():
+        post.error = 'Пустой текст — публиковать нечего (генерация не удалась, запустите дайджест заново).'
+        post.save(update_fields=['error', 'updated_at'])
+        return False
+
     cfg = MarketerSettings.objects.first()
 
     def _fail(msg: str) -> bool:

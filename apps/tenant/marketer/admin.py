@@ -66,6 +66,10 @@ class MarketerPostAdmin(admin.ModelAdmin):
 
     @admin.display(description='Текст')
     def text_preview(self, obj):
+        # Упавшая генерация: текста нет — в списке показываем причину.
+        if not obj.text and obj.error:
+            err = obj.error[:120] + ('…' if len(obj.error) > 120 else '')
+            return format_html('<span title="{}" style="color:#d9534f;">⚠ {}</span>', obj.error, err)
         text = obj.text[:120] + ('…' if len(obj.text) > 120 else '')
         return format_html('<span title="{}">{}</span>', obj.text, text)
 

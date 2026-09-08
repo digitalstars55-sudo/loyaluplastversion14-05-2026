@@ -82,6 +82,22 @@ def run_marketer_digest_for_tenant_task(self, schema_name: str) -> dict:
             )
         except Exception as e:
             logger.exception('marketer digest generation failed for %s', schema_name)
+            # Падение генерации (нет кредитов API, таймаут) должно быть ВИДНО
+            # владельцу в админке, а не только в логе celery: 31.08 и 07.09
+            # дайджесты молча пропали именно так. Запись со статусом FAILED
+            # и текстом ошибки; публиковать её нельзя (текст пустой).
+            try:
+                MarketerPost.objects.create(
+                    post_type=MarketerPostType.DIGEST,
+                    status=MarketerPostStatus.FAILED,
+                    text='',
+                    context_snapshot=knowledge,
+                    model_used='',
+                    created_by='ai',
+                    error=f'Генерация не удалась: {str(e)[:900]}',
+                )
+            except Exception:
+                logger.exception('marketer: failed to record generation error for %s', schema_name)
             return {'schema': schema_name, 'error': str(e)}
 
         post = MarketerPost.objects.create(
