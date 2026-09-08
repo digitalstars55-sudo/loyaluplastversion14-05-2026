@@ -348,6 +348,27 @@ LOYALUP_RELAY_SECRET = os.getenv("LOYALUP_RELAY_SECRET", "")
 # CheckUp inbound URL (where outbound _safe_relay_to_checkup POSTs).
 CHECKUP_RELAY_URL = os.getenv("CHECKUP_RELAY_URL", "http://localhost:8000/api/v1/loyalup/inbound/")
 
+# ── Жалобы гостей → CheckUp (реестр «Отзывы/Жалобы») ────────────────
+# Приёмник на стороне CheckUp: POST /api/v1/loyalup/complaints/inbound/,
+# авторизация тем же LOYALUP_RELAY_SECRET. Логика сбора и отправки —
+# apps/shared/relay/checkup_complaints.py.
+CHECKUP_COMPLAINTS_URL = os.getenv(
+    "CHECKUP_COMPLAINTS_URL",
+    "https://checkupapp.ru/api/v1/loyalup/complaints/inbound/",
+)
+# Рубильник на нашей стороне. Второй рубильник — отдельно по каждой
+# организации — живёт на стороне CheckUp (ClientConfig.loyalup_complaints_enabled).
+CHECKUP_COMPLAINTS_ENABLED = os.getenv("CHECKUP_COMPLAINTS_ENABLED", "1") != "0"
+# Слать ли жалобы из ВК-группы, у которых точки нет вовсе. По умолчанию НЕТ:
+# у «Автосуши» точки в двух городах сразу, и жалоба без точки уехала бы наугад.
+# Включить = такие жалобы лягут в CheckUp в «Без филиала», точку привяжут руками.
+CHECKUP_COMPLAINTS_RELAY_UNPOINTED = os.getenv(
+    "CHECKUP_COMPLAINTS_RELAY_UNPOINTED", "0") == "1"
+# База для абсолютных ссылок на медиа: фото гостя уходят в CheckUp URL'ами,
+# а в базе лежат относительными путями (/media/...).
+CHECKUP_RELAY_MEDIA_BASE = os.getenv("CHECKUP_RELAY_MEDIA_BASE", "https://levelupapp.ru")
+
+
 
 
 # ── Логирование ────────────────────────────────────────────────────────────────

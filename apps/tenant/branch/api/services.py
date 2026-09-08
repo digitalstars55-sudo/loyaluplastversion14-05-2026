@@ -1375,6 +1375,12 @@ def submit_app_review(
     from apps.tenant.analytics.ai_service import analyze_and_save
     analyze_and_save(conv.id, review, TestimonialMessage.Source.APP)
 
+    # Жалоба (негатив либо низкая оценка) уходит в реестр CheckUp — там
+    # у неё появятся ответственные и вердикт. Отправка отложенная,
+    # через celery, и никогда не бросает: приём отзыва неприкосновенен.
+    from apps.shared.relay.checkup_complaints import dispatch_complaint_relay
+    dispatch_complaint_relay(conv.id, msg.id)
+
     # Push only on FIRST message in the thread (= new review).
     if TestimonialMessage.objects.filter(conversation=conv).count() == 1:
         _safe_push_review_new(conv=conv, source='APP')
@@ -1572,6 +1578,12 @@ def handle_vk_incoming_message(
         if text:
             from apps.tenant.analytics.ai_service import analyze_and_save
             analyze_and_save(conv.id, text, TestimonialMessage.Source.VK_MESSAGE)
+
+            # Та же отправка жалобы в CheckUp, что и для отзывов из
+            # мини-аппа. У ВК-тредов точки нет (branch=None) — такие
+            # жалобы по умолчанию НЕ уходят, см. шапку checkup_complaints.
+            from apps.shared.relay.checkup_complaints import dispatch_complaint_relay
+            dispatch_complaint_relay(conv.id, msg.id)
 
         # Push only on FIRST message in the thread (= new VK-originated review).
         if TestimonialMessage.objects.filter(conversation=conv).count() == 1:

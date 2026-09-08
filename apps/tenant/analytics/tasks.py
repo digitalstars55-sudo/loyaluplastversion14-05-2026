@@ -64,6 +64,10 @@ def process_ai_review_task(self, conversation_id: int, schema_name: str) -> dict
                     auto_generate_draft_task.delay(conv.id, schema_name)
                 except Exception:
                     logger.warning('auto_generate_draft_task dispatch failed', exc_info=True)
+                # Классификация доехала отложенно (AI молчал в момент
+                # приёма) — жалобу всё равно надо отдать в CheckUp.
+                from apps.shared.relay.checkup_complaints import dispatch_complaint_relay
+                dispatch_complaint_relay(conv.id, schema_name=schema_name)
             return {'ok': ok, 'conversation_id': conversation_id}
 
     except TestimonialConversation.DoesNotExist:
@@ -379,3 +383,11 @@ def run_rfm_campaign_task(self, schema_name: str, campaign_id: int, requeue_dept
             countdown=5,
         )
         return {'campaign': campaign_id, 'requeued': requeue_depth + 1}
+
+
+# ── Регистрация задачи отправки жалоб в CheckUp ────────────────────────
+# Сама задача объявлена в apps/shared/relay/checkup_complaints.py. Импорт
+# здесь нужен, чтобы celery-воркер её ЗАРЕГИСТРИРОВАЛ: autodiscover_tasks()
+# сканирует только tasks.py установленных приложений, а apps.shared.relay
+# в INSTALLED_APPS нет (это urls+views, не Django-app).
+from apps.shared.relay.checkup_complaints import relay_complaint_to_checkup_task  # noqa: E402,F401
