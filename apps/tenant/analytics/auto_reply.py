@@ -107,6 +107,11 @@ def maybe_generate_auto_draft(conversation_id: int) -> Optional[str]:
     TestimonialConversation.objects.filter(pk=conversation_id).update(
         ai_draft=text,
         ai_draft_rejected=False,
+        # QuerySet.update() не трогает auto_now — а send_draft_reminders_task
+        # отсчитывает reminder_minutes именно от updated_at. Без этой строки
+        # напоминание «черновик готов» прилетало на ближайшем 30-минутном тике,
+        # а не через 3 часа (замечено 08.09 на отзыве 538).
+        updated_at=timezone.now(),
     )
     return text
 
