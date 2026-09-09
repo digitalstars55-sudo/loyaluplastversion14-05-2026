@@ -321,10 +321,12 @@ def auto_generate_draft_task(conversation_id: int, schema_name: str) -> dict:
 
 
 @shared_task(name='apps.tenant.analytics.tasks.auto_send_review_reply_task')
-def auto_send_review_reply_task(conversation_id: int, schema_name: str) -> dict:
+def auto_send_review_reply_task(conversation_id: int, schema_name: str, expected_hash: str = '') -> dict:
     """
     Отправить автоответ ИИ на позитивный отзыв. Ставится с eta=auto_send_at
     планировщиком schedule_auto_send (окно отмены для сотрудника).
+    expected_hash — хеш черновика на момент планирования; если тред с тех пор
+    перепланировали (черновик перегенерирован), задача уходит как 'superseded'.
 
     Идемпотентна: работает только если auto_send_status всё ещё 'scheduled'
     и хеш черновика не изменился. Повторный/дублирующий запуск — no-op.
@@ -335,7 +337,7 @@ def auto_send_review_reply_task(conversation_id: int, schema_name: str) -> dict:
 
     try:
         with schema_context(schema_name):
-            return perform_auto_send(conversation_id, schema_name)
+            return perform_auto_send(conversation_id, schema_name, expected_hash=expected_hash or '')
     except Exception as exc:
         logger.exception(
             'auto_send_review_reply_task failed conv=%s schema=%s',

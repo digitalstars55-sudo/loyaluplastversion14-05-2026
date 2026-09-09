@@ -63,11 +63,24 @@ def maybe_generate_auto_draft(conversation_id: int) -> Optional[str]:
     # Уже отвечено админом — не нужен черновик
     if conv.is_replied:
         return None
-    # Уже есть актуальный черновик и он не отвергнут
-    if conv.ai_draft and not conv.ai_draft_rejected:
+
+    # Актуальность черновика (09.09.2026): черновик считается свежим, пока
+    # последнее сообщение гостя — то, по которому он сгенерирован. Раньше
+    # любой существующий черновик блокировал генерацию навсегда: гость
+    # дописывал в тред, а менеджеру показывали ответ на старое письмо
+    # (или уже отправленный текст). Теперь — перегенерация, но с лимитом.
+    last_guest = _last_guest_message(conv)
+    stale = draft_is_stale(conv, last_guest)
+    if conv.ai_draft and not stale and not conv.ai_draft_rejected:
         return None
-    # Черновик отвергнут админом — не перегенерируем без явного запроса
-    if conv.ai_draft_rejected:
+    # Черновик отвергнут админом — не перегенерируем без явного запроса,
+    # пока гость не написал что-то новое.
+    if conv.ai_draft_rejected and not stale:
+        return None
+    regenerate = bool(conv.ai_draft) or bool(conv.ai_draft_rejected)
+    if regenerate and (conv.ai_draft_auto_generations or 0) >= DRAFT_AUTO_GEN_CAP:
+        logger.info('auto_reply: лимит автогенераций conv=%s (%s) — только вручную',
+                    conv.pk, conv.ai_draft_auto_generations)
         return None
 
     cfg = ReviewAutoReplyConfig.get_singleton()
@@ -104,9 +117,12 @@ def maybe_generate_auto_draft(conversation_id: int) -> Optional[str]:
         return None
 
     # Сохраняем
+    from django.db.models import F
     TestimonialConversation.objects.filter(pk=conversation_id).update(
         ai_draft=text,
         ai_draft_rejected=False,
+        ai_draft_message_id=(last_guest[0] if last_guest else None),
+        ai_draft_auto_generations=F('ai_draft_auto_generations') + 1,
         # QuerySet.update() не трогает auto_now — а send_draft_reminders_task
         # отсчитывает reminder_minutes именно от updated_at. Без этой строки
         # напоминание «черновик готов» прилетало на ближайшем 30-минутном тике,
@@ -114,6 +130,55 @@ def maybe_generate_auto_draft(conversation_id: int) -> Optional[str]:
         updated_at=timezone.now(),
     )
     return text
+
+
+# ── Актуальность черновика ─────────────────────────────────────────────────
+# Предохранители от расхода токенов: регенерация только по НОВОМУ сообщению
+# гостя (не по нашим ответам/поллингу/переклассификации), с дебаунсом
+# DRAFT_REGEN_DEBOUNCE_SEC (гость пишет 2–3 сообщения подряд → одна генерация)
+# и лимитом DRAFT_AUTO_GEN_CAP автогенераций на тред (дальше — только кнопка
+# «Перегенерировать»). Статистика 30 дней (09.09.2026): 1056 тредов,
+# 1906 гостевых сообщений, 1475 «всплесков» с паузой >3 мин → +40% генераций
+# (Haiku, ~2–3 тыс. токенов на черновик).
+DRAFT_REGEN_DEBOUNCE_SEC = 180
+DRAFT_AUTO_GEN_CAP = 8
+
+
+def _last_guest_message(conv):
+    """(id, created_at) последнего сообщения ГОСТЯ в треде или None."""
+    from apps.tenant.branch.models import TestimonialMessage
+    row = (
+        TestimonialMessage.objects.filter(conversation_id=conv.pk)
+        .exclude(source=TestimonialMessage.Source.ADMIN_REPLY)
+        .order_by('-created_at', '-id')
+        .values_list('id', 'created_at')
+        .first()
+    )
+    return tuple(row) if row else None
+
+
+def draft_is_stale(conv, last_guest) -> bool:
+    """
+    Устарел ли черновик относительно последнего сообщения гостя.
+
+    - нет черновика → «устарел» (нужна генерация);
+    - черновик с маркером ai_draft_message_id → устарел, если гость написал
+      что-то новее этого сообщения;
+    - старый черновик без маркера → сравниваем время: сообщение гостя
+      новее updated_at черновика → устарел.
+    """
+    if not (conv.ai_draft or '').strip():
+        return True
+    if last_guest is None:
+        return False
+    last_id, last_at = last_guest
+    marker = getattr(conv, 'ai_draft_message_id', None)
+    if marker is not None:
+        return int(marker) != int(last_id)
+    updated_at = getattr(conv, 'updated_at', None)
+    if updated_at is None or last_at is None:
+        return False
+    return last_at > updated_at
 
 
 def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
@@ -380,6 +445,8 @@ AUTO_SEND_REASON_LABELS: dict[str, str] = {
     'daily_limit':       'исчерпан дневной лимит автоответов',
     'draft_changed':     'черновик изменили после планирования',
     'cancelled_by_user': 'отменено сотрудником',
+    'guest_wrote_again': 'гость написал ещё — черновик обновляется',
+    'superseded':        'заменено более новым планом автоответа',
     'schedule_failed':   'не удалось поставить задачу в очередь',
     'not_found':         'отзыв не найден',
     'quiet_hours':       'тихие часы — перенесено на утро',
@@ -635,7 +702,11 @@ def schedule_auto_send(conversation_id: int, schema_name: str = '') -> dict:
     try:
         from apps.tenant.analytics.tasks import auto_send_review_reply_task
         auto_send_review_reply_task.apply_async(
-            args=[conversation_id, schema_name], eta=send_at,
+            args=[conversation_id, schema_name],
+            # Хеш = «билет» этого плана: если черновик перегенерировали и
+            # запланировали заново, старая задача увидит чужой хеш и уйдёт.
+            kwargs={'expected_hash': draft_hash(conv.ai_draft)},
+            eta=send_at,
         )
     except Exception:
         # Брокер недоступен — откатываем статус, чтобы отзыв не завис
@@ -696,10 +767,15 @@ def _log_auto_send_audit(conv, text: str) -> None:
         logger.warning('AuditLog AUTO_REPLY_SENT failed conv=%s', conv.pk, exc_info=True)
 
 
-def perform_auto_send(conversation_id: int, schema_name: str) -> dict:
+def perform_auto_send(conversation_id: int, schema_name: str, expected_hash: str = '') -> dict:
     """
     Тело задачи auto_send_review_reply_task. Выполняется ВНУТРИ schema_context.
     Перепроверяет все гварды (за время окна отмены могло измениться что угодно).
+
+    expected_hash — хеш черновика на момент планирования. Если тред
+    перепланировали (черновик перегенерирован после нового сообщения гостя),
+    в conv лежит уже другой хеш — эта задача устарела и ничего не шлёт,
+    отправит та, что поставлена последней (со своим eta и окном отмены).
     """
     from apps.tenant.branch.models import (
         TestimonialConversation, ReviewAutoReplyConfig,
@@ -716,6 +792,8 @@ def perform_auto_send(conversation_id: int, schema_name: str) -> dict:
     # Отменили / уже отправили / перепланировали — задача-дубль просто уходит.
     if (conv.auto_send_status or '') != S.SCHEDULED:
         return {'sent': False, 'reason': 'status_' + (conv.auto_send_status or 'none')}
+    if expected_hash and (conv.auto_send_draft_hash or '') != expected_hash:
+        return {'sent': False, 'reason': 'superseded'}
 
     cfg = ReviewAutoReplyConfig.get_singleton()
     tenant_name = _tenant_name(schema_name)
@@ -738,7 +816,9 @@ def perform_auto_send(conversation_id: int, schema_name: str) -> dict:
         try:
             from apps.tenant.analytics.tasks import auto_send_review_reply_task
             auto_send_review_reply_task.apply_async(
-                args=[conversation_id, schema_name], eta=new_at,
+                args=[conversation_id, schema_name],
+                kwargs={'expected_hash': conv.auto_send_draft_hash or ''},
+                eta=new_at,
             )
         except Exception:
             logger.warning('auto_send reschedule failed conv=%s', conversation_id, exc_info=True)

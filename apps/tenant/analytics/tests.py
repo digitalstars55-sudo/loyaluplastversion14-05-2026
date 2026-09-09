@@ -456,6 +456,88 @@ class SendVkReplyKeyboardTest(SimpleTestCase):
         self.assertFalse(MockMsg.objects.create.call_args.kwargs['is_ai_generated'])
 
 
+class DraftFreshnessTest(SimpleTestCase):
+    """
+    Актуальность AI-черновика (09.09.2026): черновик свежий, пока последнее
+    сообщение гостя — то, по которому он сгенерирован. Гость дописал →
+    устарел → перегенерация; наши ответы/поллинг/переклассификация — нет.
+    """
+
+    def _conv(self, draft='Текст', marker=None, updated_at=None, rejected=False):
+        c = MagicMock()
+        c.pk = 1
+        c.ai_draft = draft
+        c.ai_draft_message_id = marker
+        c.ai_draft_rejected = rejected
+        c.updated_at = updated_at
+        return c
+
+    def test_no_draft_is_stale(self):
+        from apps.tenant.analytics.auto_reply import draft_is_stale
+        self.assertTrue(draft_is_stale(self._conv(draft=''), (10, dj_timezone.now())))
+
+    def test_marker_matches_last_guest_message_is_fresh(self):
+        from apps.tenant.analytics.auto_reply import draft_is_stale
+        self.assertFalse(draft_is_stale(self._conv(marker=10), (10, dj_timezone.now())))
+
+    def test_new_guest_message_after_marker_is_stale(self):
+        from apps.tenant.analytics.auto_reply import draft_is_stale
+        self.assertTrue(draft_is_stale(self._conv(marker=10), (11, dj_timezone.now())))
+
+    def test_no_guest_messages_is_fresh(self):
+        from apps.tenant.analytics.auto_reply import draft_is_stale
+        self.assertFalse(draft_is_stale(self._conv(marker=10), None))
+
+    def test_legacy_draft_without_marker_uses_updated_at(self):
+        from datetime import timedelta
+        from apps.tenant.analytics.auto_reply import draft_is_stale
+        now = dj_timezone.now()
+        # Черновик обновлён час назад, гость написал 5 минут назад → устарел.
+        self.assertTrue(draft_is_stale(self._conv(updated_at=now - timedelta(hours=1)), (5, now - timedelta(minutes=5))))
+        # Черновик новее последнего сообщения гостя → свежий.
+        self.assertFalse(draft_is_stale(self._conv(updated_at=now), (5, now - timedelta(minutes=5))))
+
+    def test_cap_constant_is_sane(self):
+        from apps.tenant.analytics.auto_reply import DRAFT_AUTO_GEN_CAP, DRAFT_REGEN_DEBOUNCE_SEC
+        self.assertGreaterEqual(DRAFT_AUTO_GEN_CAP, 3)
+        self.assertLessEqual(DRAFT_AUTO_GEN_CAP, 20)
+        self.assertGreaterEqual(DRAFT_REGEN_DEBOUNCE_SEC, 60)
+
+
+class EnqueueAiDraftDebounceTest(SimpleTestCase):
+    """_enqueue_ai_draft: первый черновик — сразу; перегенерация — одна задача с задержкой."""
+
+    @patch('apps.tenant.analytics.tasks.auto_generate_draft_task')
+    @patch('apps.tenant.branch.models.TestimonialConversation')
+    def test_fresh_thread_enqueues_immediately(self, MockTC, mock_task):
+        from apps.tenant.branch.api.services import _enqueue_ai_draft
+        conv = MagicMock(ai_draft='', ai_draft_rejected=False, auto_send_status='')
+        MockTC.objects.filter.return_value.only.return_value.first.return_value = conv
+        _enqueue_ai_draft(7)
+        mock_task.delay.assert_called_once()
+        mock_task.apply_async.assert_not_called()
+
+    @patch('apps.tenant.analytics.auto_reply.cancel_auto_send')
+    @patch('django.core.cache.cache')
+    @patch('apps.tenant.analytics.tasks.auto_generate_draft_task')
+    @patch('apps.tenant.branch.models.TestimonialConversation')
+    def test_existing_draft_debounces_and_cancels_old_plan(self, MockTC, mock_task, mock_cache, mock_cancel):
+        from apps.tenant.branch.api.services import _enqueue_ai_draft
+        from apps.tenant.analytics.auto_reply import DRAFT_REGEN_DEBOUNCE_SEC
+        conv = MagicMock(ai_draft='Старый черновик', ai_draft_rejected=False, auto_send_status='scheduled')
+        MockTC.objects.filter.return_value.only.return_value.first.return_value = conv
+        mock_cache.add.side_effect = [True, False, False]
+
+        for _ in range(3):  # гость пишет три сообщения подряд
+            _enqueue_ai_draft(7)
+
+        self.assertEqual(mock_task.apply_async.call_count, 1)
+        self.assertEqual(mock_task.apply_async.call_args.kwargs['countdown'], DRAFT_REGEN_DEBOUNCE_SEC)
+        mock_task.delay.assert_not_called()
+        self.assertEqual(mock_cancel.call_count, 3)
+        self.assertEqual(mock_cancel.call_args.args[1], 'guest_wrote_again')
+
+
 class AnalyticsApiRequiresAuthTest(SimpleTestCase):
     """
     Все ручки /api/v1/analytics/* закрыты для анонима.

@@ -1273,6 +1273,19 @@ class TestimonialConversation(TimeStampedModel):
         'AI-черновик отклонён', default=False,
         help_text='Админ отклонил черновик — больше не предлагать.',
     )
+    # Актуальность черновика (09.09.2026). Черновик «свежий», пока последнее
+    # сообщение гостя — то, по которому он сгенерирован. Гость дописал →
+    # черновик устарел → перегенерация (с задержкой-дебаунсом и лимитом).
+    ai_draft_message_id = models.BigIntegerField(
+        'Черновик сгенерирован по сообщению', null=True, blank=True,
+        help_text='id последнего гостевого TestimonialMessage на момент генерации черновика. '
+                  'Пусто у старых черновиков — тогда актуальность считается по updated_at.',
+    )
+    ai_draft_auto_generations = models.PositiveSmallIntegerField(
+        'Автогенераций черновика', default=0,
+        help_text='Сколько раз ИИ сам генерировал черновик в этом треде (ручная «Перегенерировать» не считается). '
+                  'Предохранитель от расхода токенов: после лимита — только вручную.',
+    )
 
     has_unread      = models.BooleanField('Есть непрочитанные', default=True)
     is_replied      = models.BooleanField('Ответ отправлен', default=False)

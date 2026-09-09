@@ -1439,7 +1439,37 @@ def _enqueue_ai_draft(conversation_id: int) -> None:
     try:
         from django.db import connection
         from apps.tenant.analytics.tasks import auto_generate_draft_task
-        auto_generate_draft_task.delay(conversation_id, connection.schema_name)
+        schema = connection.schema_name
+
+        # Перегенерация (09.09.2026): если черновик уже есть, новое сообщение
+        # гостя делает его устаревшим. Чтобы не генерить по разу на каждое
+        # из 2–3 сообщений подряд, задача ставится с задержкой-дебаунсом и
+        # одна на тред (cache-замок; сама задача идемпотентна — лишний запуск
+        # увидит свежий маркер ai_draft_message_id и выйдет без обращения к ИИ).
+        # Первый черновик свежего треда — как раньше, сразу.
+        from apps.tenant.branch.models import TestimonialConversation
+        conv = (
+            TestimonialConversation.objects.filter(pk=conversation_id)
+            .only('id', 'ai_draft', 'ai_draft_rejected', 'auto_send_status')
+            .first()
+        )
+        if conv is not None and (conv.ai_draft or conv.ai_draft_rejected):
+            from django.core.cache import cache
+            from apps.tenant.analytics.auto_reply import (
+                DRAFT_REGEN_DEBOUNCE_SEC, cancel_auto_send,
+            )
+            # Запланированный автоответ по СТАРОМУ черновику снимаем сразу:
+            # отправлять ответ, не учитывающий новое сообщение, нельзя.
+            # Свежий план поставит сама перегенерация.
+            cancel_auto_send(conv, 'guest_wrote_again')
+            key = f'ai_draft_regen:{schema}:{conversation_id}'
+            if cache.add(key, 1, timeout=DRAFT_REGEN_DEBOUNCE_SEC):
+                auto_generate_draft_task.apply_async(
+                    args=[conversation_id, schema], countdown=DRAFT_REGEN_DEBOUNCE_SEC,
+                )
+            return
+
+        auto_generate_draft_task.delay(conversation_id, schema)
     except Exception:
         import logging
         logging.getLogger(__name__).warning(
