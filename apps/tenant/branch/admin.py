@@ -892,6 +892,9 @@ class TestimonialConversationAdmin(admin.ModelAdmin):
     readonly_fields = (
         'created_at', 'updated_at', 'last_message_at',
         'client', 'vk_sender_id', 'branch',
+        # Подсказка о точке ставится кодом (review_inference.py) — руками не правим.
+        'inferred_branch', 'inferred_table_number', 'inferred_scan_at',
+        'inferred_source', 'inferred_at',
     )
     inlines         = [TestimonialMessageInline]
 
@@ -904,6 +907,20 @@ class TestimonialConversationAdmin(admin.ModelAdmin):
         }),
         ('Статус', {
             'fields': (('has_unread', 'is_replied', 'last_message_at'),),
+        }),
+        ('Предполагаемая точка (по скану, для ВК-тредов)', {
+            'fields': (
+                ('inferred_branch', 'inferred_table_number'),
+                ('inferred_source', 'inferred_scan_at', 'inferred_at'),
+            ),
+            'description': (
+                'Подсказка, а не выбор гостя: точка (и стол) последнего скана QR '
+                'перед сообщением. Заполняется только при включённом сетевом флаге '
+                '«Точка ВК-отзыва по последнему скану» в /superadmin/ → Настройки '
+                'клиента. Негатив с такой точкой уходит в жалобы CheckUp с пометкой '
+                '«по скану». Поле «Торговая точка» она НЕ трогает.'
+            ),
+            'classes': ('collapse',),
         }),
         ('Служебное', {
             'fields': (('created_at', 'updated_at'),),

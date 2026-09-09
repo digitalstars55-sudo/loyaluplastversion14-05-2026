@@ -63,6 +63,14 @@ class ReviewListSerializer(serializers.ModelSerializer):
     # Автоответ уйдёт с кнопками Яндекс/2ГИС: флаг конфига + у точки/сети есть ссылки.
     # Сам черновик ссылок не содержит — их добавляет отправка (perform_auto_send).
     auto_send_with_links = serializers.SerializerMethodField()
+    # Предполагаемая точка (по последнему скану QR, 09.09.2026). Показывать в
+    # мобилке имеет смысл только когда своей точки нет (тред из ВК-группы), но
+    # поля отдаём ВСЕГДА — пустыми, чтобы клиент не падал на их отсутствии.
+    inferred_branch_id    = serializers.SerializerMethodField()
+    inferred_branch_name  = serializers.SerializerMethodField()
+    inferred_table_number = serializers.SerializerMethodField()
+    inferred_scan_at      = serializers.SerializerMethodField()
+    inferred_source       = serializers.SerializerMethodField()
 
     class Meta:
         model = TestimonialConversation
@@ -94,10 +102,34 @@ class ReviewListSerializer(serializers.ModelSerializer):
             'auto_send_kind',
             'auto_send_with_links',
             'ai_needs_human',
+            # Подсказка о точке для ВК-тредов: '' / null, если её нет
+            'inferred_branch_id',
+            'inferred_branch_name',
+            'inferred_table_number',
+            'inferred_scan_at',
+            # '' | qr_scan | visit
+            'inferred_source',
         ]
 
     def get_auto_send_at(self, obj) -> str | None:
         return obj.auto_send_at.isoformat() if obj.auto_send_at else None
+
+    # ── Предполагаемая точка (подсказка по скану, не выбор гостя) ─────────────
+
+    def get_inferred_branch_id(self, obj) -> int | None:
+        return obj.inferred_branch_id or None
+
+    def get_inferred_branch_name(self, obj) -> str:
+        return (obj.inferred_branch.name or '') if obj.inferred_branch_id else ''
+
+    def get_inferred_table_number(self, obj) -> int | None:
+        return obj.inferred_table_number
+
+    def get_inferred_scan_at(self, obj) -> str | None:
+        return obj.inferred_scan_at.isoformat() if obj.inferred_scan_at else None
+
+    def get_inferred_source(self, obj) -> str:
+        return obj.inferred_source or ''
 
     def get_auto_send_with_links(self, obj) -> bool:
         if not self.context.get('auto_send_attach_links'):

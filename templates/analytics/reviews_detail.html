@@ -82,6 +82,11 @@
             {% else %}VK {{ conv.vk_sender_id }}{% endif %}
           </span>
           <span class="badge bg-light text-dark border">{{ conv.branch.name }}</span>
+          {% if not conv.branch and conv.inferred_branch %}
+          {# Подсказка о точке по последнему скану QR — не выбор гостя (см. review_inference.py) #}
+          <span class="badge border" style="background:#fffbeb;color:#92400e;border-color:#fde68a;"
+                title="Точка определена по последнему скану QR гостя, а не выбрана им">📍 {{ conv.inferred_branch.name }}{% if conv.inferred_table_number %} · стол {{ conv.inferred_table_number }}{% endif %}{% if conv.inferred_scan_at %} · по скану {{ conv.inferred_scan_at|date:"d.m H:i" }}{% endif %}</span>
+          {% endif %}
           {% if conv.has_unread and not conv.is_replied %}
             <span class="badge" style="background:#f59e0b;color:#fff;font-size:10px;">Ожидает ответа</span>
           {% elif conv.is_replied %}

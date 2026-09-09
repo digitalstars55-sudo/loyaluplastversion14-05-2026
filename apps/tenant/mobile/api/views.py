@@ -88,7 +88,7 @@ class MobileReviewListAPIView(generics.ListAPIView):
         # ORDER BY DESC ставит NULL ПЕРВЫМИ — они забивали верх списка
         # пустыми карточками и прятали настоящие отзывы.
         qs = TestimonialConversation.objects.select_related(
-            'branch', 'client__client', 'vk_guest',
+            'branch', 'client__client', 'vk_guest', 'inferred_branch',
         ).prefetch_related('messages').exclude(
             last_message_at__isnull=True,
         ).order_by('-last_message_at', '-id')

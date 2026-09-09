@@ -751,3 +751,279 @@ class DraftPromptTest(SimpleTestCase):
         # Неизвестный тон — дружелюбный по умолчанию, не падаем.
         system, _ = build_draft_prompt_parts(self.FIRST, ai_tone='weird')
         self.assertIn('дружелюбный', system)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Предполагаемая точка ВК-отзыва (подсказка по последнему скану QR)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Тоже без БД: apply_branch_inference / inference_is_fresh / build_payload —
+# чистая логика, а модели и поиск скана подменяются заглушками. MagicMock для
+# conv нельзя по той же причине, что выше: любой getattr вернёт truthy-мок.
+
+from datetime import timedelta  # noqa: E402
+
+
+class _FakeInferBranch:
+    """Точка-заглушка: publiс branch_id (уходит в CheckUp) + имя."""
+
+    def __init__(self, pk=7, branch_id=101, name='Красноармейская'):
+        self.pk = pk
+        self.id = pk
+        self.branch_id = branch_id
+        self.name = name
+        self.config = None  # адреса нет → address=''
+
+
+class _FakeInferConv:
+    """Тред из ВК-группы (branch пуст). Считает вызовы save()."""
+
+    def __init__(self, **kw):
+        self.pk = 42
+        self.branch_id = None
+        self.branch = None
+        self.vk_guest_id = 555
+        self.vk_guest = object()
+        self.inferred_branch = None
+        self.inferred_branch_id = None
+        self.inferred_table_number = None
+        self.inferred_scan_at = None
+        self.inferred_source = ''
+        self.inferred_at = None
+        self.save_calls = 0
+        self.saved_fields = None
+        for key, value in kw.items():
+            setattr(self, key, value)
+
+    def save(self, update_fields=None, **kwargs):
+        self.save_calls += 1
+        self.saved_fields = list(update_fields or [])
+
+
+def _point(branch=None, table=12, scan_at=None, source='qr_scan'):
+    from apps.tenant.branch.review_inference import InferredPoint
+    return InferredPoint(
+        branch=branch if branch is not None else _FakeInferBranch(),
+        table_number=table,
+        scan_at=scan_at or dj_timezone.now(),
+        source=source,
+    )
+
+
+class BranchInferenceApplyTest(SimpleTestCase):
+    """apply_branch_inference: когда подсказка ставится, а когда тред не трогаем."""
+
+    @patch('apps.tenant.branch.review_inference.find_last_scan')
+    @patch('apps.tenant.branch.review_inference.inference_settings', return_value=(False, 24))
+    def test_flag_off_does_nothing(self, _settings, mock_find):
+        from apps.tenant.branch.review_inference import apply_branch_inference
+        conv = _FakeInferConv()
+        self.assertFalse(apply_branch_inference(conv, dj_timezone.now()))
+        mock_find.assert_not_called()
+        self.assertEqual(conv.save_calls, 0)
+
+    @patch('apps.tenant.branch.review_inference.find_last_scan')
+    @patch('apps.tenant.branch.review_inference.inference_settings', return_value=(True, 24))
+    def test_thread_with_real_branch_is_untouched(self, _settings, mock_find):
+        """У отзыва из мини-аппа точка настоящая — подсказка не нужна."""
+        from apps.tenant.branch.review_inference import apply_branch_inference
+        conv = _FakeInferConv(branch_id=3)
+        self.assertFalse(apply_branch_inference(conv, dj_timezone.now()))
+        mock_find.assert_not_called()
+        self.assertEqual(conv.save_calls, 0)
+
+    @patch('apps.tenant.branch.review_inference.find_last_scan')
+    @patch('apps.tenant.branch.review_inference.inference_settings', return_value=(True, 24))
+    def test_no_vk_guest_no_inference(self, _settings, mock_find):
+        from apps.tenant.branch.review_inference import apply_branch_inference
+        conv = _FakeInferConv(vk_guest_id=None, vk_guest=None)
+        self.assertFalse(apply_branch_inference(conv, dj_timezone.now()))
+        mock_find.assert_not_called()
+        self.assertEqual(conv.save_calls, 0)
+
+    @patch('apps.tenant.branch.review_inference.inference_settings', return_value=(True, 24))
+    def test_scan_found_fills_all_five_fields(self, _settings):
+        from apps.tenant.branch.review_inference import apply_branch_inference
+        branch = _FakeInferBranch()
+        at = dj_timezone.now()
+        scan_at = at - timedelta(minutes=40)
+        conv = _FakeInferConv()
+        with patch('apps.tenant.branch.review_inference.find_last_scan',
+                   return_value=_point(branch=branch, table=12, scan_at=scan_at)) as mock_find:
+            self.assertTrue(apply_branch_inference(conv, at))
+            mock_find.assert_called_once()
+            self.assertEqual(mock_find.call_args[0][1], at)
+        self.assertIs(conv.inferred_branch, branch)
+        self.assertEqual(conv.inferred_table_number, 12)
+        self.assertEqual(conv.inferred_scan_at, scan_at)
+        self.assertEqual(conv.inferred_source, 'qr_scan')
+        self.assertIsNotNone(conv.inferred_at)
+        self.assertEqual(conv.save_calls, 1)
+        self.assertEqual(
+            set(conv.saved_fields),
+            {'inferred_branch', 'inferred_table_number', 'inferred_scan_at',
+             'inferred_source', 'inferred_at'},
+        )
+
+    @patch('apps.tenant.branch.review_inference.find_last_scan', return_value=None)
+    @patch('apps.tenant.branch.review_inference.inference_settings', return_value=(True, 24))
+    def test_no_scan_keeps_old_hint(self, _settings, _find):
+        """Свежего скана нет — старую подсказку не стираем и в БД не ходим."""
+        from apps.tenant.branch.review_inference import apply_branch_inference
+        old_at = dj_timezone.now() - timedelta(days=3)
+        conv = _FakeInferConv(inferred_branch_id=7, inferred_scan_at=old_at,
+                              inferred_source='qr_scan')
+        self.assertFalse(apply_branch_inference(conv, dj_timezone.now()))
+        self.assertEqual(conv.save_calls, 0)
+        self.assertEqual(conv.inferred_scan_at, old_at)
+        self.assertEqual(conv.inferred_source, 'qr_scan')
+
+    @patch('apps.tenant.branch.review_inference.inference_settings',
+           side_effect=RuntimeError('БД молчит'))
+    def test_exception_never_breaks_ingest(self, _settings):
+        from apps.tenant.branch.review_inference import apply_branch_inference
+        conv = _FakeInferConv()
+        self.assertFalse(apply_branch_inference(conv, dj_timezone.now()))
+        self.assertEqual(conv.save_calls, 0)
+
+
+class BranchInferenceFreshnessTest(SimpleTestCase):
+    """inference_is_fresh: подсказка годится только внутри окна."""
+
+    def test_fresh_hint(self):
+        from apps.tenant.branch.review_inference import inference_is_fresh
+        at = dj_timezone.now()
+        conv = _FakeInferConv(inferred_branch_id=7, inferred_scan_at=at - timedelta(hours=2))
+        self.assertTrue(inference_is_fresh(conv, at, 24))
+
+    def test_stale_hint(self):
+        from apps.tenant.branch.review_inference import inference_is_fresh
+        at = dj_timezone.now()
+        conv = _FakeInferConv(inferred_branch_id=7, inferred_scan_at=at - timedelta(hours=30))
+        self.assertFalse(inference_is_fresh(conv, at, 24))
+
+    def test_no_hint_at_all(self):
+        from apps.tenant.branch.review_inference import inference_is_fresh
+        at = dj_timezone.now()
+        self.assertFalse(inference_is_fresh(_FakeInferConv(), at, 24))
+        # Точка есть, а времени скана нет — тоже не подсказка.
+        self.assertFalse(inference_is_fresh(_FakeInferConv(inferred_branch_id=7), at, 24))
+
+
+class _FakeRelayMsg:
+    def __init__(self, text='', source='VK_MESSAGE', created_at=None, rating=None,
+                 phone='', table_number=None, pk=1):
+        self.pk = pk
+        self.id = pk
+        self.text = text
+        self.source = source
+        self.created_at = created_at or dj_timezone.now()
+        self.rating = rating
+        self.phone = phone
+        self.table_number = table_number
+
+    def display_attachments(self):
+        return []
+
+
+class _FakeRelayMessages:
+    """Мини-queryset треда: filter(pk=)/filter(source__in=) → order_by → first / итерация."""
+
+    def __init__(self, msgs):
+        self._msgs = list(msgs)
+
+    def filter(self, **kw):
+        items = self._msgs
+        if 'pk' in kw:
+            items = [m for m in items if m.pk == kw['pk']]
+        if 'source__in' in kw:
+            allowed = list(kw['source__in'])
+            items = [m for m in items if m.source in allowed]
+        return _FakeRelayMessages(items)
+
+    def order_by(self, *args):
+        desc = bool(args and str(args[0]).startswith('-'))
+        return _FakeRelayMessages(
+            sorted(self._msgs, key=lambda m: (m.created_at, m.pk), reverse=desc)
+        )
+
+    def first(self):
+        return self._msgs[0] if self._msgs else None
+
+    def __iter__(self):
+        return iter(self._msgs)
+
+
+class _FakeRelayConv(_FakeInferConv):
+    """Тред для build_payload: тональность + сообщения."""
+
+    def __init__(self, **kw):
+        msgs = kw.pop('msgs', None)
+        super().__init__(**kw)
+        self.sentiment = kw.get('sentiment', 'NEGATIVE')
+        self.client_id = None
+        self.client = None
+        self.vk_guest_id = None
+        self.vk_guest = None
+        self.messages = _FakeRelayMessages(
+            msgs if msgs is not None else [_FakeRelayMsg(text='Ужасно долго несли заказ')]
+        )
+
+
+@override_settings(CHECKUP_COMPLAINTS_RELAY_UNPOINTED=False)
+@patch('apps.shared.relay.checkup_complaints._inference_window_hours', return_value=24)
+class CheckupPayloadWithInferredPointTest(SimpleTestCase):
+    """build_payload: подсказка о точке открывает ВК-негативу дорогу в CheckUp."""
+
+    def test_vk_negative_without_hint_is_not_sent(self, _hours):
+        from apps.shared.relay.checkup_complaints import build_payload
+        self.assertIsNone(build_payload(_FakeRelayConv(), 'levone'))
+
+    def test_fresh_hint_becomes_the_point(self, _hours):
+        from apps.shared.relay.checkup_complaints import build_payload
+        branch = _FakeInferBranch()
+        at = dj_timezone.now()
+        conv = _FakeRelayConv(
+            msgs=[_FakeRelayMsg(text='Ужасно долго несли заказ', created_at=at)],
+            inferred_branch=branch, inferred_branch_id=branch.pk,
+            inferred_table_number=12, inferred_scan_at=at - timedelta(hours=1),
+            inferred_source='qr_scan',
+        )
+        payload = build_payload(conv, 'levone')
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload['point_id'], '101')
+        self.assertEqual(payload['point_name'], 'Красноармейская')
+        self.assertTrue(payload['point_inferred'])
+        self.assertEqual(payload['point_inferred_source'], 'qr_scan')
+        self.assertEqual(payload['point_inferred_scan_at'],
+                         (at - timedelta(hours=1)).isoformat())
+        self.assertEqual(payload['table_number'], 12)
+        self.assertEqual(payload['text'], 'Ужасно долго несли заказ')
+
+    def test_stale_hint_is_not_a_point(self, _hours):
+        from apps.shared.relay.checkup_complaints import build_payload
+        at = dj_timezone.now()
+        conv = _FakeRelayConv(
+            msgs=[_FakeRelayMsg(text='Ужасно долго несли заказ', created_at=at)],
+            inferred_branch=_FakeInferBranch(), inferred_branch_id=7,
+            inferred_table_number=12, inferred_scan_at=at - timedelta(hours=30),
+            inferred_source='qr_scan',
+        )
+        self.assertIsNone(build_payload(conv, 'levone'))
+
+    def test_app_review_with_real_point_is_not_marked_inferred(self, _hours):
+        from apps.shared.relay.checkup_complaints import build_payload
+        branch = _FakeInferBranch(branch_id=202, name='Институтская')
+        conv = _FakeRelayConv(
+            branch_id=branch.pk, branch=branch,
+            msgs=[_FakeRelayMsg(text='Холодный суп', source='APP', rating=2,
+                                table_number=5, phone='+79990000000')],
+        )
+        payload = build_payload(conv, 'levone')
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload['point_id'], '202')
+        self.assertFalse(payload['point_inferred'])
+        self.assertEqual(payload['point_inferred_source'], '')
+        self.assertIsNone(payload['point_inferred_scan_at'])
+        self.assertEqual(payload['table_number'], 5)
+        self.assertEqual(payload['rating'], 2)

@@ -772,7 +772,9 @@ class ReviewsDetailView(View):
         qs = TestimonialConversation.objects.filter(
             last_message_at__date__gte=start,
             last_message_at__date__lte=end,
-        ).select_related('branch', 'client__client', 'vk_guest').prefetch_related('messages')
+        ).select_related(
+            'branch', 'client__client', 'vk_guest', 'inferred_branch',
+        ).prefetch_related('messages')
         if branch_ids:
             qs = qs.filter(branch_id__in=branch_ids)
         if sentiment:

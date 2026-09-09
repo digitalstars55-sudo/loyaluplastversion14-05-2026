@@ -48,8 +48,18 @@ POSITIVE / NEUTRAL / SPAM не отправляются никогда.
 
 Такие «бесточечные» жалобы можно включить отдельно
 (`CHECKUP_COMPLAINTS_RELAY_UNPOINTED=1`) — тогда они лягут в CheckUp
-в «Без филиала», и разбирающийся привяжет точку руками. Молчаливой
-догадки о точке нет и не будет.
+в «Без филиала», и разбирающийся привяжет точку руками.
+
+С 09.09.2026 у бесточечного треда может быть ПОДСКАЗКА о точке: если
+гость незадолго до сообщения сканировал QR, точка (и стол) последнего
+скана лежат в `TestimonialConversation.inferred_*` (см.
+`apps/tenant/branch/review_inference.py`). Подсказка включается
+пер-тенантно (`ClientConfig.vk_review_branch_inference`, по умолчанию
+ВЫКЛ) и годится только внутри окна `vk_review_branch_inference_hours`
+(24 ч): протухшая = точки нет, жалоба не уходит. Такая жалоба уезжает с
+`point_inferred=True` и `point_inferred_source` — в CheckUp сразу видно,
+что точку определил скан, а не гость. Молчаливой догадки по-прежнему
+нет: без флага поведение ровно прежнее, и подсказка всегда помечена.
 
 В payload точка уходит ТРЕМЯ полями сразу:
   point_id  — `Branch.branch_id` (публичный ID точки, тот же, что в QR),
@@ -158,6 +168,20 @@ def _guest_name(conv) -> str:
     return ''
 
 
+def _inference_window_hours(schema_name: str) -> int:
+    """Окно свежести подсказки о точке (часы) — из ClientConfig тенанта."""
+    from apps.tenant.branch.review_inference import DEFAULT_WINDOW_HOURS
+    try:
+        from apps.shared.config.models import ClientConfig
+        hours = (ClientConfig.objects
+                 .filter(company__schema_name=schema_name)
+                 .values_list('vk_review_branch_inference_hours', flat=True)
+                 .first())
+        return int(hours or DEFAULT_WINDOW_HOURS) or DEFAULT_WINDOW_HOURS
+    except Exception:
+        return DEFAULT_WINDOW_HOURS
+
+
 def build_payload(conv, schema_name: str, message_id: int | None = None) -> dict | None:
     """Собрать payload жалобы или вернуть None, если отправлять нечего.
 
@@ -188,6 +212,15 @@ def build_payload(conv, schema_name: str, message_id: int | None = None) -> dict
 
     # ── точка ─────────────────────────────────────────────────────
     branch = conv.branch if conv.branch_id else None
+    point_inferred = False
+    if branch is None and getattr(conv, 'inferred_branch_id', None):
+        # Подсказка по последнему скану QR (см. шапку модуля). Берём её
+        # только пока скан свежий по окну тенанта — протухшая подсказка
+        # точкой не считается.
+        from apps.tenant.branch.review_inference import inference_is_fresh
+        if inference_is_fresh(conv, msg.created_at, _inference_window_hours(schema_name)):
+            branch = conv.inferred_branch
+            point_inferred = True
     if branch is None and not _conf('CHECKUP_COMPLAINTS_RELAY_UNPOINTED', False):
         # Точки нет и угадывать её нельзя — см. шапку модуля.
         return None
@@ -228,6 +261,17 @@ def build_payload(conv, schema_name: str, message_id: int | None = None) -> dict
         # Жалоба-фотография без слов: пустой text приёмник отбивает 400.
         text = '(гость прислал фото без текста)'
 
+    # Стол: у отзыва из мини-аппа — свой, у подсказки — стол QR «Отзыв со стола».
+    table_number = msg.table_number if msg.table_number not in (None, '') else None
+    if table_number is None and point_inferred:
+        table_number = conv.inferred_table_number
+    try:
+        table_number = int(table_number) if table_number not in (None, '') else None
+    except (TypeError, ValueError):
+        table_number = None
+
+    scan_at = getattr(conv, 'inferred_scan_at', None)
+
     return {
         'tenant_schema': schema_name,
         'complaint_id':  f'{conv.pk}-{bucket}',
@@ -240,6 +284,11 @@ def build_payload(conv, schema_name: str, message_id: int | None = None) -> dict
         'guest_name':    _guest_name(conv),
         'guest_phone':   (phone or '')[:50],
         'photos':        photos[:MAX_PHOTOS],
+        # Точка — подсказка по скану, а не выбор гостя (см. шапку модуля).
+        'point_inferred':          point_inferred,
+        'point_inferred_source':   getattr(conv, 'inferred_source', '') or '',
+        'point_inferred_scan_at':  scan_at.isoformat() if scan_at else None,
+        'table_number':            table_number,
     }
 
 
@@ -270,7 +319,7 @@ def relay_complaint_to_checkup_task(self, conversation_id: int, schema_name: str
     try:
         with schema_context(schema_name):
             conv = (TestimonialConversation.objects
-                    .select_related('branch', 'client', 'vk_guest')
+                    .select_related('branch', 'client', 'vk_guest', 'inferred_branch')
                     .filter(pk=conversation_id).first())
             if conv is None:
                 return {'skipped': True, 'reason': 'conversation_gone'}

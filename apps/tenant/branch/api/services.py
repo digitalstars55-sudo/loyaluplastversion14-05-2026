@@ -1647,6 +1647,14 @@ def handle_vk_incoming_message(
         conv.is_replied = False
         conv.save(update_fields=['has_unread', 'is_replied', 'last_message_at'])
 
+        # Предполагаемая точка (09.09.2026). У ВК-тредов branch=None (группа
+        # одна на сеть), поэтому подставляем точку последнего скана QR как
+        # ПОДСКАЗКУ в отдельные поля inferred_* — с ней негатив уезжает в
+        # жалобы CheckUp с пометкой «по скану». Работает только под флагом
+        # тенанта и никогда не роняет приём сообщения. Историю не трогаем.
+        from apps.tenant.branch.review_inference import apply_branch_inference
+        apply_branch_inference(conv, effective_dt)
+
         # AI-классификация и пуш — ТОЛЬКО для свежих сообщений.
         if text:
             from apps.tenant.analytics.ai_service import analyze_and_save

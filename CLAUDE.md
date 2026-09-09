@@ -262,6 +262,36 @@ NEGATIVE / PARTIALLY_NEGATIVE за `auto_ack_delay_minutes` (30) никто не
 `AuditLog` с `AUTO_REPLY_SENT` / `AUTO_REPLY_CANCEL`, пуши `auto_reply_pending` /
 `auto_reply_sent`, `TestimonialMessage.is_ai_generated`.
 
+**Предполагаемая точка ВК-отзыва (09.09.2026).** ВК-группа одна на всю сеть →
+тред из группы создаётся с `branch=None`, и негатив из ВК не уезжал в жалобы
+CheckUp (`build_payload` возвращал None). Теперь берём точку последнего скана
+гостя как ПОДСКАЗКУ: `apps/tenant/branch/review_inference.py`
+(`inference_settings` / `find_last_scan` / `apply_branch_inference` /
+`inference_is_fresh`) ищет свежий `QRScan` (точка + стол + время), иначе
+`ClientBranchVisit`, и кладёт результат в `TestimonialConversation.inferred_branch
+/ inferred_table_number / inferred_scan_at / inferred_source (qr_scan|visit) /
+inferred_at`. **Поле `branch` не трогаем никогда** — это подсказка, а не выбор
+гостя. Вызов один: `handle_vk_incoming_message`, ветка НЕисторического сообщения,
+до `analyze_and_save` (исторический импорт не трогаем); всё в try/except —
+приём сообщения важнее подсказки.
+
+Флаг пер-тенантный, **по умолчанию выключено**:
+`ClientConfig.vk_review_branch_inference` + окно
+`vk_review_branch_inference_hours` (24 ч) в `/superadmin/` → «Настройки клиента»
+→ «Отзывы из ВК: точка по последнему скану». **Как выключить:** снять флаг —
+новые треды подсказку не получают, старые её просто показывают (в жалобы она
+уйдёт только пока свежая). Вне окна ничего не угадываем; если свежего скана нет,
+старую подсказку не стираем — у неё видна дата скана.
+
+В CheckUp такая жалоба уходит с точкой подсказки (`point_id`/`point_name`/
+`address` как обычно) плюс ВСЕГДА присутствующие ключи `point_inferred`,
+`point_inferred_source`, `point_inferred_scan_at`, `table_number` (у отзыва из
+мини-аппа — стол сообщения, у подсказки — стол QR «Отзыв со стола»). Протухшая
+подсказка = точки нет, поведение прежнее (`CHECKUP_COMPLAINTS_RELAY_UNPOINTED`).
+Видно: бейдж «📍 точка · стол N · по скану ДД.ММ ЧЧ:ММ» в `/analytics/reviews/`,
+поля `inferred_*` в мобильном API отзывов, отдельный (readonly) блок в
+`/admin/` у треда. Тесты — `BranchInference*` в `apps/tenant/analytics/tests.py`.
+
 ## Локальная разработка
 
 ```bash

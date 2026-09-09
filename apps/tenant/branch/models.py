@@ -1334,6 +1334,35 @@ class TestimonialConversation(TimeStampedModel):
         help_text='sha256 черновика на момент планирования. Если черновик изменили — автоотправка отменяется.',
     )
 
+    # ── Предполагаемая точка для ВК-тредов (09.09.2026) ────────────────────────
+    # ВК-группа одна на всю сеть, поэтому у тредов из группы branch=None, и
+    # негатив из ВК не уезжал в жалобы CheckUp («жалоба без филиала»). Если
+    # гость незадолго до сообщения сканировал QR — берём точку (и стол) оттуда.
+    # Это ПОДСКАЗКА, а не выбор гостя: заполняется только при включённом
+    # ClientConfig.vk_review_branch_inference и только внутри окна поиска.
+    inferred_branch = models.ForeignKey(
+        Branch,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='inferred_testimonials',
+        verbose_name='Предполагаемая точка (по скану)',
+        help_text='Для тредов из ВК-группы (branch пуст): точка последнего скана гостя перед сообщением. '
+                  'Это подсказка, а не выбор гостя.',
+    )
+    inferred_table_number = models.PositiveIntegerField(
+        'Стол (по скану)', null=True, blank=True,
+    )
+    inferred_scan_at = models.DateTimeField(
+        'Время скана', null=True, blank=True,
+    )
+    inferred_source = models.CharField(
+        'Источник подсказки', max_length=12, blank=True, default='',
+        choices=[('qr_scan', 'скан QR'), ('visit', 'визит')],
+    )
+    inferred_at = models.DateTimeField(
+        'Когда определили', null=True, blank=True,
+    )
+
     @property
     def auto_send_reason_human(self) -> str:
         """Русская расшифровка auto_send_reason — для шаблонов админки."""
