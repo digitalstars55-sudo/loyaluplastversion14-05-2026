@@ -160,7 +160,9 @@ class AutoAckPrecheckTest(SimpleTestCase):
     """auto_ack_precheck (автоподтверждение на негатив): по проверке на причину."""
 
     def _neg(self, **kw):
-        return _FakeConv(sentiment='PARTIALLY_NEGATIVE', ai_draft='', **kw)
+        base = {'sentiment': 'PARTIALLY_NEGATIVE', 'ai_draft': ''}
+        base.update(kw)
+        return _FakeConv(**base)
 
     def test_negative_ok(self, *_):
         from apps.tenant.analytics.auto_reply import auto_ack_precheck
