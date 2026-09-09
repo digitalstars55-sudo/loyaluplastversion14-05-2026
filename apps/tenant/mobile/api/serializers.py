@@ -87,6 +87,8 @@ class ReviewListSerializer(serializers.ModelSerializer):
             'auto_send_status',
             'auto_send_at',
             'auto_send_reason',
+            # '' | reply | ack — что именно запланировано/отправлено
+            'auto_send_kind',
             'ai_needs_human',
         ]
 

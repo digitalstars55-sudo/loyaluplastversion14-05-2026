@@ -447,6 +447,11 @@ AUTO_SEND_REASON_LABELS: dict[str, str] = {
     'cancelled_by_user': 'отменено сотрудником',
     'guest_wrote_again': 'гость написал ещё — черновик обновляется',
     'superseded':        'заменено более новым планом автоответа',
+    'not_negative':      'отзыв не негативный — подтверждение не нужно',
+    'no_ack_text':       'текст подтверждения пустой',
+    'already_acked':     'подтверждение в этом треде уже отправлено',
+    'already_scheduled': 'автоответ уже запланирован',
+    'already_sent':      'автоответ в этом треде уже отправлен',
     'schedule_failed':   'не удалось поставить задачу в очередь',
     'not_found':         'отзыв не найден',
     'quiet_hours':       'тихие часы — перенесено на утро',
@@ -578,6 +583,59 @@ def auto_send_precheck(conv, cfg) -> tuple[bool, str]:
     return (True, '')
 
 
+# ── Автоподтверждение на негатив («спасибо, разберёмся») ───────────────────
+# Полный ответ на негатив пишет человек. Если за auto_ack_delay_minutes никто
+# не ответил, ИИ шлёт короткую фразу из настроек — без обещаний, без ИИ-текста.
+# Тред остаётся НЕотвеченным (mark_replied=False), черновик и напоминания живут.
+AUTO_SEND_KIND_REPLY = 'reply'
+AUTO_SEND_KIND_ACK = 'ack'
+DEFAULT_AUTO_ACK_TEXT = (
+    'Спасибо большое за обратную связь 🙏 Мы сейчас во всём разберёмся '
+    'и обязательно вернёмся к вам с ответом.'
+)
+_ACK_SENTIMENTS = ('NEGATIVE', 'PARTIALLY_NEGATIVE')
+
+
+def _ack_already_sent(conv) -> bool:
+    """В треде уже есть сообщение от ИИ (подтверждение или автоответ) — второе не шлём."""
+    try:
+        from apps.tenant.branch.models import TestimonialMessage
+        return TestimonialMessage.objects.filter(
+            conversation_id=conv.pk, is_ai_generated=True,
+        ).exists()
+    except Exception:
+        return False
+
+
+def auto_ack_precheck(conv, cfg) -> tuple[bool, str]:
+    """Гварды автоподтверждения одним местом. Возвращает (можно, причина)."""
+    if cfg is None or not getattr(cfg, 'auto_ack_enabled', False):
+        return (False, 'config_off')
+    if (getattr(conv, 'sentiment', '') or '').upper() not in _ACK_SENTIMENTS:
+        return (False, 'not_negative')
+    if getattr(conv, 'is_replied', False):
+        return (False, 'manual_reply')
+    if not str(getattr(conv, 'vk_sender_id', '') or '').strip():
+        return (False, 'no_vk_sender')
+    if not (getattr(cfg, 'auto_ack_text', '') or '').strip():
+        return (False, 'no_ack_text')
+
+    branch_id = getattr(conv, 'branch_id', None)
+    if branch_id:
+        bmap = getattr(cfg, 'auto_send_branch_enabled', None) or {}
+        if bmap.get(str(branch_id)) is False or bmap.get(branch_id) is False:
+            return (False, 'branch_disabled')
+
+    if _ack_already_sent(conv):
+        return (False, 'already_acked')
+
+    limit = int(getattr(cfg, 'auto_send_daily_limit', 0) or 0)
+    if limit > 0 and _auto_sent_today_count() >= limit:
+        return (False, 'daily_limit')
+
+    return (True, '')
+
+
 def build_review_links_keyboard(conv) -> dict | None:
     """
     VK inline-клавиатура со ссылками «оставьте отзыв»: ссылки точки, а если
@@ -683,20 +741,48 @@ def schedule_auto_send(conversation_id: int, schema_name: str = '') -> dict:
     if conv is None:
         return {'scheduled': False, 'reason': 'not_found'}
 
+    # Один автоответ на тред: уже запланирован / уже отправлен — не трогаем.
+    current = (conv.auto_send_status or '')
+    if current == S.SCHEDULED:
+        return {'scheduled': False, 'reason': 'already_scheduled'}
+    if current == S.SENT:
+        return {'scheduled': False, 'reason': 'already_sent'}
+
     cfg = ReviewAutoReplyConfig.get_singleton()
+
+    # Что планируем: полный ответ ИИ (позитив) или подтверждение «разберёмся»
+    # (негатив). Сначала — ответ; если он невозможен, пробуем подтверждение.
+    kind = AUTO_SEND_KIND_REPLY
     ok, reason = auto_send_precheck(conv, cfg)
     if not ok:
-        # config_off = владелец автоотправку не включал. Статус НЕ трогаем,
-        # чтобы у таких тенантов поле оставалось пустым (и в UI ничего не лезло).
-        if reason != 'config_off':
-            _set_auto_send(conversation_id, S.SKIPPED, reason, auto_send_at=None)
-        return {'scheduled': False, 'reason': reason}
+        ack_ok, ack_reason = auto_ack_precheck(conv, cfg)
+        if ack_ok:
+            kind, ok, reason = AUTO_SEND_KIND_ACK, True, ''
+        else:
+            sent_key = (conv.sentiment or '').upper()
+            # Какую причину показать в UI: ту, что относится к тональности треда.
+            # config_off = владелец режим не включал — статус НЕ трогаем, чтобы
+            # у таких тенантов поле оставалось пустым (и в UI ничего не лезло).
+            if sent_key in _ACK_SENTIMENTS and ack_reason != 'config_off':
+                reason = ack_reason
+            if reason != 'config_off':
+                _set_auto_send(conversation_id, S.SKIPPED, reason, auto_send_at=None)
+            return {'scheduled': False, 'reason': reason}
 
-    send_at = compute_auto_send_time(timezone.now(), cfg.auto_send_delay_minutes)
+    if kind == AUTO_SEND_KIND_ACK:
+        delay_minutes = cfg.auto_ack_delay_minutes
+        # Для подтверждения «билет» задачи — хеш текста подтверждения.
+        ticket = draft_hash((cfg.auto_ack_text or DEFAULT_AUTO_ACK_TEXT).strip())
+    else:
+        delay_minutes = cfg.auto_send_delay_minutes
+        ticket = draft_hash(conv.ai_draft)
+
+    send_at = compute_auto_send_time(timezone.now(), delay_minutes)
     _set_auto_send(
         conversation_id, S.SCHEDULED, '',
         auto_send_at=send_at,
-        auto_send_draft_hash=draft_hash(conv.ai_draft),
+        auto_send_draft_hash=ticket,
+        auto_send_kind=kind,
     )
 
     try:
@@ -705,7 +791,7 @@ def schedule_auto_send(conversation_id: int, schema_name: str = '') -> dict:
             args=[conversation_id, schema_name],
             # Хеш = «билет» этого плана: если черновик перегенерировали и
             # запланировали заново, старая задача увидит чужой хеш и уйдёт.
-            kwargs={'expected_hash': draft_hash(conv.ai_draft)},
+            kwargs={'expected_hash': ticket},
             eta=send_at,
         )
     except Exception:
@@ -718,8 +804,11 @@ def schedule_auto_send(conversation_id: int, schema_name: str = '') -> dict:
         _set_auto_send(conversation_id, '', 'schedule_failed', auto_send_at=None)
         return {'scheduled': False, 'reason': 'schedule_failed'}
 
-    delay = int(cfg.auto_send_delay_minutes or 0)
-    preview = (conv.ai_draft or '')[:90]
+    delay = int(delay_minutes or 0)
+    if kind == AUTO_SEND_KIND_ACK:
+        preview = (cfg.auto_ack_text or DEFAULT_AUTO_ACK_TEXT).strip()[:90]
+    else:
+        preview = (conv.ai_draft or '')[:90]
     tenant_name = _tenant_name(schema_name)
 
     if _in_review_quiet_hours():
@@ -730,6 +819,7 @@ def schedule_auto_send(conversation_id: int, schema_name: str = '') -> dict:
             from apps.tenant.analytics.tasks import auto_send_pending_push_task
             auto_send_pending_push_task.apply_async(
                 args=[conversation_id, schema_name, send_at.isoformat(), preview],
+                kwargs={'kind': kind},
                 eta=push_at,
             )
             push_result = {'sent': 0, 'reason': 'deferred', 'push_at': push_at.isoformat()}
@@ -739,14 +829,14 @@ def schedule_auto_send(conversation_id: int, schema_name: str = '') -> dict:
     else:
         push_result = push_auto_reply_pending(
             schema_name, tenant_name, conversation_id, send_at,
-            preview=preview, branch_id=conv.branch_id,
+            preview=preview, branch_id=conv.branch_id, kind=kind,
         )
 
     logger.info(
-        'auto_send запланирован conv=%s schema=%s at=%s',
-        conversation_id, schema_name, send_at.isoformat(),
+        'auto_send запланирован conv=%s schema=%s kind=%s at=%s',
+        conversation_id, schema_name, kind, send_at.isoformat(),
     )
-    return {'scheduled': True, 'send_at': send_at.isoformat(), 'push': push_result}
+    return {'scheduled': True, 'kind': kind, 'send_at': send_at.isoformat(), 'push': push_result}
 
 
 def _log_auto_send_audit(conv, text: str) -> None:
@@ -765,6 +855,80 @@ def _log_auto_send_audit(conv, text: str) -> None:
         )
     except Exception:
         logger.warning('AuditLog AUTO_REPLY_SENT failed conv=%s', conv.pk, exc_info=True)
+
+
+def _perform_auto_ack(conv, cfg, schema_name: str, tenant_name: str) -> dict:
+    """Отправка автоподтверждения (kind='ack'). Вызывается из perform_auto_send."""
+    from apps.tenant.branch.models import TestimonialConversation
+    S = TestimonialConversation.AutoSendStatus
+    conversation_id = conv.pk
+
+    ok, reason = auto_ack_precheck(conv, cfg)
+    if not ok:
+        _set_auto_send(conversation_id, S.SKIPPED, reason)
+        return {'sent': False, 'reason': reason, 'kind': AUTO_SEND_KIND_ACK}
+
+    if _in_review_quiet_hours():
+        new_at = compute_auto_send_time(timezone.now(), cfg.auto_ack_delay_minutes)
+        _set_auto_send(conversation_id, S.SCHEDULED, '', auto_send_at=new_at)
+        try:
+            from apps.tenant.analytics.tasks import auto_send_review_reply_task
+            auto_send_review_reply_task.apply_async(
+                args=[conversation_id, schema_name],
+                kwargs={'expected_hash': conv.auto_send_draft_hash or ''},
+                eta=new_at,
+            )
+        except Exception:
+            logger.warning('auto_ack reschedule failed conv=%s', conversation_id, exc_info=True)
+        return {'sent': False, 'reason': 'quiet_hours', 'rescheduled_to': new_at.isoformat()}
+
+    text = (cfg.auto_ack_text or DEFAULT_AUTO_ACK_TEXT).strip()
+    from apps.tenant.branch.api.services import send_vk_reply
+    try:
+        send_vk_reply(
+            conv, text,
+            sender_name='ИИ-ассистент',
+            is_ai_generated=True,
+            mark_replied=False,   # по существу ответит человек — тред остаётся открытым
+        )
+    except Exception as e:
+        _set_auto_send(conversation_id, S.FAILED, f'vk_error: {e}'[:120])
+        logger.warning('auto_ack: VK отказал conv=%s: %s', conversation_id, e)
+        return {'sent': False, 'reason': 'vk_error', 'error': str(e), 'kind': AUTO_SEND_KIND_ACK}
+
+    _set_auto_send(conversation_id, S.SENT, '', auto_send_at=timezone.now())
+    _log_auto_send_audit(conv, 'Автоподтверждение: ' + text)
+    push_result = push_auto_reply_sent(
+        schema_name, tenant_name, conversation_id,
+        preview=text[:90], branch_id=conv.branch_id, kind=AUTO_SEND_KIND_ACK,
+    )
+    logger.info('auto_ack ОТПРАВЛЕН conv=%s schema=%s', conversation_id, schema_name)
+    return {'sent': True, 'kind': AUTO_SEND_KIND_ACK, 'push': push_result}
+
+
+def schedule_auto_ack_if_applicable(conversation_id: int, schema_name: str = '') -> dict | None:
+    """
+    Дешёвая идемпотентная проверка для пути «черновика нет/не нужен»:
+    негативному отзыву при включённом auto_ack_enabled подтверждение полагается
+    независимо от черновика. Возвращает результат schedule_auto_send или None,
+    если планировать нечего (ничего в БД не трогает).
+    """
+    from apps.tenant.branch.models import TestimonialConversation, ReviewAutoReplyConfig
+    S = TestimonialConversation.AutoSendStatus
+    conv = (
+        TestimonialConversation.objects.filter(pk=conversation_id)
+        .only('id', 'sentiment', 'auto_send_status', 'is_replied').first()
+    )
+    if conv is None or conv.is_replied:
+        return None
+    if (conv.sentiment or '').upper() not in _ACK_SENTIMENTS:
+        return None
+    if (conv.auto_send_status or '') in (S.SCHEDULED, S.SENT):
+        return None
+    cfg = ReviewAutoReplyConfig.get_singleton()
+    if not cfg.auto_ack_enabled:
+        return None
+    return schedule_auto_send(conversation_id, schema_name)
 
 
 def perform_auto_send(conversation_id: int, schema_name: str, expected_hash: str = '') -> dict:
@@ -797,6 +961,11 @@ def perform_auto_send(conversation_id: int, schema_name: str, expected_hash: str
 
     cfg = ReviewAutoReplyConfig.get_singleton()
     tenant_name = _tenant_name(schema_name)
+
+    # Автоподтверждение на негатив — своя ветка: другой текст, без кнопок,
+    # без хеша черновика, тред остаётся неотвеченным.
+    if (getattr(conv, 'auto_send_kind', '') or '') == AUTO_SEND_KIND_ACK:
+        return _perform_auto_ack(conv, cfg, schema_name, tenant_name)
 
     ok, reason = auto_send_precheck(conv, cfg)
     if not ok:
@@ -864,9 +1033,11 @@ def push_auto_reply_pending(
     send_at,
     preview: str = '',
     branch_id: int | None = None,
+    kind: str = 'reply',
 ) -> dict:
     """
     Push 'auto_reply_pending' — «ИИ ответит гостю в 14:35», окно на отмену.
+    kind='ack' — «ИИ напишет гостю «разберёмся» в 14:35» (негатив).
     Тихие часы уважаем так же, как в push_draft_ready (журнал пишется всегда).
     """
     admin_users, tokens = _resolve_push_recipients(
@@ -877,11 +1048,17 @@ def push_auto_reply_pending(
         at_human = timezone.localtime(send_at).strftime('%H:%M')
     except Exception:
         at_human = ''
-    title = f'🤖 ИИ ответит гостю в {at_human}' if at_human else '🤖 ИИ ответит гостю'
-    body = (preview or f'{tenant_name}: черновик готов, отправка по таймеру.')[:200]
+    if kind == AUTO_SEND_KIND_ACK:
+        title = (f'🤖 ИИ напишет гостю «разберёмся» в {at_human}' if at_human
+                 else '🤖 ИИ напишет гостю «разберёмся»')
+        body = (preview or f'{tenant_name}: негативный отзыв без ответа — ответьте сами или ИИ подтвердит получение.')[:200]
+    else:
+        title = f'🤖 ИИ ответит гостю в {at_human}' if at_human else '🤖 ИИ ответит гостю'
+        body = (preview or f'{tenant_name}: черновик готов, отправка по таймеру.')[:200]
     data = {
         'type': 'auto_reply_pending',
         'review_id': conversation_id,
+        'kind': kind,
         'send_at': send_at.isoformat() if hasattr(send_at, 'isoformat') else str(send_at),
     }
 
@@ -901,15 +1078,20 @@ def push_auto_reply_sent(
     conversation_id: int,
     preview: str = '',
     branch_id: int | None = None,
+    kind: str = 'reply',
 ) -> dict:
-    """Push 'auto_reply_sent' — «ИИ ответил гостю» + начало текста."""
+    """Push 'auto_reply_sent' — «ИИ ответил гостю» + начало текста. kind='ack' — подтверждение."""
     admin_users, tokens = _resolve_push_recipients(
         schema_name, 'auto_reply_sent', branch_id=branch_id,
     )
 
-    title = '🤖 ИИ ответил гостю'
-    body = (preview or f'{tenant_name}: автоответ отправлен.')[:200]
-    data = {'type': 'auto_reply_sent', 'review_id': conversation_id}
+    if kind == AUTO_SEND_KIND_ACK:
+        title = '🤖 ИИ подтвердил получение — ответьте гостю'
+        body = (preview or f'{tenant_name}: гостю ушло «спасибо, разберёмся», по существу ответьте сами.')[:200]
+    else:
+        title = '🤖 ИИ ответил гостю'
+        body = (preview or f'{tenant_name}: автоответ отправлен.')[:200]
+    data = {'type': 'auto_reply_sent', 'review_id': conversation_id, 'kind': kind}
 
     from apps.shared.users.push import send_expo_push, log_notification
     log_notification(admin_users, 'auto_reply_sent', title, body, data)

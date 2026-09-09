@@ -147,8 +147,67 @@ class _FakeCfg:
         self.auto_send_links_text = 'Будем рады отзыву — кнопки ниже'
         self.auto_send_daily_limit = 50
         self.auto_send_branch_enabled = {}
+        self.auto_ack_enabled = True
+        self.auto_ack_delay_minutes = 30
+        self.auto_ack_text = 'Спасибо большое за обратную связь 🙏 Мы во всём разберёмся и вернёмся с ответом.'
         for key, value in kw.items():
             setattr(self, key, value)
+
+
+@patch('apps.tenant.analytics.auto_reply._ack_already_sent', return_value=False)
+@patch('apps.tenant.analytics.auto_reply._auto_sent_today_count', return_value=0)
+class AutoAckPrecheckTest(SimpleTestCase):
+    """auto_ack_precheck (автоподтверждение на негатив): по проверке на причину."""
+
+    def _neg(self, **kw):
+        return _FakeConv(sentiment='PARTIALLY_NEGATIVE', ai_draft='', **kw)
+
+    def test_negative_ok(self, *_):
+        from apps.tenant.analytics.auto_reply import auto_ack_precheck
+        self.assertEqual(auto_ack_precheck(self._neg(), _FakeCfg()), (True, ''))
+        self.assertEqual(auto_ack_precheck(self._neg(sentiment='NEGATIVE'), _FakeCfg()), (True, ''))
+
+    def test_config_off(self, *_):
+        from apps.tenant.analytics.auto_reply import auto_ack_precheck
+        self.assertEqual(auto_ack_precheck(self._neg(), _FakeCfg(auto_ack_enabled=False)), (False, 'config_off'))
+
+    def test_positive_and_neutral_are_not_acked(self, *_):
+        from apps.tenant.analytics.auto_reply import auto_ack_precheck
+        self.assertEqual(auto_ack_precheck(self._neg(sentiment='POSITIVE'), _FakeCfg()), (False, 'not_negative'))
+        self.assertEqual(auto_ack_precheck(self._neg(sentiment='NEUTRAL'), _FakeCfg()), (False, 'not_negative'))
+
+    def test_manual_reply_wins(self, *_):
+        from apps.tenant.analytics.auto_reply import auto_ack_precheck
+        self.assertEqual(auto_ack_precheck(self._neg(is_replied=True), _FakeCfg()), (False, 'manual_reply'))
+
+    def test_no_vk_sender(self, *_):
+        from apps.tenant.analytics.auto_reply import auto_ack_precheck
+        self.assertEqual(auto_ack_precheck(self._neg(vk_sender_id=''), _FakeCfg()), (False, 'no_vk_sender'))
+
+    def test_empty_text(self, *_):
+        from apps.tenant.analytics.auto_reply import auto_ack_precheck
+        self.assertEqual(auto_ack_precheck(self._neg(), _FakeCfg(auto_ack_text='  ')), (False, 'no_ack_text'))
+
+    def test_branch_disabled(self, *_):
+        from apps.tenant.analytics.auto_reply import auto_ack_precheck
+        cfg = _FakeCfg(auto_send_branch_enabled={'3': False})
+        self.assertEqual(auto_ack_precheck(self._neg(branch_id=3), cfg), (False, 'branch_disabled'))
+
+    def test_already_acked(self, mock_count, mock_acked):
+        from apps.tenant.analytics.auto_reply import auto_ack_precheck
+        mock_acked.return_value = True
+        self.assertEqual(auto_ack_precheck(self._neg(), _FakeCfg()), (False, 'already_acked'))
+
+    def test_daily_limit(self, mock_count, mock_acked):
+        from apps.tenant.analytics.auto_reply import auto_ack_precheck
+        mock_count.return_value = 50
+        self.assertEqual(auto_ack_precheck(self._neg(), _FakeCfg()), (False, 'daily_limit'))
+
+    def test_draft_and_needs_human_do_not_block_ack(self, *_):
+        """Подтверждение не зависит от черновика и от вопроса в отзыве."""
+        from apps.tenant.analytics.auto_reply import auto_ack_precheck
+        conv = self._neg(ai_draft='', ai_draft_rejected=True, ai_needs_human=True)
+        self.assertEqual(auto_ack_precheck(conv, _FakeCfg()), (True, ''))
 
 
 @patch('apps.tenant.analytics.auto_reply._auto_sent_today_count', return_value=0)

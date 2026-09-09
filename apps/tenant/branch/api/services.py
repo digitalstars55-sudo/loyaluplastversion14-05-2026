@@ -1815,6 +1815,7 @@ def send_vk_reply(
     sender_name: str = 'Администратор',
     keyboard: dict | None = None,
     is_ai_generated: bool = False,
+    mark_replied: bool = True,
 ) -> TestimonialMessage:
     """
     Отправляет сообщение от имени группы в ВКонтакте и сохраняет его в тред.
@@ -1887,10 +1888,14 @@ def send_vk_reply(
         is_ai_generated=bool(is_ai_generated),
     )
 
-    conversation.is_replied = True
-    conversation.has_unread = False
-    conversation.last_message_at = timezone.now()
-    conversation.save(update_fields=['is_replied', 'has_unread', 'last_message_at'])
+    # mark_replied=False — автоподтверждение «спасибо, разберёмся» на негатив:
+    # сообщение ушло, но тред остаётся НЕотвеченным (по существу ответит
+    # человек), непрочитанность и порядок в списке не трогаем.
+    if mark_replied:
+        conversation.is_replied = True
+        conversation.has_unread = False
+        conversation.last_message_at = timezone.now()
+        conversation.save(update_fields=['is_replied', 'has_unread', 'last_message_at'])
 
     # Человек ответил раньше робота — снимаем запланированный автоответ.
     if not is_ai_generated:

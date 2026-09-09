@@ -453,6 +453,11 @@ class AutoReplySettingsAPIView(APIView):
       auto_send_links_text     — str ≤200, фраза перед кнопками
       auto_send_daily_limit    — int 1..500
       auto_send_branch_enabled — dict{branch_id(str): bool}
+
+    Автоподтверждение на негатив («спасибо, разберёмся»; дефолт выключено):
+      auto_ack_enabled         — bool
+      auto_ack_delay_minutes   — 5 | 15 | 30 | 60 | 120 (окно без ответа человека)
+      auto_ack_text            — str 1..300
     """
     permission_classes = [IsAuthenticated]
 
@@ -603,6 +608,40 @@ class AutoReplySettingsAPIView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             cfg.auto_send_branch_enabled = normalized
+
+        # Автоподтверждение на негатив
+        if 'auto_ack_enabled' in d:
+            cfg.auto_ack_enabled = bool(d['auto_ack_enabled'])
+
+        if 'auto_ack_delay_minutes' in d:
+            try:
+                am = int(d['auto_ack_delay_minutes'])
+            except (TypeError, ValueError):
+                return Response(
+                    {'error': 'auto_ack_delay_minutes должен быть числом'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if am not in (5, 15, 30, 60, 120):
+                return Response(
+                    {'error': 'auto_ack_delay_minutes: допустимы [5, 15, 30, 60, 120]'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            cfg.auto_ack_delay_minutes = am
+
+        if 'auto_ack_text' in d:
+            at = d['auto_ack_text']
+            if not isinstance(at, str):
+                return Response(
+                    {'error': 'auto_ack_text должен быть строкой'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            at = at.strip()
+            if not at or len(at) > 300:
+                return Response(
+                    {'error': 'auto_ack_text: от 1 до 300 символов'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            cfg.auto_ack_text = at
 
         cfg.save()
 

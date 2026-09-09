@@ -276,7 +276,17 @@ def auto_generate_draft_task(conversation_id: int, schema_name: str) -> dict:
                     )
                     sched = {}
         if not text:
-            return {'skipped': True}
+            # Черновика нет или он не нужен, но негативному отзыву может
+            # полагаться автоподтверждение «разберёмся» — оно от черновика
+            # не зависит. Проверка дешёвая и идемпотентная.
+            ack = None
+            try:
+                from apps.tenant.analytics.auto_reply import schedule_auto_ack_if_applicable
+                with schema_context(schema_name):
+                    ack = schedule_auto_ack_if_applicable(conversation_id, schema_name)
+            except Exception:
+                logger.warning('schedule_auto_ack_if_applicable failed conv=%s', conversation_id, exc_info=True)
+            return {'skipped': True, 'auto_ack': ack} if ack else {'skipped': True}
 
         # Автоответ запланирован — вместо «черновик готов» уходит более полезный
         # пуш 'auto_reply_pending' («ИИ ответит в 14:35 · Отменить»), его шлёт
@@ -352,6 +362,7 @@ def auto_send_pending_push_task(
     schema_name: str,
     send_at_iso: str = '',
     preview: str = '',
+    kind: str = 'reply',
 ) -> dict:
     """
     Отложенный push 'auto_reply_pending'. Нужен только когда автоответ
@@ -375,7 +386,7 @@ def auto_send_pending_push_task(
 
         return push_auto_reply_pending(
             schema_name, _tenant_name(schema_name), conversation_id,
-            send_at or send_at_iso, preview=preview, branch_id=branch_id,
+            send_at or send_at_iso, preview=preview, branch_id=branch_id, kind=kind or 'reply',
         )
     except Exception as exc:
         logger.warning(

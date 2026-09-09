@@ -226,6 +226,21 @@ cancelled_by_user, vk_error: …`. Ночью (тихие часы 22:00–09:00
 от наших ответов, поллинга, переклассификации и напоминаний — только от
 нового гостевого `TestimonialMessage`.
 
+**Автоподтверждение на негатив (09.09.2026).** Полный ответ на негатив пишет
+человек. Флаг `ReviewAutoReplyConfig.auto_ack_enabled` (дефолт False): если на
+NEGATIVE / PARTIALLY_NEGATIVE за `auto_ack_delay_minutes` (30) никто не
+ответил, ИИ шлёт `auto_ack_text` («Спасибо большое за обратную связь 🙏 Мы
+сейчас во всём разберёмся…») — без ИИ-генерации, без кнопок.
+`send_vk_reply(..., mark_replied=False)`: тред остаётся неотвеченным,
+черновик и напоминания живут, `has_unread`/порядок не трогаем. Едет по той же
+цепочке, что автоответ: `schedule_auto_send` выбирает `auto_send_kind`
+(`reply` → если нельзя, `ack`), `perform_auto_send` → `_perform_auto_ack`;
+гварды в `auto_ack_precheck` (`not_negative`, `already_acked` — одно сообщение
+ИИ на тред, `no_ack_text`, точки/лимит общие с автоответом). Если черновик не
+генерировался, `schedule_auto_ack_if_applicable` планирует подтверждение
+отдельно. Пуши те же (`auto_reply_pending/sent`) с `data.kind='ack'` и своими
+заголовками; отмена — та же кнопка/ручка; ответ человека снимает план.
+
 **Как выключить:** снять `auto_send_enabled` в `/admin/` или PATCH
 `/api/v1/analytics/auto-reply/settings/` — запланированные задачи при запуске
 перепроверяют конфиг и уходят в `skipped`. **Где смотреть:**

@@ -1286,6 +1286,12 @@ class TestimonialConversation(TimeStampedModel):
         help_text='Сколько раз ИИ сам генерировал черновик в этом треде (ручная «Перегенерировать» не считается). '
                   'Предохранитель от расхода токенов: после лимита — только вручную.',
     )
+    auto_send_kind = models.CharField(
+        'Тип автоответа', max_length=8, blank=True, default='',
+        choices=[('reply', 'ответ ИИ (позитив)'), ('ack', 'подтверждение «разберёмся» (негатив)')],
+        help_text='Что именно запланировано/отправлено в auto_send_*: полный ответ ИИ на позитив '
+                  'или короткое автоподтверждение на негатив. Пусто у старых записей = ответ.',
+    )
 
     has_unread      = models.BooleanField('Есть непрочитанные', default=True)
     is_replied      = models.BooleanField('Ответ отправлен', default=False)
@@ -1527,6 +1533,26 @@ class ReviewAutoReplyConfig(models.Model):
         help_text='Карта branch_id (str) → bool. Отсутствующие точки наследуют мастер-флаг. ВК-отзывы без точки отправляются при включённом мастер-флаге.',
     )
 
+    # ── Автоподтверждение на НЕГАТИВ (09.09.2026) ──────────────────────────────
+    # Полный ответ на негатив по-прежнему пишет человек. Но если за N минут
+    # никто не ответил, ИИ шлёт короткое «спасибо, разберёмся» — без обещаний
+    # и компенсаций. Тред остаётся НЕотвеченным, черновик и напоминания живут.
+    # По умолчанию ВЫКЛЮЧЕНО.
+    auto_ack_enabled = models.BooleanField(
+        'Автоподтверждение на негатив', default=False,
+        help_text='Если на негативный/частично негативный отзыв никто не ответил за «окно», ИИ отправит короткое подтверждение «спасибо, разберёмся». Тред остаётся неотвеченным — ответить по существу всё равно нужно человеку.',
+    )
+    auto_ack_delay_minutes = models.PositiveSmallIntegerField(
+        'Окно без ответа, мин', default=30,
+        choices=[(5, '5 минут'), (15, '15 минут'), (30, '30 минут'), (60, '60 минут'), (120, '2 часа')],
+        help_text='Сколько ждать ответа сотрудника, прежде чем ИИ отправит подтверждение. Пуш «ИИ напишет в HH:MM» приходит сразу — отменить можно из карточки.',
+    )
+    auto_ack_text = models.CharField(
+        'Текст подтверждения', max_length=300, blank=True,
+        default='Спасибо большое за обратную связь 🙏 Мы сейчас во всём разберёмся и обязательно вернёмся к вам с ответом.',
+        help_text='Одна и та же фраза для всех негативных отзывов. Без обещаний скидок и конкретики — по существу ответит человек.',
+    )
+
     updated_at = models.DateTimeField('Обновлено', auto_now=True)
 
     @classmethod
@@ -1556,6 +1582,10 @@ class ReviewAutoReplyConfig(models.Model):
             'auto_send_links_text':     self.auto_send_links_text or '',
             'auto_send_daily_limit':    self.auto_send_daily_limit,
             'auto_send_branch_enabled': self.auto_send_branch_enabled or {},
+            # Автоподтверждение на негатив (по умолчанию выключено)
+            'auto_ack_enabled':         self.auto_ack_enabled,
+            'auto_ack_delay_minutes':   self.auto_ack_delay_minutes,
+            'auto_ack_text':            self.auto_ack_text or '',
         }
 
     def __str__(self):
