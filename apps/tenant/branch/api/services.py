@@ -552,6 +552,21 @@ def _image_url(field) -> str | None:
 
 # ── Public service functions ──────────────────────────────────────────────────
 
+# Тема игрового колеса по схеме тенанта (без поля в БД). Фронт (WheelScreen.jsx)
+# знает темы 'autosushi' (оранжево-зелёное колесо) и 'conference' (дефолтный
+# визуал + свой набор призов: скидки/колонка/подарок для конференции). '' — дефолт.
+WHEEL_THEME_BY_SCHEMA = {
+    'dev': 'conference',   # «Конференция "Автосуши Автопицца"», dev.levelupapp.ru
+}
+
+
+def _wheel_theme_for_schema(schema_name: str) -> str:
+    schema_name = schema_name or ''
+    if schema_name.startswith('asap'):
+        return 'autosushi'
+    return WHEEL_THEME_BY_SCHEMA.get(schema_name, '')
+
+
 def get_branch_info(branch_id: int, *, tenant=None) -> dict:
     """
     Returns branch data merged with tenant config for the given branch_id.
@@ -612,10 +627,9 @@ def get_branch_info(branch_id: int, *, tenant=None) -> dict:
         'quest_show_message':  quest_show_message,
         'brand_color':           (config.brand_color if config and config.brand_color else '#d3a9e5'),
         'brand_color_secondary': (config.brand_color_secondary if config and getattr(config, 'brand_color_secondary', None) else '#d6de23'),
-        # Тема игрового колеса. Вычисляется по схеме (без поля в БД): тенанты
-        # Автосуши/Автопицца (asap*) → оранжево-зелёное колесо. Остальные → '' (дефолт,
-        # ничего не меняется). Фронт применяет тему только при 'autosushi'.
-        'wheel_theme':           ('autosushi' if (getattr(connection, 'schema_name', '') or '').startswith('asap') else ''),
+        # Тема игрового колеса — по схеме (см. _wheel_theme_for_schema): asap* →
+        # 'autosushi', dev → 'conference', остальные '' (дефолт, ничего не меняется).
+        'wheel_theme':           _wheel_theme_for_schema(getattr(connection, 'schema_name', '') or ''),
     }
 
 
