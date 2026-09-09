@@ -639,3 +639,115 @@ class AnalyticsApiRequiresAuthTest(SimpleTestCase):
 
         resp = BranchListAPIView.as_view()(factory.get('/api/v1/analytics/branches/'))
         self.assertIn(resp.status_code, (401, 403))
+
+
+class DraftPromptTest(SimpleTestCase):
+    """
+    Общий промпт черновика (auto_reply.build_draft_prompt_parts) — один на
+    автоответ, мобилку и веб.
+
+    09.09.2026, levone conv 3194 (Анна Новикова): тред уходил в модель сырыми
+    метками [VK_MESSAGE]/[ADMIN_REPLY], она не понимала, что ADMIN_REPLY — это
+    мы, и на каждую перегенерацию здоровалась заново; на вопрос про гарнир к
+    лососю дважды выдумала ответ (в базе знаний меню нет).
+    """
+
+    ANNA = [
+        {'source': 'VK_MESSAGE', 'text': 'Здравствуйте, где можно посмотреть актуальное меню?'},
+        {'source': 'ADMIN_REPLY', 'text': 'Здравствуйте! Актуальное меню в разделе «Меню» сообщества.'},
+        {'source': 'VK_MESSAGE', 'text': 'Спасибо'},
+        {'source': 'VK_MESSAGE', 'text': 'Скажите, пожалуйста, стейк лосося вы с чем подаете?'},
+    ]
+    FIRST = [{'source': 'APP', 'text': 'Все отлично'}]
+
+    def test_thread_rendered_with_roles_not_raw_sources(self):
+        from apps.tenant.analytics.auto_reply import (
+            DRAFT_ROLE_GUEST, DRAFT_ROLE_VENUE, render_draft_thread,
+        )
+        thread, venue_replied = render_draft_thread(self.ANNA)
+        self.assertTrue(venue_replied)
+        self.assertNotIn('[VK_MESSAGE]', thread)
+        self.assertNotIn('[ADMIN_REPLY]', thread)
+        lines = thread.split('\n')
+        self.assertEqual(len(lines), 4)
+        self.assertTrue(lines[0].startswith(f'{DRAFT_ROLE_GUEST}: Здравствуйте, где'))
+        self.assertTrue(lines[1].startswith(f'{DRAFT_ROLE_VENUE}: Здравствуйте! Актуальное'))
+        self.assertTrue(lines[3].startswith(f'{DRAFT_ROLE_GUEST}: Скажите'))
+
+    def test_empty_texts_are_skipped(self):
+        from apps.tenant.analytics.auto_reply import render_draft_thread
+        thread, _ = render_draft_thread([
+            {'source': 'ADMIN_REPLY', 'text': ''},
+            {'source': 'VK_MESSAGE', 'text': '   '},
+            {'source': 'VK_MESSAGE', 'text': 'Привет'},
+        ])
+        self.assertEqual(thread, 'Гость: Привет')
+
+    def test_first_reply_rule_when_venue_never_replied(self):
+        from apps.tenant.analytics.auto_reply import (
+            DRAFT_RULE_CONTINUATION, DRAFT_RULE_FIRST_REPLY, build_draft_prompt_parts,
+        )
+        system, user = build_draft_prompt_parts(self.FIRST, sentiment_human='Позитивный')
+        self.assertIn(DRAFT_RULE_FIRST_REPLY, system)
+        self.assertNotIn(DRAFT_RULE_CONTINUATION, system)
+        self.assertIn('Гость: Все отлично', user)
+        self.assertIn('черновик ответа', user)
+
+    def test_continuation_rule_when_venue_already_replied(self):
+        from apps.tenant.analytics.auto_reply import (
+            DRAFT_RULE_CONTINUATION, DRAFT_RULE_FIRST_REPLY, build_draft_prompt_parts,
+        )
+        system, user = build_draft_prompt_parts(self.ANNA, sentiment_human='Нейтральный')
+        self.assertIn(DRAFT_RULE_CONTINUATION, system)
+        self.assertNotIn(DRAFT_RULE_FIRST_REPLY, system)
+        self.assertIn('Не здоровайся повторно', system)
+        self.assertIn('на последнее сообщение гостя', user)
+
+    def test_broadcast_before_first_guest_message_is_not_a_reply(self):
+        # Рассылки лежат в треде как ADMIN_REPLY: промо ДО первого сообщения
+        # гостя — не «мы уже отвечали», гостю всё ещё надо поздороваться.
+        from apps.tenant.analytics.auto_reply import (
+            DRAFT_RULE_CONTINUATION, DRAFT_RULE_FIRST_REPLY, build_draft_prompt_parts,
+            render_draft_thread,
+        )
+        msgs = [
+            {'source': 'ADMIN_REPLY', 'text': 'Летний диджей-сет на веранде в субботу!'},
+            {'source': 'VK_MESSAGE', 'text': 'Добрый день, а столик можно забронировать?'},
+        ]
+        _, venue_replied = render_draft_thread(msgs)
+        self.assertFalse(venue_replied)
+        system, _ = build_draft_prompt_parts(msgs)
+        self.assertIn(DRAFT_RULE_FIRST_REPLY, system)
+        self.assertNotIn(DRAFT_RULE_CONTINUATION, system)
+
+    def test_facts_rule_and_empty_kb_note(self):
+        from apps.tenant.analytics.auto_reply import (
+            DRAFT_KB_EMPTY_NOTE, DRAFT_RULE_FACTS, build_draft_prompt_parts,
+        )
+        system, _ = build_draft_prompt_parts(self.ANNA)
+        self.assertIn(DRAFT_RULE_FACTS, system)
+        self.assertIn('НЕ выдумывай', system)
+        self.assertIn(DRAFT_KB_EMPTY_NOTE, system)
+
+    def test_kb_text_is_appended_instead_of_empty_note(self):
+        from apps.tenant.analytics.auto_reply import (
+            DRAFT_KB_EMPTY_NOTE, build_draft_prompt_parts,
+        )
+        system, _ = build_draft_prompt_parts(
+            self.ANNA, kb_text='=== Меню ===\nСтейк лосося подаём с овощами гриль.',
+        )
+        self.assertIn('Стейк лосося подаём с овощами гриль.', system)
+        self.assertNotIn(DRAFT_KB_EMPTY_NOTE, system)
+        # Правило про факты стоит ДО базы знаний — «ниже» в тексте правила честное.
+        self.assertLess(system.index('бери ТОЛЬКО'), system.index('=== Меню ==='))
+
+    def test_tone_and_company_name_flow_into_prompt(self):
+        from apps.tenant.analytics.auto_reply import build_draft_prompt_parts
+        system, user = build_draft_prompt_parts(
+            self.FIRST, ai_tone='formal', company_name='Кафе LevOne',
+        )
+        self.assertIn('официальный, вежливый', system)
+        self.assertIn('Заведение: Кафе LevOne', user)
+        # Неизвестный тон — дружелюбный по умолчанию, не падаем.
+        system, _ = build_draft_prompt_parts(self.FIRST, ai_tone='weird')
+        self.assertIn('дружелюбный', system)

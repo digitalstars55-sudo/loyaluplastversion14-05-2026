@@ -226,6 +226,20 @@ cancelled_by_user, vk_error: …`. Ночью (тихие часы 22:00–09:00
 от наших ответов, поллинга, переклассификации и напоминаний — только от
 нового гостевого `TestimonialMessage`.
 
+**Промпт черновика — один на всех (09.09.2026).** `auto_reply.build_draft_prompt(conv)`
+/ `build_draft_prompt_parts(msgs, …)` используют автогенерация, кнопка
+«Перегенерировать» в мобилке (`mobile/api/views.py::_build_draft_prompt`) и
+«AI-ответ» в вебе (`analytics/views.py::ReviewsAIReplyView` берёт
+`render_draft_thread` + константы `DRAFT_RULE_*`). Не заводить четвёртую копию.
+Тред уходит в модель строками «Гость: …» / «Заведение (наш ответ): …»
+(`render_draft_thread`, ADMIN_REPLY после сообщения гостя = «мы уже отвечали»;
+рассылка перед первым сообщением гостя ответом не считается). Правила:
+`DRAFT_RULE_CONTINUATION` (уже отвечали → не здороваться повторно, отвечать на
+последнее сообщение гостя) либо `DRAFT_RULE_FIRST_REPLY`; `DRAFT_RULE_FACTS` —
+факты о блюдах/ценах/часах только из базы знаний, иначе «уточним и вернёмся»
+(ИИ дважды выдумал гарнир к лососю, пока в KB LevOne не было меню). Тест
+`DraftPromptTest`.
+
 **Автоподтверждение на негатив (09.09.2026).** Полный ответ на негатив пишет
 человек. Флаг `ReviewAutoReplyConfig.auto_ack_enabled` (дефолт False): если на
 NEGATIVE / PARTIALLY_NEGATIVE за `auto_ack_delay_minutes` (30) никто не

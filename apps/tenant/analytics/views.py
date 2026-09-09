@@ -680,16 +680,22 @@ class ReviewsAIReplyView(View):
         except TestimonialConversation.DoesNotExist:
             return JsonResponse({'error': 'Диалог не найден'}, status=404)
 
-        lines = []
-        for msg in conv.messages.order_by('created_at'):
-            if msg.source == 'ADMIN_REPLY':
-                role = 'Администратор'
-            elif msg.source == 'APP':
-                role = 'Гость (приложение)'
-            else:
-                role = 'Гость (ВКонтакте)'
-            lines.append(f'{role}: {msg.text}')
-        conv_text = '\n'.join(lines) or 'Нет сообщений'
+        # Тред и правила диалога — общие с автоответом и мобилкой (auto_reply):
+        # роли «Гость» / «Заведение (наш ответ)», без повторного приветствия,
+        # факты только из базы знаний.
+        from apps.tenant.analytics.auto_reply import (
+            DRAFT_RULE_CONTINUATION, DRAFT_RULE_FACTS, DRAFT_RULE_FIRST_REPLY,
+            render_draft_thread,
+        )
+        conv_text, venue_replied = render_draft_thread(
+            conv.messages.order_by('created_at').values('source', 'text')
+        )
+        conv_text = conv_text or 'Нет сообщений'
+        dialog_rules = (
+            '\nПравила:\n'
+            + (DRAFT_RULE_CONTINUATION if venue_replied else DRAFT_RULE_FIRST_REPLY)
+            + '\n' + DRAFT_RULE_FACTS
+        )
 
         api_key = getattr(settings, 'ANTHROPIC_API_KEY', None)
         if not api_key:
@@ -714,15 +720,17 @@ class ReviewsAIReplyView(View):
                     'По умолчанию ответ короткий (3-4 предложения), дружелюбный и по существу. '
                     'Если администратор в черновике явно просит написать подробнее — выполни просьбу, до 4000 символов. '
                     'Возвращай только текст ответа без кавычек и пояснений.'
+                    + dialog_rules
                 )
                 user_content = f'История диалога:\n\n{conv_text}\n\nЧерновик ответа администратора:\n{draft}'
             else:
                 system_prompt = (
                     'Ты — помощник администратора ресторана/кафе. '
-                    'Составь вежливый и профессиональный ответ на отзыв гостя от имени заведения. '
+                    'Составь вежливый и профессиональный ответ на последнее сообщение гостя от имени заведения. '
                     'По умолчанию ответ короткий (3-4 предложения), дружелюбный и по существу. '
                     'Если в треде гость или менеджер просит подробный ответ — пиши до 4000 символов. '
                     'Возвращай только текст ответа без кавычек и пояснений.'
+                    + dialog_rules
                 )
                 user_content = f'История диалога:\n\n{conv_text}'
 

@@ -181,10 +181,147 @@ def draft_is_stale(conv, last_guest) -> bool:
     return last_at > updated_at
 
 
+# ── Промпт черновика ответа ──────────────────────────────────────────────────
+# ОДИН билдер на все три входа: автогенерация (auto_reply), кнопка
+# «Перегенерировать» в мобилке (mobile/api/views.py) и «AI-ответ» в вебе
+# (analytics/views.py). Раньше промпты жили в трёх копиях и разъезжались.
+#
+# 09.09.2026, тред Анны Новиковой (levone conv 3194): модель получала тред
+# сырыми метками [VK_MESSAGE]/[ADMIN_REPLY], не понимала, что ADMIN_REPLY — это
+# мы, и на каждую перегенерацию здоровалась заново; на вопрос «с чем подаёте
+# стейк лосося» дважды выдумала гарнир (в базе знаний меню нет вообще).
+
+DRAFT_TONE_HUMAN = {
+    'formal':   'официальный, вежливый',
+    'friendly': 'дружелюбный, тёплый',
+    'neutral':  'нейтральный, профессиональный',
+}
+
+DRAFT_ROLE_GUEST = 'Гость'
+DRAFT_ROLE_VENUE = 'Заведение (наш ответ)'
+
+DRAFT_RULE_FACTS = (
+    '- Факты о блюдах, составе, ценах, часах работы, адресах и акциях бери ТОЛЬКО '
+    'из базы знаний заведения ниже. Если в базе знаний ответа нет — НЕ выдумывай: '
+    'напиши, что уточните у кухни или менеджера и обязательно вернётесь с ответом.'
+)
+DRAFT_RULE_CONTINUATION = (
+    '- Это ПРОДОЛЖЕНИЕ переписки: заведение уже отвечало гостю. Не здоровайся '
+    'повторно, не представляйся и не благодари за отзыв заново — ответь по существу '
+    'на последнее сообщение гостя.'
+)
+DRAFT_RULE_FIRST_REPLY = (
+    '- Это первый ответ заведения в переписке: поздоровайся один раз.'
+)
+DRAFT_KB_EMPTY_NOTE = (
+    'База знаний заведения пуста: фактов о меню, ценах и часах работы у тебя нет.'
+)
+
+
+def render_draft_thread(msgs) -> tuple[str, bool]:
+    """
+    Тред для промпта: строки «Роль: текст». msgs — iterable dict'ов с ключами
+    source/text (как из .values('source', 'text')), по времени.
+
+    Возвращает (текст, заведение_уже_отвечало). «Отвечало» = есть ADMIN_REPLY
+    ПОСЛЕ хотя бы одного сообщения гостя: рассылки тоже лежат как ADMIN_REPLY,
+    и промо перед первым сообщением гостя ответом не считается.
+    """
+    lines = []
+    guest_seen = False
+    venue_replied = False
+    for m in msgs:
+        text = (m.get('text') or '').strip()
+        if not text:
+            continue
+        if m.get('source') == 'ADMIN_REPLY':
+            if guest_seen:
+                venue_replied = True
+            lines.append(f'{DRAFT_ROLE_VENUE}: {text}')
+        else:
+            guest_seen = True
+            lines.append(f'{DRAFT_ROLE_GUEST}: {text}')
+    return '\n'.join(lines), venue_replied
+
+
+def build_draft_prompt_parts(
+    msgs,
+    *,
+    ai_tone: str = 'friendly',
+    company_name: str = 'наше заведение',
+    sentiment_human: str = 'не определён',
+    kb_text: str = '',
+) -> tuple[str, str]:
+    """(system_prompt, user_message) без обращений к БД — так же тестируется."""
+    thread, venue_replied = render_draft_thread(msgs)
+    tone_human = DRAFT_TONE_HUMAN.get(ai_tone or 'friendly', 'дружелюбный')
+    dialog_rule = DRAFT_RULE_CONTINUATION if venue_replied else DRAFT_RULE_FIRST_REPLY
+
+    system_prompt = (
+        'Ты — менеджер заведения, отвечающий на отзывы и сообщения гостей.\n'
+        'Правила:\n'
+        f'- Пиши на русском, тон: {tone_human}.\n'
+        '- По умолчанию коротко (3-4 предложения), без воды. Если в треде менеджер '
+        'явно просит написать подробный ответ — выполни, до 4000 символов.\n'
+        '- Без markdown, HTML и эмодзи (максимум один по необходимости).\n'
+        '- Обращайся на «Вы».\n'
+        f'{dialog_rule}\n'
+        '- Если негатив — извинись, не оправдывайся, предложи решение.\n'
+        '- Если позитив — поблагодари искренне, без шаблонов.\n'
+        '- Не упоминай скидки/компенсации без явной просьбы.\n'
+        f'{DRAFT_RULE_FACTS}\n'
+        '- Верни ТОЛЬКО текст ответа, без пояснений и подписи.'
+    )
+    if kb_text:
+        system_prompt += (
+            '\n\n--- База знаний заведения ---\n'
+            '(тон общения и факты; НЕ копируй отсюда готовые ответы как шаблон)\n'
+            + kb_text
+        )
+    else:
+        system_prompt += '\n\n' + DRAFT_KB_EMPTY_NOTE
+
+    task = (
+        'Напиши ответ заведения на последнее сообщение гостя.'
+        if venue_replied else
+        'Напиши черновик ответа от имени заведения.'
+    )
+    user_message = (
+        f'Заведение: {company_name}\n'
+        f'Тональность (определена ИИ): {sentiment_human}\n\n'
+        f'Тред переписки:\n{thread}\n\n'
+        f'{task}'
+    )
+    return system_prompt, user_message
+
+
+def build_draft_prompt(conv, ai_tone: str = '') -> Optional[tuple[str, str]]:
+    """(system, user) для треда из БД; None, если в треде нет ни строки текста."""
+    from django.db import connection
+    from apps.tenant.analytics.ai_service import _get_knowledge_base_text
+
+    msgs = list(conv.messages.order_by('created_at').values('source', 'text'))
+    thread, _ = render_draft_thread(msgs)
+    if not thread:
+        return None
+    if not ai_tone:
+        try:
+            from apps.tenant.branch.models import ReviewAutoReplyConfig
+            ai_tone = ReviewAutoReplyConfig.get_singleton().ai_tone
+        except Exception:
+            ai_tone = 'friendly'
+    return build_draft_prompt_parts(
+        msgs,
+        ai_tone=ai_tone,
+        company_name=getattr(connection.tenant, 'name', 'наше заведение'),
+        sentiment_human=conv.get_sentiment_display() if conv.sentiment else 'не определён',
+        kb_text=_get_knowledge_base_text(),
+    )
+
+
 def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
     """Вызов Anthropic Claude. Возвращает текст черновика или None."""
     from django.conf import settings
-    from django.db import connection
 
     api_key = getattr(settings, 'ANTHROPIC_API_KEY', None)
     if not api_key:
@@ -197,53 +334,10 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
         logger.warning('auto_reply: anthropic package not installed')
         return None
 
-    tone_human = {
-        'formal':   'официальный, вежливый',
-        'friendly': 'дружелюбный, тёплый',
-        'neutral':  'нейтральный, профессиональный',
-    }.get(ai_tone or 'friendly', 'дружелюбный')
-
-    company_name = getattr(connection.tenant, 'name', 'наше заведение')
-    sentiment_human = (
-        conv.get_sentiment_display() if conv.sentiment else 'не определён'
-    )
-
-    msgs = list(conv.messages.order_by('created_at').values('source', 'text'))
-    thread = '\n'.join(
-        f"[{m['source']}] {m['text']}" for m in msgs if (m.get('text') or '').strip()
-    )
-    if not thread:
+    parts = build_draft_prompt(conv, ai_tone)
+    if parts is None:
         return None
-
-    system_prompt = (
-        'Ты — менеджер заведения, отвечающий на отзывы гостей.\n'
-        'Правила:\n'
-        f'- Пиши на русском, тон: {tone_human}.\n'
-        '- По умолчанию коротко (3-4 предложения), без воды. Если в треде менеджер '
-        'явно просит написать подробный ответ — выполни, до 4000 символов.\n'
-        '- Без markdown, HTML и эмодзи (максимум один по необходимости).\n'
-        '- Обращайся на «Вы».\n'
-        '- Если негатив — извинись, не оправдывайся, предложи решение.\n'
-        '- Если позитив — поблагодари искренне, без шаблонов.\n'
-        '- Не упоминай скидки/компенсации без явной просьбы.\n'
-        '- Верни ТОЛЬКО текст ответа, без пояснений и подписи.'
-    )
-
-    # Подмешиваем инструкции из базы знаний тенанта (тон, факты о заведении,
-    # типовые формулировки). Без этого Claude отвечает в отрыве от контекста.
-    from apps.tenant.analytics.ai_service import _get_knowledge_base_text
-    kb_text = _get_knowledge_base_text()
-    if kb_text:
-        system_prompt += (
-            '\n\n--- Инструкции из базы знаний заведения ---\n'
-            + kb_text
-        )
-    user_message = (
-        f'Заведение: {company_name}\n'
-        f'Тональность отзыва: {sentiment_human}\n\n'
-        f'Тред:\n{thread}\n\n'
-        f'Напиши черновик ответа от имени заведения.'
-    )
+    system_prompt, user_message = parts
 
     proxy_url = os.getenv('AI_PROXY_URL', '')
     client = (

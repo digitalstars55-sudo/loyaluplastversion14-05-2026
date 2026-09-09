@@ -60,6 +60,9 @@ class ReviewListSerializer(serializers.ModelSerializer):
     review_link_2gis   = serializers.SerializerMethodField()
     # Автоотправка ответа ИИ (пусто/false, пока владелец не включил флаг)
     auto_send_at       = serializers.SerializerMethodField()
+    # Автоответ уйдёт с кнопками Яндекс/2ГИС: флаг конфига + у точки/сети есть ссылки.
+    # Сам черновик ссылок не содержит — их добавляет отправка (perform_auto_send).
+    auto_send_with_links = serializers.SerializerMethodField()
 
     class Meta:
         model = TestimonialConversation
@@ -89,11 +92,17 @@ class ReviewListSerializer(serializers.ModelSerializer):
             'auto_send_reason',
             # '' | reply | ack — что именно запланировано/отправлено
             'auto_send_kind',
+            'auto_send_with_links',
             'ai_needs_human',
         ]
 
     def get_auto_send_at(self, obj) -> str | None:
         return obj.auto_send_at.isoformat() if obj.auto_send_at else None
+
+    def get_auto_send_with_links(self, obj) -> bool:
+        if not self.context.get('auto_send_attach_links'):
+            return False
+        return bool(self.get_review_link_yandex(obj) or self.get_review_link_2gis(obj))
 
     def get_review_link_yandex(self, obj) -> str:
         # Ссылки точки; если кафе не определено (общий VK-отзыв) — фолбэк основной точки.

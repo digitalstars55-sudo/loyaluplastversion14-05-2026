@@ -71,6 +71,14 @@ class MobileReviewListAPIView(generics.ListAPIView):
         fb_ya, fb_gis = get_fallback_review_links()
         ctx['fb_yandex'] = fb_ya
         ctx['fb_2gis'] = fb_gis
+        # Автоответ уйдёт с кнопками Яндекс/2ГИС? (подпись в баннере «ИИ ответит…»)
+        try:
+            from apps.tenant.branch.models import ReviewAutoReplyConfig
+            ctx['auto_send_attach_links'] = bool(
+                ReviewAutoReplyConfig.get_singleton().auto_send_attach_links
+            )
+        except Exception:
+            ctx['auto_send_attach_links'] = False
         return ctx
 
     def get_queryset(self):
@@ -945,59 +953,14 @@ class GenerateDailyCodeAPIView(APIView):
 # ════════════════════════════════════════════════════════════════════
 # AI drafts for reviews — regenerate / reject
 # ════════════════════════════════════════════════════════════════════
-def _build_draft_prompt(conv: TestimonialConversation) -> tuple[str, str]:
-    """Возвращает (system_prompt, user_message) для генерации AI-черновика."""
-    from django.db import connection
-    from apps.tenant.branch.models import ReviewAutoReplyConfig
-
-    tone = ReviewAutoReplyConfig.get_singleton().ai_tone
-    tone_human = {
-        'formal':   'официальный, вежливый',
-        'friendly': 'дружелюбный, тёплый',
-        'neutral':  'нейтральный, профессиональный',
-    }.get(tone, 'дружелюбный')
-
-    company_name = getattr(connection.tenant, 'name', 'наше заведение')
-    sentiment_human = conv.get_sentiment_display() if conv.sentiment else 'не определён'
-
-    # Соберём тред: первый APP-message и все предыдущие сообщения
-    msgs = list(conv.messages.order_by('created_at').values('source', 'text'))
-    thread_text = '\n'.join(
-        f"[{m['source']}] {m['text']}" for m in msgs if (m.get('text') or '').strip()
-    )
-
-    system_prompt = (
-        'Ты — менеджер заведения, отвечающий на отзывы гостей.\n'
-        'Правила:\n'
-        f'- Пиши на русском, тон: {tone_human}.\n'
-        '- По умолчанию коротко (3-4 предложения), без воды. Если в треде менеджер '
-        'явно просит написать подробный ответ — выполни, до 4000 символов.\n'
-        '- Не используй markdown, HTML, эмодзи кроме одного по необходимости.\n'
-        '- Обращайся на "Вы".\n'
-        '- Если отзыв негативный — извинись, не оправдывайся, предложи решение.\n'
-        '- Если позитивный — поблагодари искренне, без шаблонов.\n'
-        '- Не упоминай скидки/компенсации, если не сказано.\n'
-        '- Верни ТОЛЬКО текст ответа, без пояснений и подписи.'
-    )
-
-    # Подмешиваем инструкции из базы знаний тенанта (тон, факты о заведении,
-    # типовые формулировки). Без этого Claude отвечает в отрыве от контекста.
-    from apps.tenant.analytics.ai_service import _get_knowledge_base_text
-    kb_text = _get_knowledge_base_text()
-    if kb_text:
-        system_prompt += (
-            '\n\n--- Справка о заведении из базы знаний ---\n'
-            '(используй для тона общения и фактов; НЕ копируй отсюда '
-            'готовые ответы как шаблон)\n'
-            + kb_text
-        )
-    user_message = (
-        f'Заведение: {company_name}\n'
-        f'Тональность отзыва (определена ИИ): {sentiment_human}\n\n'
-        f'Тред переписки:\n{thread_text}\n\n'
-        f'Напиши черновик ответа от имени заведения.'
-    )
-    return system_prompt, user_message
+def _build_draft_prompt(conv: TestimonialConversation) -> tuple[str, str] | None:
+    """
+    (system_prompt, user_message) для AI-черновика — общий билдер с автоответом
+    (`auto_reply.build_draft_prompt`: роли в треде, «не здоровайся повторно»,
+    факты только из базы знаний). None — в треде нет текста.
+    """
+    from apps.tenant.analytics.auto_reply import build_draft_prompt
+    return build_draft_prompt(conv)
 
 
 def _call_claude_for_draft(conv: TestimonialConversation) -> tuple[str, int]:
@@ -1014,12 +977,16 @@ def _call_claude_for_draft(conv: TestimonialConversation) -> tuple[str, int]:
     except ImportError:
         return ('Библиотека anthropic не установлена', 500)
 
+    parts = _build_draft_prompt(conv)
+    if parts is None:
+        return ('В переписке нет текста, на который можно ответить', 400)
+    system_prompt, user_message = parts
+
     proxy_url = os.getenv('AI_PROXY_URL', '')
     client = (
         anthropic.Anthropic(api_key=api_key, base_url=proxy_url)
         if proxy_url else anthropic.Anthropic(api_key=api_key)
     )
-    system_prompt, user_message = _build_draft_prompt(conv)
     try:
         message = client.messages.create(
             model='claude-haiku-4-5-20251001',
