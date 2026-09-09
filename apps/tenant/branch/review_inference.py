@@ -58,20 +58,29 @@ class InferredPoint:
 def inference_settings() -> tuple[bool, int]:
     """(включено ли, окно в часах) для текущего тенанта.
 
-    Читаем `ClientConfig` так же, как `get_branch_info`. Конфига нет,
-    схема public, БД молчит — считаем, что выключено.
+    Ищем `ClientConfig` по `connection.schema_name`, а НЕ по `connection.tenant`:
+    в celery-задачах (poll ВК и т.п.) схема выставляется через `schema_context`,
+    и `connection.tenant` там — `FakeTenant` без pk (E2E 09.09 это поймал:
+    `get(company=tenant)` падал → фича молча выключалась для сообщений,
+    поднятых поллингом). Конфига нет, схема public, БД молчит — выключено.
     """
     try:
         from django.db import connection
 
         from apps.shared.config.models import ClientConfig
 
-        tenant = getattr(connection, 'tenant', None)
-        if tenant is None:
+        schema = getattr(connection, 'schema_name', '') or ''
+        if not schema or schema == 'public':
             return (False, DEFAULT_WINDOW_HOURS)
-        cfg = ClientConfig.objects.get(company=tenant)
-        hours = int(cfg.vk_review_branch_inference_hours or DEFAULT_WINDOW_HOURS)
-        return (bool(cfg.vk_review_branch_inference), hours or DEFAULT_WINDOW_HOURS)
+        row = (ClientConfig.objects
+               .filter(company__schema_name=schema)
+               .values_list('vk_review_branch_inference', 'vk_review_branch_inference_hours')
+               .first())
+        if row is None:
+            return (False, DEFAULT_WINDOW_HOURS)
+        enabled, hours = row
+        hours = int(hours or DEFAULT_WINDOW_HOURS) or DEFAULT_WINDOW_HOURS
+        return (bool(enabled), hours)
     except Exception:
         return (False, DEFAULT_WINDOW_HOURS)
 
