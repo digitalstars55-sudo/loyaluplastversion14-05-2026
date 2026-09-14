@@ -471,6 +471,22 @@ class TenantAdminSite(AdminSite):
         except Exception:
             logger.exception('Tenant admin: failed to compute billing status')
 
+        # Брендирование админки цветами сети — только при включённом флаге
+        # ClientConfig.admin_brand_enabled (см. admin_brand.py). Без флага
+        # контекста нет и base_site.html рендерится байт-в-байт как раньше.
+        try:
+            from apps.shared.config.admin_brand import admin_brand_context
+            from apps.shared.config.models import ClientConfig
+            tenant = getattr(request, 'tenant', None)
+            if tenant is not None:
+                cfg = ClientConfig.objects.filter(company=tenant).first()
+                brand = admin_brand_context(cfg)
+                if brand:
+                    ctx['admin_brand'] = brand
+                    ctx.setdefault('tenant_name', tenant.name)
+        except Exception:
+            logger.exception('Tenant admin: failed to build brand context')
+
         # Тонкое разграничение: доступные точки (branch_access) + разделы (feature_access).
         from apps.shared.users.access import (
             user_allowed_branches, user_can_feature, current_schema_name,

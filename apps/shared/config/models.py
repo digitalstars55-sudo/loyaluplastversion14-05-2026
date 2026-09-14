@@ -53,6 +53,16 @@ class ClientConfig(models.Model):
         ),
     )
 
+    admin_brand_enabled = models.BooleanField(
+        default=False,
+        verbose_name='Красить админку в цвета бренда',
+        help_text=(
+            'Веб-админка этой сети (шапка, кнопки, сайдбар, фильтры) окрашивается '
+            'в главный и акцентный цвета бренда, в шапке — логотип сети. '
+            'Выключено — прежний фиолетовый вид ЛоялUP.'
+        ),
+    )
+
     # --- ВКонтакте ---
     vk_group_id = models.PositiveIntegerField(
         verbose_name='VK Group ID',

@@ -397,11 +397,75 @@
     ul.messagelist li.info,
     ul.messagelist li         { background: var(--lp-brand-soft) !important; color: var(--lp-brand-dark) !important; border-left: 4px solid var(--lp-brand) !important; }
   </style>
+  {% if admin_brand %}
+  <style>
+    /* ═══ Брендирование админки цветами сети (ClientConfig.admin_brand_enabled) ═══
+       Блок есть ТОЛЬКО у тенантов с включённым флагом; переопределяет переменные
+       и те несколько мест выше, где фиолет зашит литералом. */
+    :root {
+      --lp-brand:       {{ admin_brand.brand }};
+      --lp-brand-dark:  {{ admin_brand.brand_dark }};
+      --lp-brand-soft:  {{ admin_brand.brand_soft }};
+      --lp-lime:        {{ admin_brand.accent }};
+      --lp-bcrumb:      {{ admin_brand.bcrumb }};
+      --primary:               {{ admin_brand.brand }} !important;
+      --secondary:             {{ admin_brand.brand_dark }} !important;
+      --primary-fg:            {{ admin_brand.ink }} !important;
+      --accent:                {{ admin_brand.accent }} !important;
+      --link-fg:               {{ admin_brand.brand }} !important;
+      --link-hover-color:      {{ admin_brand.brand_dark }} !important;
+      --link-selected-fg:      {{ admin_brand.brand }} !important;
+      --header-color:          {{ admin_brand.ink }} !important;
+      --header-link-color:     {{ admin_brand.ink }} !important;
+      --header-branding-color: {{ admin_brand.ink }} !important;
+      --header-bg:             {{ admin_brand.brand }} !important;
+      --breadcrumbs-link-fg:   {{ admin_brand.bcrumb_link }} !important;
+      --breadcrumbs-bg:        {{ admin_brand.bcrumb }} !important;
+      --breadcrumbs-fg:        {{ admin_brand.ink }} !important;
+      --button-bg:             {{ admin_brand.brand }} !important;
+      --button-fg:             {{ admin_brand.ink }} !important;
+      --button-hover-bg:       {{ admin_brand.brand_dark }} !important;
+      --default-button-bg:     {{ admin_brand.brand }} !important;
+      --default-button-hover-bg: {{ admin_brand.brand_dark }} !important;
+      --object-tools-bg:       {{ admin_brand.brand }} !important;
+      --object-tools-fg:       {{ admin_brand.ink }} !important;
+      --object-tools-hover-bg: {{ admin_brand.brand_dark }} !important;
+      --selected-bg:           {{ admin_brand.brand_soft }} !important;
+      --selected-row:          {{ admin_brand.brand_soft }} !important;
+    }
+    div.breadcrumbs a { color: {{ admin_brand.bcrumb_link }} !important; }
+    #nav-sidebar tr:hover td, #nav-sidebar tr:hover th,
+    #nav-sidebar .module a:hover, #nav-sidebar a:hover { background: {{ admin_brand.brand_soft }} !important; }
+    #nav-sidebar input[type=text]:focus, #nav-filter:focus { box-shadow: 0 0 0 3px {{ admin_brand.focus_rgba }} !important; }
+    .actions { border-color: {{ admin_brand.brand_soft_border }} !important; }
+    {% if admin_brand.ink != '#ffffff' %}
+    /* Светлый бренд: белые надписи из блока выше заменяем тёмными */
+    #header, .header, #site-name a, #user-tools, #user-tools a, #user-tools strong,
+    div.breadcrumbs, div.breadcrumbs a:hover,
+    #nav-sidebar .module caption, #nav-sidebar table caption, #nav-sidebar caption, #nav-sidebar h3, #nav-sidebar .module h2,
+    #nav-sidebar .module caption a, #nav-sidebar table caption a, #nav-sidebar caption a,
+    #nav-sidebar .current-model a, #nav-sidebar a.current, #nav-sidebar .selected a, #nav-sidebar tr.selected a,
+    #nav-sidebar .toggle-nav-sidebar, button#toggle-nav-sidebar,
+    .submit-row input.default, .button.default, input[type=submit].default,
+    .button, input[type=submit], input[type=button], .submit-row input,
+    #changelist-filter h2, .object-tools a:link, .object-tools a:visited, .object-tools a:hover, .object-tools a:focus,
+    #toolbar form input[type=submit], .module h2, .module caption, .inline-group h2,
+    .module a.button:link, .module a.button:visited, .module a.button:hover,
+    .calendar caption, .calendarbox h2, .timelist h2, .actions button, fieldset.module h2, .paginator .this-page {
+      color: {{ admin_brand.ink }} !important;
+    }
+    {% endif %}
+  </style>
+  {% endif %}
   <div style="text-align: center;" class='d-flex flex-row gap-2 align-items-center'>
+    {% if admin_brand.logo_url %}
+    <img src="{{ admin_brand.logo_url }}" alt="{{ tenant_name|default:'Логотип' }}" style="max-height: 40px; max-width: 40px; border-radius: 8px; background: #fff;">
+    {% else %}
     <img src="{% static 'images/LoyalUpLogo.png' %}" alt="ЛоялUP" style="max-height: 40px;">
+    {% endif %}
     <h1 id="site-name" style="margin:0;">
       <a href="{% url 'admin:index' %}">
-        Администрирование ЛоялUP
+        {% if admin_brand and tenant_name %}{{ tenant_name }} · ЛоялUP{% else %}Администрирование ЛоялUP{% endif %}
       </a>
     </h1>
   </div>

@@ -104,7 +104,7 @@ class ClientConfigAdmin(admin.ModelAdmin):
             'fields': ('company',),
         }),
         ('Брендинг', {
-            'fields': ('logotype_image', 'logotype_preview', 'coin_image', 'coin_preview', 'brand_color', 'brand_color_secondary'),
+            'fields': ('logotype_image', 'logotype_preview', 'coin_image', 'coin_preview', 'brand_color', 'brand_color_secondary', 'admin_brand_enabled'),
             'description': (
                 'Опционально. Логотип — PNG с прозрачным фоном, квадрат '
                 '(512×512), до 1 МБ. Главный и акцентный цвета (#RRGGBB) '
