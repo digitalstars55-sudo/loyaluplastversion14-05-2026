@@ -1,0 +1,27 @@
+{
+ "name": "exchange_403_role_not_allowed",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/internal/auth/exchange/",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "X-LoyalUP-Exchange-Secret": "<CHECKUP_TOKEN_EXCHANGE_SECRET>"
+  },
+  "body": {
+   "checkup_user_id": "fx-admin",
+   "tenant_schema": "dev",
+   "role": "staff",
+   "display_name": "Fixture Admin"
+  }
+ },
+ "response": {
+  "status": 403,
+  "body": {
+   "code": "role_not_allowed",
+   "detail": "разрешены только network_admin и client — роль выводит CheckUp из кодов loyalty.*"
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

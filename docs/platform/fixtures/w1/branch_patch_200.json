@@ -1,0 +1,44 @@
+{
+ "name": "branch_patch_200",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/mobile/branches/3/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "phone": "+7 900 000-00-00",
+   "address": "ул. Тестовая, 1"
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "id": 3,
+   "branch_id": 990002,
+   "is_active": true,
+   "name": "Песочница CheckUp · Точка 2",
+   "description": "Тестовая точка для стыка с CheckUp (контракт платформы, §7). Не для гостей.",
+   "review_link_yandex": "",
+   "review_link_2gis": "",
+   "review_links_default": false,
+   "address": "ул. Тестовая, 1",
+   "phone": "+7 900 000-00-00",
+   "yandex_map": "",
+   "gis_map": "",
+   "code_prompt_message": "",
+   "quest_show_message": "",
+   "story_cafe_address": "",
+   "story_activation_text": "",
+   "story_saved_text": "",
+   "changed": [
+    "address",
+    "phone"
+   ]
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

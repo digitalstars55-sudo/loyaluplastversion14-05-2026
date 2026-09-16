@@ -1,0 +1,21 @@
+{
+ "name": "analytics_rf_reward_catalog",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/rf/reward-catalog/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "items": []
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

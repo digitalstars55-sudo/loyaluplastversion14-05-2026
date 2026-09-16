@@ -1,0 +1,97 @@
+{
+ "name": "dashboard_today",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/dashboard/today/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "date": "2026-09-16",
+   "meta": {
+    "branch_ids": []
+   },
+   "reviews": {
+    "unanswered_negative": 3,
+    "waiting_reply": 1,
+    "drafts_ready": 0,
+    "auto_send_scheduled": 0,
+    "new_today": 0,
+    "checkup_in_progress": 0
+   },
+   "daily_codes": {
+    "date": "2026-09-16",
+    "branches_active": 2,
+    "branches_without_code": 1,
+    "codes": [
+     {
+      "id": 61,
+      "branch_id": 2,
+      "branch_name": "Конференция \"Автосуши Автопицца\"",
+      "purpose": "BIRTHDAY",
+      "code": "27671",
+      "valid_date": "2026-09-16",
+      "generated_by": "AUTO",
+      "created_at": "2026-09-16T00:00:30.805158+00:00"
+     },
+     {
+      "id": 59,
+      "branch_id": 2,
+      "branch_name": "Конференция \"Автосуши Автопицца\"",
+      "purpose": "SUPERPRIZE",
+      "code": "13597",
+      "valid_date": "2026-09-16",
+      "generated_by": "AUTO",
+      "created_at": "2026-09-16T00:00:30.797050+00:00"
+     },
+     {
+      "id": 60,
+      "branch_id": 2,
+      "branch_name": "Конференция \"Автосуши Автопицца\"",
+      "purpose": "OTHER",
+      "code": "57300",
+      "valid_date": "2026-09-16",
+      "generated_by": "AUTO",
+      "created_at": "2026-09-16T00:00:30.801946+00:00"
+     }
+    ]
+   },
+   "billing": {
+    "paid_until": "2030-03-05",
+    "days_left": 1266,
+    "is_active": true
+   },
+   "top_branches": {
+    "days": 30,
+    "rows": [
+     {
+      "branch_id": 2,
+      "public_branch_id": 239014483,
+      "name": "Конференция \"Автосуши Автопицца\"",
+      "total": 6,
+      "negative": 1,
+      "unanswered_negative": 0,
+      "avg_rating": 4.3
+     },
+     {
+      "branch_id": 3,
+      "public_branch_id": 990002,
+      "name": "Песочница CheckUp · Точка 2",
+      "total": 5,
+      "negative": 3,
+      "unanswered_negative": 3,
+      "avg_rating": 2.2
+     }
+    ]
+   }
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

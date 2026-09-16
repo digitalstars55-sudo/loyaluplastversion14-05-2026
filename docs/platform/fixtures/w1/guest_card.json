@@ -1,0 +1,53 @@
+{
+ "name": "guest_card",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/guests/100000001/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "vk_id": "100000002",
+   "first_name": "Гость",
+   "last_name": "Тестовый",
+   "phone": "",
+   "birthday": "2000-07-19",
+   "registered_at": "2026-09-14T20:46:26.434012+00:00",
+   "recency_days": 2,
+   "frequency": 1,
+   "coins_balance": 0,
+   "total_earned": 0,
+   "total_spent": 0,
+   "segment_key": "4_1",
+   "segment_emoji": null,
+   "segment_name": null,
+   "vk_status": {
+    "is_subscribed_community": true,
+    "is_subscribed_newsletter": true,
+    "is_blocked": false,
+    "last_seen_at": "2026-09-14T20:46:26.441950+00:00"
+   },
+   "recent_visits": [
+    {
+     "id": 15,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "visited_at": "2026-09-14T20:46:26.441950+00:00",
+     "table_number": null
+    }
+   ],
+   "recent_txns": [],
+   "prizes_received": 1,
+   "prizes_activated": 0,
+   "reviews_count": 0
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

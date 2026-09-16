@@ -1,0 +1,113 @@
+{
+ "name": "analytics_reviews_summary",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/reviews/summary/?period=all",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "meta": {
+    "start": "2000-01-01",
+    "end": "2026-09-16",
+    "branch_ids": []
+   },
+   "total": 12,
+   "avg_rating": 3.4,
+   "unanswered_negative": 3,
+   "waiting_reply": 1,
+   "sentiments": [
+    {
+     "key": "POSITIVE",
+     "label": "Позитивные",
+     "count": 6
+    },
+    {
+     "key": "NEGATIVE",
+     "label": "Негативные",
+     "count": 4
+    },
+    {
+     "key": "PARTIALLY_NEGATIVE",
+     "label": "Частично негативные",
+     "count": 0
+    },
+    {
+     "key": "NEUTRAL",
+     "label": "Нейтральные",
+     "count": 2
+    },
+    {
+     "key": "SPAM",
+     "label": "Спам",
+     "count": 0
+    },
+    {
+     "key": "WAITING",
+     "label": "Ожидают анализа",
+     "count": 0
+    }
+   ],
+   "ratings": [
+    {
+     "star": 5,
+     "count": 4
+    },
+    {
+     "star": 4,
+     "count": 2
+    },
+    {
+     "star": 3,
+     "count": 1
+    },
+    {
+     "star": 2,
+     "count": 2
+    },
+    {
+     "star": 1,
+     "count": 2
+    }
+   ],
+   "sources": {
+    "APP": 11,
+    "VK_MESSAGE": 1
+   },
+   "checkup": {
+    "in_progress": 0,
+    "resolved": 0,
+    "rejected": 0
+   },
+   "vk_threads_without_branch": 1,
+   "by_branch": [
+    {
+     "branch_id": 2,
+     "public_branch_id": 239014483,
+     "name": "Конференция \"Автосуши Автопицца\"",
+     "total": 6,
+     "negative": 1,
+     "unanswered_negative": 0,
+     "avg_rating": 4.3
+    },
+    {
+     "branch_id": 3,
+     "public_branch_id": 990002,
+     "name": "Песочница CheckUp · Точка 2",
+     "total": 5,
+     "negative": 3,
+     "unanswered_negative": 3,
+     "avg_rating": 2.2
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

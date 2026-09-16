@@ -1,0 +1,95 @@
+{
+ "name": "analytics_stats",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/stats/?period=all",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "stats": {
+    "qr_scans": 3,
+    "cafe_scans": 6,
+    "delivery_scans": 0,
+    "total_scans": 6,
+    "game_reached": 5,
+    "community_subs_cafe": 0,
+    "community_subs_delivery": 0,
+    "community_subs_story": 0,
+    "community_subs_website": 0,
+    "community_subs_other": 0,
+    "newsletter_subs_cafe": 1,
+    "newsletter_subs_delivery": 0,
+    "newsletter_subs_story": 0,
+    "newsletter_subs_website": 0,
+    "newsletter_subs_other": 0,
+    "total_vk_subscribers": 1,
+    "new_group_with_gift": 1,
+    "repeat_game_players": 1,
+    "coin_purchasers": 0,
+    "new_community_subscribers": 0,
+    "new_newsletter_subscribers": 1,
+    "gift_cost_rub": 0.0,
+    "gift_cost_breakdown": [],
+    "unique_digitized_guests": 1,
+    "first_gift_receivers": 2,
+    "gift_activators": 0,
+    "birthday_greetings_sent": 0,
+    "birthday_celebrants": 0,
+    "message_open_rate": 0.0,
+    "message_total_sent": 0,
+    "message_total_read": 0,
+    "message_trackable": 0,
+    "vk_stories_publishers": 1,
+    "stories_referrals": 0,
+    "story_gift_receivers": 0,
+    "story_gift_activators": 0,
+    "story_gift_expired": 0,
+    "website_gift_players": 0,
+    "website_gift_receivers": 0,
+    "website_gift_activators": 0,
+    "website_gift_expired": 0,
+    "pos_guests": 0,
+    "scan_index": 0.0,
+    "pos_data_days": 0
+   },
+   "charts": {
+    "repeat_visits": {
+     "repeat": 1,
+     "first_time": 2
+    },
+    "gift_sources": {
+     "free": 0,
+     "coins": 0,
+     "not_taken": 3
+    },
+    "staff_involvement": {
+     "served": 0,
+     "not_served": 5
+    },
+    "quests": {
+     "completed": 0,
+     "pending": 0,
+     "not_entered": 3
+    },
+    "vk_stories": {
+     "uploaded": 1,
+     "not_uploaded": 2
+    }
+   },
+   "meta": {
+    "start": "2000-01-01",
+    "end": "2026-09-16",
+    "branch_ids": []
+   }
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

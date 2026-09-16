@@ -1,0 +1,47 @@
+{
+ "name": "branch_patch_400_read_only",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/mobile/branches/3/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "branch_id": 1,
+   "foo": 2
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "Поля только для чтения или неизвестные",
+   "read_only": [
+    "branch_id"
+   ],
+   "unknown": [
+    "foo"
+   ],
+   "editable": [
+    "name",
+    "description",
+    "review_link_yandex",
+    "review_link_2gis",
+    "review_links_default",
+    "address",
+    "phone",
+    "yandex_map",
+    "gis_map",
+    "code_prompt_message",
+    "quest_show_message",
+    "story_cafe_address",
+    "story_activation_text",
+    "story_saved_text"
+   ]
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

@@ -1,0 +1,36 @@
+{
+ "name": "reviews_messages",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/mobile/reviews/5/messages/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "messages": [
+    {
+     "id": 6,
+     "source": "APP",
+     "text": "[песочница CheckUp] Ждали заказ 40 минут, суп принесли холодным.",
+     "rating": 2,
+     "created_at": "2026-09-04T16:19:20.943441+03:00",
+     "admin_name": null,
+     "attachments": [],
+     "is_ai_generated": false,
+     "reply_to_text": "",
+     "reply_to_date": null,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "table_number": 7
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

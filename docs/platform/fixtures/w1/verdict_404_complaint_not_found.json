@@ -1,0 +1,29 @@
+{
+ "name": "verdict_404_complaint_not_found",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/internal/complaints/verdict/",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "X-LoyalUP-Relay-Secret": "<LOYALUP_RELAY_SECRET>"
+  },
+  "body": {
+   "tenant_schema": "dev",
+   "complaint_id": "999999-app",
+   "status": "resolved",
+   "verdict": "Компенсация 500 баллов",
+   "manager_name": "Алина",
+   "resolved_at": "2026-09-16T18:00:00+03:00"
+  }
+ },
+ "response": {
+  "status": 404,
+  "body": {
+   "code": "complaint_not_found",
+   "detail": "переписки 999999 в сети dev нет"
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

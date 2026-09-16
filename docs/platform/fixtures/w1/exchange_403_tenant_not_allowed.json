@@ -1,0 +1,27 @@
+{
+ "name": "exchange_403_tenant_not_allowed",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/internal/auth/exchange/",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "X-LoyalUP-Exchange-Secret": "<CHECKUP_TOKEN_EXCHANGE_SECRET>"
+  },
+  "body": {
+   "checkup_user_id": "fx-admin",
+   "tenant_schema": "levone",
+   "role": "network_admin",
+   "display_name": "Fixture Admin"
+  }
+ },
+ "response": {
+  "status": 403,
+  "body": {
+   "code": "tenant_not_allowed",
+   "detail": "обмен для сети levone ещё не включён"
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

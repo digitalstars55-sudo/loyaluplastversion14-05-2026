@@ -1,0 +1,60 @@
+{
+ "name": "exchange_200_client",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/internal/auth/exchange/",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "X-LoyalUP-Exchange-Secret": "<CHECKUP_TOKEN_EXCHANGE_SECRET>"
+  },
+  "body": {
+   "checkup_user_id": "fx-client",
+   "tenant_schema": "dev",
+   "role": "client",
+   "branch_ids": [
+    990002
+   ],
+   "display_name": "Fixture Client"
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "token": "<jwt>",
+   "expires_at": "2026-09-16T18:02:40.686168+00:00",
+   "expires_in": 3599,
+   "tenant_schema": "dev",
+   "tenant_domain": "dev.levelupapp.ru",
+   "created": true,
+   "profile": {
+    "id": 55,
+    "username": "checkup-fx-client-dev",
+    "full_name": "Fixture Client",
+    "role": "client",
+    "role_label": "Просмотр",
+    "email": "",
+    "phone": "",
+    "city": "",
+    "birthday": null,
+    "birthday_set_at": null,
+    "avatar_url": null,
+    "branch_ids": [],
+    "tenant_domain": "dev.levelupapp.ru",
+    "tenant_name": "КОНФЕРЕНЦИЯ АВТОСУШИ АВТОПИЦЦА",
+    "companies": [
+     {
+      "id": 15,
+      "name": "КОНФЕРЕНЦИЯ АВТОСУШИ АВТОПИЦЦА",
+      "domain": "dev.levelupapp.ru"
+     }
+    ],
+    "push_prefs": {},
+    "is_superadmin": false,
+    "feature_access": []
+   }
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

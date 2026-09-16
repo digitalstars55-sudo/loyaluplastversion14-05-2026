@@ -1,0 +1,21 @@
+{
+ "name": "analytics_segments",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/segments/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "segments": []
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

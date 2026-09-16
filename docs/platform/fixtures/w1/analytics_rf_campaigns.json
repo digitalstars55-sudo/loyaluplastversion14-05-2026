@@ -1,0 +1,21 @@
+{
+ "name": "analytics_rf_campaigns",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/rf/campaigns/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "campaigns": []
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

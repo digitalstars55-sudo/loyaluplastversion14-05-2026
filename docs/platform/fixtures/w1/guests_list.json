@@ -1,0 +1,60 @@
+{
+ "name": "guests_list",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/guests/?limit=5&offset=0",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "guests": [
+    {
+     "vk_id": "100000003",
+     "first_name": "Гость",
+     "last_name": "Тестовый",
+     "last_visit": "14 сен",
+     "frequency": 3,
+     "recency_days": 2,
+     "coins": 2000
+    },
+    {
+     "vk_id": "100000001",
+     "first_name": "Гость",
+     "last_name": "Тестовый",
+     "last_visit": "10 сен",
+     "frequency": 1,
+     "recency_days": 6,
+     "coins": 2000
+    },
+    {
+     "vk_id": "100000002",
+     "first_name": "Гость",
+     "last_name": "Тестовый",
+     "last_visit": "14 сен",
+     "frequency": 1,
+     "recency_days": 2,
+     "coins": 0
+    },
+    {
+     "vk_id": "100000004",
+     "first_name": "Гость",
+     "last_name": "Тестовый",
+     "last_visit": "3 сен",
+     "frequency": 1,
+     "recency_days": 13,
+     "coins": 0
+    }
+   ],
+   "total": 4,
+   "total_visits": 6
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

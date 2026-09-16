@@ -1,0 +1,40 @@
+{
+ "name": "analytics_auto_reply_settings",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/auto-reply/settings/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "enabled": true,
+   "sentiment_enabled": {
+    "POSITIVE": true,
+    "NEGATIVE": true,
+    "PARTIALLY_NEGATIVE": true,
+    "NEUTRAL": true,
+    "PENDING": true
+   },
+   "branch_enabled": {},
+   "reminder_minutes": 180,
+   "ai_tone": "friendly",
+   "auto_send_enabled": false,
+   "auto_send_delay_minutes": 15,
+   "auto_send_attach_links": true,
+   "auto_send_links_text": "Будем очень рады вашему отзыву на Яндекс Картах или в 2ГИС — кнопки ниже 👇",
+   "auto_send_daily_limit": 50,
+   "auto_send_branch_enabled": {},
+   "auto_ack_enabled": false,
+   "auto_ack_delay_minutes": 30,
+   "auto_ack_text": "Спасибо большое за обратную связь 🙏 Мы сейчас во всём разберёмся и обязательно вернёмся к вам с ответом."
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

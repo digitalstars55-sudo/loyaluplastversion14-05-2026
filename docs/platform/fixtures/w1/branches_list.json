@@ -1,0 +1,34 @@
+{
+ "name": "branches_list",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/mobile/branches/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": [
+   {
+    "id": 2,
+    "branch_id": 239014483,
+    "name": "Конференция \"Автосуши Автопицца\"",
+    "is_active": true,
+    "address": ""
+   },
+   {
+    "id": 3,
+    "branch_id": 990002,
+    "name": "Песочница CheckUp · Точка 2",
+    "is_active": true,
+    "address": ""
+   }
+  ]
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

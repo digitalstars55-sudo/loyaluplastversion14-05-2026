@@ -1,0 +1,37 @@
+{
+ "name": "branch_card",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/mobile/branches/3/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "id": 3,
+   "branch_id": 990002,
+   "is_active": true,
+   "name": "Песочница CheckUp · Точка 2",
+   "description": "Тестовая точка для стыка с CheckUp (контракт платформы, §7). Не для гостей.",
+   "review_link_yandex": "",
+   "review_link_2gis": "",
+   "review_links_default": false,
+   "address": "",
+   "phone": "",
+   "yandex_map": "",
+   "gis_map": "",
+   "code_prompt_message": "",
+   "quest_show_message": "",
+   "story_cafe_address": "",
+   "story_activation_text": "",
+   "story_saved_text": ""
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

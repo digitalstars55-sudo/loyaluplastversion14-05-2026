@@ -1,0 +1,23 @@
+{
+ "name": "analytics_stats_slow",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/stats/slow/?period=all",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "pos_guests": 0,
+   "scan_index": 0.0,
+   "pos_data_days": 0
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

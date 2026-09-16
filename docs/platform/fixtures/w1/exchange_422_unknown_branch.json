@@ -1,0 +1,33 @@
+{
+ "name": "exchange_422_unknown_branch",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/internal/auth/exchange/",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "X-LoyalUP-Exchange-Secret": "<CHECKUP_TOKEN_EXCHANGE_SECRET>"
+  },
+  "body": {
+   "checkup_user_id": "fx-client",
+   "tenant_schema": "dev",
+   "role": "client",
+   "branch_ids": [
+    5
+   ],
+   "display_name": "Fixture Client"
+  }
+ },
+ "response": {
+  "status": 422,
+  "body": {
+   "code": "unknown_branch",
+   "detail": "точек с такими branch_id в сети нет",
+   "unknown_branch_ids": [
+    5
+   ]
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

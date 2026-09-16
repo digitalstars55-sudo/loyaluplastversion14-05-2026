@@ -1,0 +1,25 @@
+{
+ "name": "notifications",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/notifications/?limit=5",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "notifications": [],
+   "unread": 0,
+   "has_more": false,
+   "next_before_id": null,
+   "limit": 5
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

@@ -1,0 +1,28 @@
+{
+ "name": "analytics_branches",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/branches/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": [
+   {
+    "id": 2,
+    "name": "Конференция \"Автосуши Автопицца\""
+   },
+   {
+    "id": 3,
+    "name": "Песочница CheckUp · Точка 2"
+   }
+  ]
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

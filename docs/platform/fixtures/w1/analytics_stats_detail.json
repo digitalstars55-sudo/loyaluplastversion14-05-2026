@@ -1,0 +1,59 @@
+{
+ "name": "analytics_stats_detail",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/stats/detail/?metric=qr_scans&period=all&limit=5",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "metric": "qr_scans",
+   "label": "Отсканировали QR-код",
+   "meta": {
+    "start": "2000-01-01",
+    "end": "2026-09-16",
+    "branch_ids": []
+   },
+   "total": 3,
+   "limit": 5,
+   "offset": 0,
+   "guests": [
+    {
+     "vk_id": 100000001,
+     "first_name": "Гость",
+     "last_name": "Тестовый",
+     "photo_url": "",
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "is_employee": false
+    },
+    {
+     "vk_id": 100000002,
+     "first_name": "Гость",
+     "last_name": "Тестовый",
+     "photo_url": "",
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "is_employee": false
+    },
+    {
+     "vk_id": 100000003,
+     "first_name": "Гость",
+     "last_name": "Тестовый",
+     "photo_url": "",
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "is_employee": false
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

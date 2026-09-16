@@ -1,0 +1,26 @@
+{
+ "name": "billing_status",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/billing/status/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "plan": "standard",
+   "plan_label": "Стандарт",
+   "price_rub": 4900,
+   "next_payment_at": "2030-03-05",
+   "auto_pay_enabled": false,
+   "paid_until": "2030-03-05"
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}

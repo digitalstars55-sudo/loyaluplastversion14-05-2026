@@ -1,0 +1,30 @@
+{
+ "name": "verdict_409_already_closed",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/internal/complaints/verdict/",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "X-LoyalUP-Relay-Secret": "<LOYALUP_RELAY_SECRET>"
+  },
+  "body": {
+   "tenant_schema": "dev",
+   "complaint_id": "5-app",
+   "status": "rejected",
+   "verdict": "Компенсация 500 баллов",
+   "manager_name": "Алина",
+   "resolved_at": "2026-09-16T18:00:00+03:00"
+  }
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "already_closed",
+   "detail": "жалоба уже закрыта с другим статусом; чтобы переписать — force: true",
+   "current_status": "resolved"
+  }
+ },
+ "recorded_at": "2026-09-16",
+ "tenant": "dev (песочница)"
+}
