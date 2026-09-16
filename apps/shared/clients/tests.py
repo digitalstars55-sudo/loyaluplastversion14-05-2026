@@ -324,13 +324,17 @@ class CompanyAdminConfigTest(TestCase):
         self.factory = RequestFactory()
 
     def test_list_display(self):
+        # payment_badge (цветной срок оплаты) заменил голый paid_until,
+        # admin_link ведёт в админку сети — тест догнал текущий список.
         self.assertEqual(
             self.admin.list_display,
-            ('name', 'client_id', 'schema_name', 'primary_domain', 'is_active', 'paid_until', 'config_link'),
+            ('name', 'client_id', 'schema_name', 'primary_domain', 'is_active',
+             'payment_badge', 'config_link', 'admin_link'),
         )
 
     def test_list_filter(self):
-        self.assertEqual(self.admin.list_filter, ('is_active',))
+        from .admin import PaymentStatusFilter
+        self.assertEqual(self.admin.list_filter, ('is_active', PaymentStatusFilter))
 
     def test_search_fields(self):
         self.assertEqual(self.admin.search_fields, ('name', 'schema_name'))
