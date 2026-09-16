@@ -16,6 +16,7 @@ from rest_framework import generics, status
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.views import APIView
 
 from apps.tenant.branch.models import (
@@ -57,10 +58,12 @@ class MobileBranchListAPIView(generics.ListAPIView):
 class MobileReviewListAPIView(generics.ListAPIView):
     """
     GET /api/v1/mobile/reviews/?branch_ids=1,2&period=30
+        &sentiment=bad|NEGATIVE,…&status=unread|replied|unanswered&source=app|vk
+        &checkup_status=in_progress|resolved|rejected|none&q=…&limit=50&offset=0
 
-    Возвращает список TestimonialConversation в формате `Review[]`
-    как ожидает мобайл. period — целое число дней (фильтр по
-    last_message_at).
+    Возвращает {reviews: Review[], total, limit, offset}. period — целое число
+    дней (фильтр по last_message_at). Фильтры и пагинация — review_filters.py;
+    без них ответ тот же, что до 16.09.2026 (весь список).
     """
     permission_classes = [IsAuthenticated]
     serializer_class = ReviewListSerializer
@@ -129,13 +132,38 @@ class MobileReviewListAPIView(generics.ListAPIView):
             except (ValueError, TypeError):
                 pass
 
+        # Серверные фильтры (16.09.2026, контракт платформы №1): тональность,
+        # статус ответа, источник, статус жалобы в CheckUp, поиск. Без
+        # параметров ничего не меняют.
+        from .review_filters import apply_review_filters
+        qs = apply_review_filters(qs, self.request.query_params)
+
         return qs
 
+    @extend_schema(parameters=[
+        OpenApiParameter('branch_ids', str, description='id точек через запятую (пересекается с правами)'),
+        OpenApiParameter('period', int, description='дней назад по last_message_at'),
+        OpenApiParameter('sentiment', str, description='POSITIVE,NEGATIVE,PARTIALLY_NEGATIVE,NEUTRAL,SPAM,WAITING или bad (= весь негатив)'),
+        OpenApiParameter('status', str, enum=['unread', 'replied', 'unanswered', 'all'], description='ждёт ответа / отвечен / без ответа'),
+        OpenApiParameter('source', str, description='app | vk — есть ли в треде сообщение такого источника'),
+        OpenApiParameter('checkup_status', str, enum=['in_progress', 'resolved', 'rejected', 'none', 'any'], description='статус жалобы в CheckUp'),
+        OpenApiParameter('q', str, description='поиск по VK ID отправителя или имени гостя'),
+        OpenApiParameter('limit', int, description='1..200; без limit — весь список'),
+        OpenApiParameter('offset', int),
+    ])
     def list(self, request, *args, **kwargs):
-        # Мобайл ожидает {reviews: [...]} а не голый массив
+        # Мобайл ожидает {reviews: [...]} а не голый массив. С 16.09 рядом
+        # total/limit/offset: без ?limit= список полный, как раньше.
+        from .review_filters import parse_pagination
         qs = self.filter_queryset(self.get_queryset())
+        limit, offset = parse_pagination(request.query_params)
+        total = qs.count()
+        if limit is not None:
+            qs = qs[offset:offset + limit]
+        elif offset:
+            qs = qs[offset:]
         ser = self.get_serializer(qs, many=True)
-        return Response({'reviews': ser.data})
+        return Response({'reviews': ser.data, 'total': total, 'limit': limit, 'offset': offset})
 
 
 def _check_conv_access(request, conv) -> bool:
