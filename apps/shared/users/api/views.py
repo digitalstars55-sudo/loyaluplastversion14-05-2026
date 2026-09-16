@@ -298,16 +298,49 @@ class NotificationListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        """
+        Параметры (все необязательные, без них ответ как раньше — последние limit штук):
+          limit       1..200 (по умолчанию 50)
+          before_id   курсор: отдать записи со id < before_id (листать историю назад);
+                      в ответе next_before_id — что передать за следующей страницей
+          since       ISO-8601: только записи новее этого момента (опрос «что нового»)
+          type        типы через запятую (review_new,draft_ready,…)
+          unread=1    только непрочитанные
+        Курсор по id, а не по offset: уведомления прибывают постоянно, и offset
+        сдвигал бы страницы. Добавлено 16.09.2026 для колокольчика CheckUp (контракт №17).
+        """
+        from django.utils.dateparse import parse_datetime
         from django_tenants.utils import schema_context
         from apps.shared.users.models import Notification
 
+        params = request.query_params
         try:
-            limit = min(int(request.query_params.get('limit', 50)), 200)
+            limit = max(1, min(int(params.get('limit', 50)), 200))
         except (TypeError, ValueError):
             limit = 50
+        before_id = None
+        try:
+            if params.get('before_id'):
+                before_id = max(0, int(params.get('before_id')))
+        except (TypeError, ValueError):
+            before_id = None
+        since = parse_datetime(params.get('since', '') or '') if params.get('since') else None
+        types = [t.strip() for t in (params.get('type') or '').split(',') if t.strip()]
+        only_unread = str(params.get('unread', '')).lower() in ('1', 'true', 'yes')
 
         with schema_context('public'):
-            qs = Notification.objects.filter(user=request.user).order_by('-created_at')[:limit]
+            qs = Notification.objects.filter(user=request.user).order_by('-created_at', '-id')
+            if before_id:
+                qs = qs.filter(pk__lt=before_id)
+            if since is not None:
+                qs = qs.filter(created_at__gt=since)
+            if types:
+                qs = qs.filter(type__in=types)
+            if only_unread:
+                qs = qs.filter(read_at__isnull=True)
+            rows = list(qs[:limit + 1])
+            has_more = len(rows) > limit
+            rows = rows[:limit]
             items = [{
                 'id':          n.pk,
                 'type':        n.type,
@@ -316,10 +349,16 @@ class NotificationListAPIView(APIView):
                 'data':        n.data or {},
                 'read':        n.read_at is not None,
                 'created_at':  n.created_at.isoformat(),
-            } for n in qs]
+            } for n in rows]
             unread = Notification.objects.filter(user=request.user, read_at__isnull=True).count()
 
-        return Response({'notifications': items, 'unread': unread})
+        return Response({
+            'notifications': items,
+            'unread': unread,
+            'has_more': has_more,
+            'next_before_id': rows[-1].pk if (has_more and rows) else None,
+            'limit': limit,
+        })
 
     def post(self, request):
         from django_tenants.utils import schema_context
