@@ -710,3 +710,153 @@ class AutoBroadcastVariant(TimeStampedModel):
         verbose_name = 'Вариант текста (A/B)'
         verbose_name_plural = 'Варианты текста (A/B)'
         ordering = ['rule', 'name']
+
+
+# ── BroadcastDraft (внешний кабинет CheckUp) ──────────────────────────────────
+#
+# Черновик рассылки — то, что кабинет CheckUp сохраняет ДО отправки.
+# Существующая механика (Broadcast / BroadcastSend / BroadcastRecipient) не
+# меняется: черновик живёт рядом и в момент «Отправить» порождает обычные
+# Broadcast(SPECIFIC) + BroadcastSend на каждую точку — ровно как это делает
+# мобильное приложение. Так внешний кабинет получает CRUD и предпросмотр
+# аудитории, а живой путь отправки остаётся прежним.
+
+
+class DraftMode(models.TextChoices):
+    RESTAURANT = 'restaurant', 'Кафе (визиты)'
+    DELIVERY   = 'delivery',   'Доставка'
+
+
+class DraftStatus(models.TextChoices):
+    DRAFT    = 'draft',    'Черновик'
+    SENT     = 'sent',     'Отправлен'
+    ARCHIVED = 'archived', 'В архиве'
+
+
+class BroadcastDraft(TimeStampedModel):
+    """
+    Черновик рассылки для внешнего кабинета (контракт платформы, ручка №11).
+
+    Хранит ПАРАМЕТРЫ будущей рассылки, а не саму рассылку: ячейку RF-матрицы
+    (mode + segment + r/f + период), список точек, фильтр пола и A/B-варианты.
+    Аудитория считается на лету — и в предпросмотре, и в момент отправки, —
+    поэтому между сохранением черновика и запуском состав гостей может
+    измениться; от этого защищает expected_count (см. api/guard.py).
+
+    status:
+      draft    — можно править, удалять и отправлять;
+      sent     — отправлен, правка/удаление запрещены (409);
+      archived — скрыт из работы (ставится вручную/в будущем).
+    """
+
+    name = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name='Название',
+        help_text='Только для кабинета — гости его не видят.',
+    )
+    message_text = models.TextField(
+        blank=True,
+        verbose_name='Текст сообщения',
+        help_text='Лимит VK: 4096 символов.',
+    )
+    image = models.ImageField(
+        upload_to='broadcasts/',
+        null=True,
+        blank=True,
+        verbose_name='Изображение',
+        help_text='Зарезервировано: в первой версии API картинка не поддерживается.',
+    )
+
+    # ── Ячейка RF-матрицы ─────────────────────────────────────────────────────
+
+    mode = models.CharField(
+        max_length=20,
+        choices=DraftMode.choices,
+        default=DraftMode.RESTAURANT,
+        verbose_name='Матрица',
+        help_text='restaurant — визиты в кафе, delivery — активации доставки.',
+    )
+    segment = models.ForeignKey(
+        'analytics.RFSegment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='broadcast_drafts',
+        verbose_name='RF-сегмент',
+        help_text='Пусто — рассылка всем оцифрованным гостям выбранных точек.',
+    )
+    r_score = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        verbose_name='R (давность)',
+        help_text='Координата ячейки матрицы, которую видел пользователь.',
+    )
+    f_score = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        verbose_name='F (частота)',
+        help_text='Координата ячейки матрицы, которую видел пользователь.',
+    )
+    start = models.DateField(
+        null=True, blank=True,
+        verbose_name='Период с',
+        help_text='Пусто — окно матрицы по умолчанию (последние 30 дней).',
+    )
+    end = models.DateField(
+        null=True, blank=True,
+        verbose_name='Период по',
+    )
+
+    # ── Аудитория и содержимое ────────────────────────────────────────────────
+
+    branch_ids = models.JSONField(
+        default=list,
+        verbose_name='Точки (PK LoyalUP)',
+        help_text='Список PK торговых точек, по которым уйдёт рассылка.',
+    )
+    gender_filter = models.CharField(
+        max_length=3,
+        choices=GenderFilter.choices,
+        default=GenderFilter.ALL,
+        verbose_name='Пол',
+    )
+    variants = models.JSONField(
+        default=list,
+        verbose_name='Варианты текста (A/B)',
+        help_text='[{"percent": 50, "message_text": "..."}] — сумма процентов 100.',
+    )
+
+    # ── Состояние ─────────────────────────────────────────────────────────────
+
+    status = models.CharField(
+        max_length=20,
+        choices=DraftStatus.choices,
+        default=DraftStatus.DRAFT,
+        db_index=True,
+        verbose_name='Статус',
+    )
+    created_by = models.CharField(
+        max_length=150,
+        blank=True,
+        verbose_name='Кто создал',
+        help_text='Логин пользователя на момент создания черновика.',
+    )
+    sent_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Отправлен',
+    )
+    last_send = models.ForeignKey(
+        BroadcastSend,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='+',
+        verbose_name='Запуск',
+        help_text='Первый из созданных запусков пачки — ссылка на историю.',
+    )
+
+    def __str__(self):
+        return self.name or f'Черновик #{self.pk}'
+
+    class Meta:
+        verbose_name = 'Черновик рассылки (внешний кабинет)'
+        verbose_name_plural = 'Черновики рассылок (внешний кабинет)'
+        ordering = ['-updated_at']
