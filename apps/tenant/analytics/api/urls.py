@@ -1,4 +1,5 @@
 from django.urls import path
+from .summary import DashboardTodayAPIView, ReviewsSummaryAPIView, StatsDetailAPIView
 from .views import (
     GeneralStatsAPIView, RFStatsAPIView, BranchListAPIView,
     RecalculateRFView, RFThresholdsAPIView, SlowStatsAPIView,
@@ -34,5 +35,9 @@ urlpatterns = [
     path('analytics/rf/generate-broadcast-text/', GenerateBroadcastTextAPIView.as_view(), name='analytics-rf-generate-text'),
     path('analytics/report/generate-comment/',    GenerateReportCommentAPIView.as_view(), name='analytics-report-generate-comment'),
     path('analytics/branches/',         BranchListAPIView.as_view(),   name='analytics-branches'),
+    # Экраны CheckUp (контракт платформы, ручки №2/№5/№4) — только чтение, цифры как в веб-кабинете.
+    path('analytics/reviews/summary/',  ReviewsSummaryAPIView.as_view(), name='analytics-reviews-summary'),
+    path('analytics/stats/detail/',     StatsDetailAPIView.as_view(),    name='analytics-stats-detail-api'),
+    path('dashboard/today/',            DashboardTodayAPIView.as_view(), name='dashboard-today'),
     path('analytics/contact-points/',   ContactPointsAPIView.as_view(), name='analytics-contact-points-api'),
 ]
