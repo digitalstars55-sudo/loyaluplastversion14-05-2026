@@ -276,7 +276,8 @@ class TenantDomainViewTest(TestCase):
 
 class TenantDomainResponseSerializerTest(TestCase):
 
-    FIELDS = {'domain', 'name', 'web_entry_enabled', 'degrade_enabled'}
+    # guest_phone_enabled — №78, флаг платформы (settings.GUEST_PHONE_ENABLED), default=False
+    FIELDS = {'domain', 'name', 'web_entry_enabled', 'degrade_enabled', 'guest_phone_enabled'}
 
     def _make(self, domain='rest.localhost', name='Ресторан', **flags):
         return TenantDomainResponseSerializer({'domain': domain, 'name': name, **flags})
@@ -308,6 +309,7 @@ class TenantDomainResponseSerializerTest(TestCase):
         data = self._make().data
         self.assertIs(data['web_entry_enabled'], False)
         self.assertIs(data['degrade_enabled'], False)
+        self.assertIs(data['guest_phone_enabled'], False)
 
     def test_no_extra_fields(self):
         self.assertEqual(set(self._make().data.keys()), self.FIELDS)
