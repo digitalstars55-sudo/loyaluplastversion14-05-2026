@@ -411,11 +411,14 @@ CHECKUP_TOKEN_EXCHANGE_SECRET = os.getenv("CHECKUP_TOKEN_EXCHANGE_SECRET", "")
 PLATFORM_MONITOR_ENABLED = os.getenv("PLATFORM_MONITOR_ENABLED", "0") == "1"
 # За сколько дней предупреждать о сроке (сертификат, домен, оплата сети).
 PLATFORM_MONITOR_WARN_DAYS = int(os.getenv("PLATFORM_MONITOR_WARN_DAYS", "14") or 14)
-# Хосты, у которых проверяем TLS-сертификат (через запятую).
+# Хосты, у которых проверяем TLS-сертификат (через запятую). api-ya.levelupapp.ru
+# («белая дверь» через Yandex Cloud) сюда не входит: 16.09.2026 мониторинг
+# показал, что имени нет в сертификате и дверью никто не пользуется —
+# владелец решил её снять, а не чинить.
 PLATFORM_MONITOR_TLS_HOSTS = [
     h.strip() for h in os.getenv(
         "PLATFORM_MONITOR_TLS_HOSTS",
-        "levelupapp.ru,vkapp.levelupapp.ru,levone.levelupapp.ru,api-ya.levelupapp.ru,levonework.ru",
+        "levelupapp.ru,vkapp.levelupapp.ru,levone.levelupapp.ru,levonework.ru",
     ).split(",") if h.strip()
 ]
 # Домены: срок продления. Сначала живой whois (whois.tcinet.ru:43, поле
