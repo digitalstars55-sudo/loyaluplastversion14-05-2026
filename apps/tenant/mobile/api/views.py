@@ -720,16 +720,27 @@ class GuestDetailAPIView(APIView):
             Q(client_id__in=cb_ids) | Q(vk_guest_id=client.pk)
         ).distinct().count()
 
-        # Телефон — из последнего отзыва, где гость его указал.
-        phone = TestimonialMessage.objects.filter(
-            conversation__client_id__in=cb_ids,
-        ).exclude(phone='').order_by('-created_at').values_list('phone', flat=True).first() or ''
+        # Телефон — сначала тот, что гость дал с согласия через ВК (№78,
+        # guest.Client.phone); иначе из последнего отзыва, где гость его указал.
+        phone_source = ''
+        phone = client.phone or ''
+        if phone:
+            phone_source = client.phone_source or 'vk'
+        else:
+            phone = TestimonialMessage.objects.filter(
+                conversation__client_id__in=cb_ids,
+            ).exclude(phone='').order_by('-created_at').values_list('phone', flat=True).first() or ''
+            if phone:
+                phone_source = 'review'
 
         return Response({
             'vk_id':         str(client.vk_id),
             'first_name':    client.first_name or '',
             'last_name':     client.last_name or '',
             'phone':         phone,
+            # №78: откуда телефон ('vk' | 'vk_unverified' | 'review' | '') и когда дано согласие.
+            'phone_source':  phone_source,
+            'phone_consent_at': client.phone_consent_at.isoformat() if client.phone_consent_at else None,
             'birthday':      birthday,
             'registered_at': registered_at.isoformat(),
             'recency_days':  recency_days,

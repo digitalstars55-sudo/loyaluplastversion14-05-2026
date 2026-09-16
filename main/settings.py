@@ -376,6 +376,14 @@ CHECKUP_COMPLAINTS_ENABLED = os.getenv("CHECKUP_COMPLAINTS_ENABLED", "1") != "0"
 # Включить = такие жалобы лягут в CheckUp в «Без филиала», точку привяжут руками.
 CHECKUP_COMPLAINTS_RELAY_UNPOINTED = os.getenv(
     "CHECKUP_COMPLAINTS_RELAY_UNPOINTED", "0") == "1"
+# №78 карты переезда: телефон гостя с согласия через ВК (VKWebAppGetPhoneNumber).
+# Выкл (по умолчанию) = ручка POST /api/v1/client/phone/ отвечает 404, поля
+# guest.Client.phone* не заполняются, прод неотличим от эталона.
+GUEST_PHONE_ENABLED = os.getenv("GUEST_PHONE_ENABLED", "0") == "1"
+# Подпись телефона: 'off' — наблюдение (лог ok/mismatch, телефон сохраняется
+# как 'vk_unverified' при несовпадении), 'on' — несовпадение = 403.
+# Включать после нуля mismatch на живом трафике, как с VK_SIGN_ENFORCE.
+GUEST_PHONE_SIGN_ENFORCE = os.getenv("GUEST_PHONE_SIGN_ENFORCE", "off")
 # База для абсолютных ссылок на медиа: фото гостя уходят в CheckUp URL'ами,
 # а в базе лежат относительными путями (/media/...).
 CHECKUP_RELAY_MEDIA_BASE = os.getenv("CHECKUP_RELAY_MEDIA_BASE", "https://levelupapp.ru")

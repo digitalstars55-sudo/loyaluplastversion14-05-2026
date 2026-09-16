@@ -1141,3 +1141,57 @@ class CheckupPayloadGuestVkIdTest(SimpleTestCase):
         payload = build_payload(conv, 'levone')
         self.assertIsNotNone(payload)
         self.assertIsNone(payload['guest_vk_id'])
+
+
+# ──────────────────────────────────────────────────────────────────
+# guest_phone: из сообщения гостя, иначе из профиля (согласие через ВК, №78)
+# ──────────────────────────────────────────────────────────────────
+@override_settings(CHECKUP_COMPLAINTS_RELAY_UNPOINTED=False)
+@patch('apps.shared.relay.checkup_complaints._inference_window_hours', return_value=24)
+class CheckupPayloadGuestPhoneTest(SimpleTestCase):
+
+    @staticmethod
+    def _conv(phone_in_msg='', **kw):
+        branch = _FakeInferBranch(branch_id=202, name='Институтская')
+        return _FakeRelayConv(
+            branch_id=branch.pk, branch=branch,
+            msgs=[_FakeRelayMsg(text='Холодный суп', source='APP', rating=2, phone=phone_in_msg)],
+            **kw,
+        )
+
+    @staticmethod
+    def _profile(phone):
+        return SimpleNamespace(client=SimpleNamespace(vk_id=123456789, phone=phone))
+
+    def test_profile_phone_when_message_has_none(self, _hours):
+        from apps.shared.relay.checkup_complaints import build_payload
+        conv = self._conv()
+        conv.client_id = 5
+        conv.client = self._profile('+79991234567')
+        self.assertEqual(build_payload(conv, 'levone')['guest_phone'], '+79991234567')
+
+    def test_message_phone_wins_over_profile(self, _hours):
+        from apps.shared.relay.checkup_complaints import build_payload
+        conv = self._conv(phone_in_msg='+79990000000')
+        conv.client_id = 5
+        conv.client = self._profile('+79991234567')
+        self.assertEqual(build_payload(conv, 'levone')['guest_phone'], '+79990000000')
+
+    def test_no_profile_no_phone_is_empty(self, _hours):
+        from apps.shared.relay.checkup_complaints import build_payload
+        self.assertEqual(build_payload(self._conv(), 'levone')['guest_phone'], '')
+
+    def test_broken_profile_link_keeps_complaint(self, _hours):
+        from apps.shared.relay.checkup_complaints import build_payload
+
+        class _Boom:
+            @property
+            def client(self):
+                raise RuntimeError('гость уехал в другую схему')
+
+        conv = self._conv()
+        conv.client_id = 5
+        conv.client = _Boom()
+        payload = build_payload(conv, 'levone')
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload['guest_phone'], '')

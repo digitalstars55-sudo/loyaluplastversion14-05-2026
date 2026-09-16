@@ -30,12 +30,15 @@ class ClientAdmin(admin.ModelAdmin):
         return super().has_delete_permission(request, obj)
     list_display = ('__str__', 'vk_id', 'photo_preview', 'is_active', 'created_at')
     list_filter = ('is_active',)
-    search_fields = ('vk_id', 'first_name', 'last_name')
-    readonly_fields = ('vk_id', 'photo_preview', 'created_at', 'updated_at')
+    search_fields = ('vk_id', 'first_name', 'last_name', 'phone')
+    readonly_fields = ('vk_id', 'photo_preview', 'phone_source', 'phone_consent_at', 'created_at', 'updated_at')
 
     fieldsets = (
         (None, {
             'fields': ('vk_id', 'first_name', 'last_name', 'photo_url', 'photo_preview'),
+        }),
+        ('Телефон (с согласия через ВК, №78)', {
+            'fields': ('phone', 'phone_source', 'phone_consent_at'),
         }),
         ('Статус', {
             'fields': ('is_active',),

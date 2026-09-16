@@ -1,0 +1,170 @@
+"""
+Телефон гостя с согласия через ВКонтакте — карта переезда, №78.
+
+    POST   /api/v1/client/phone/   {vk_id, phone_number, sign}   → сохранить
+    DELETE /api/v1/client/phone/   {vk_id}                       → отозвать согласие
+
+Откуда данные: мини-апп вызывает bridge `VKWebAppGetPhoneNumber`, ВКонтакте
+показывает гостю окно согласия и отдаёт `{phone_number, sign}`; мини-апп шлёт
+их сюда как есть (телефон НЕ нормализовать на клиенте — подпись покрывает
+строку, которую вернул ВК). Заголовок `X-VK-Launch-Params` axios ставит сам,
+поэтому ручка живёт под префиксом `/api/v1/client/` и проходит
+`VKLaunchParamsMiddleware`: если заголовок есть и подпись запуска сошлась,
+в `request.vk_user_id` лежит ДОКАЗАННЫЙ id гостя. Это первая ручка в проекте,
+которая его читает.
+
+Кто кому что доказывает:
+- подпись телефона (`vk_phone.check_phone_sign`) доказывает, что пару
+  (vk_id, phone_number) выдал ВКонтакте — подделать без защищённого ключа нельзя;
+- подпись запуска доказывает, что запрос прислал именно этот гость.
+
+Решение по режимам (`GUEST_PHONE_SIGN_ENFORCE`):
+- подпись телефона сошлась → сохраняем как `phone_source='vk'` (доказано ВК,
+  заголовок запуска не обязателен);
+- не сошлась, но гость доказан заголовком и enforce=off → сохраняем как
+  `'vk_unverified'` (режим наблюдения: формула подписи ВК в документации описана
+  неоднозначно, смотрим в логе `guest phone: ... sign=` какой вариант сходится);
+- не сошлась и гость НЕ доказан → 403 всегда: иначе любой мог бы вписать
+  чужому гостю мусорный номер;
+- enforce=on → сохраняем только доказанное с обеих сторон.
+
+Флаг `GUEST_PHONE_ENABLED` выключен → 404 на всё, прод неотличим от эталона.
+Формат ошибок — `{code, detail}`, как у остальных новых ручек контракта.
+"""
+
+import logging
+
+from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
+from rest_framework import serializers, status
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from apps.shared.guest.models import Client
+from apps.shared.guest.vk_phone import (
+    check_phone_sign,
+    guest_phone_enabled,
+    normalize_phone,
+    phone_sign_enforce,
+)
+
+log = logging.getLogger(__name__)
+
+SOURCE_VK = 'vk'
+SOURCE_VK_UNVERIFIED = 'vk_unverified'
+
+
+class ClientPhoneSerializer(serializers.Serializer):
+    vk_id = serializers.IntegerField(min_value=1)
+    phone_number = serializers.CharField(max_length=32)
+    sign = serializers.CharField(max_length=256)
+
+
+class ClientPhoneRevokeSerializer(serializers.Serializer):
+    vk_id = serializers.IntegerField(min_value=1)
+
+
+def _err(code: str, detail: str, http_status: int) -> Response:
+    return Response({'code': code, 'detail': detail}, status=http_status)
+
+
+def _proven_vk_id(request) -> int | None:
+    """Доказанный заголовком запуска id гостя или None (заголовка нет / не сошёлся)."""
+    value = getattr(request, 'vk_user_id', None)
+    try:
+        value = int(value) if value else None
+    except (TypeError, ValueError):
+        return None
+    return value if value and value > 0 else None
+
+
+class ClientPhoneView(APIView):
+    """Сохранить / отозвать телефон гостя, полученный через `VKWebAppGetPhoneNumber`."""
+
+    @extend_schema(
+        request=ClientPhoneSerializer,
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT,
+                   403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+        description='Телефон гостя с согласия через ВК (№78). Тело — ответ bridge VKWebAppGetPhoneNumber как есть.',
+    )
+    def post(self, request: Request) -> Response:
+        if not guest_phone_enabled():
+            return _err('feature_disabled', 'Не найдено.', status.HTTP_404_NOT_FOUND)
+
+        s = ClientPhoneSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        claimed = int(s.validated_data['vk_id'])
+        raw_phone = s.validated_data['phone_number'].strip()
+        sign = s.validated_data['sign'].strip()
+
+        proven = _proven_vk_id(request)
+        if proven and proven != claimed:
+            log.warning('guest phone: vk_id=%s не совпадает с доказанным %s', claimed, proven)
+            return _err('vk_id_mismatch', 'vk_id не совпадает с параметрами запуска.', status.HTTP_403_FORBIDDEN)
+
+        sign_status = check_phone_sign(claimed, raw_phone, sign)
+        verified = sign_status.startswith('ok')
+        enforce = phone_sign_enforce()
+        # Строка наблюдения: по ней решаем, какая кодировка подписи у ВК и когда включать enforce.
+        log.info('guest phone: vk_id=%s proven=%s sign=%s enforce=%s',
+                 claimed, bool(proven), sign_status, 'on' if enforce else 'off')
+
+        if not verified and (enforce or not proven):
+            return _err('phone_sign_invalid', 'Подпись телефона не подтверждена.', status.HTTP_403_FORBIDDEN)
+        if enforce and not proven:
+            return _err('vk_sign_required', 'Нужны параметры запуска мини-приложения.', status.HTTP_403_FORBIDDEN)
+
+        phone = normalize_phone(raw_phone)
+        if not phone:
+            return _err('phone_invalid', 'Не похоже на номер телефона.', status.HTTP_400_BAD_REQUEST)
+
+        client = Client.objects.filter(vk_id=claimed).first()
+        if client is None:
+            return _err('client_not_found', 'Профиль гостя не найден.', status.HTTP_404_NOT_FOUND)
+
+        now = timezone.now()
+        client.phone = phone
+        client.phone_source = SOURCE_VK if verified else SOURCE_VK_UNVERIFIED
+        client.phone_consent_at = now
+        client.save(update_fields=['phone', 'phone_source', 'phone_consent_at', 'updated_at'])
+        return Response({
+            'phone': phone,
+            'verified': verified,
+            'proven': bool(proven),
+            'consent_at': now.isoformat(),
+        })
+
+    @extend_schema(
+        request=ClientPhoneRevokeSerializer,
+        responses={200: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+        description='Отзыв согласия: гость убирает свой номер.',
+    )
+    def delete(self, request: Request) -> Response:
+        if not guest_phone_enabled():
+            return _err('feature_disabled', 'Не найдено.', status.HTTP_404_NOT_FOUND)
+
+        s = ClientPhoneRevokeSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        claimed = int(s.validated_data['vk_id'])
+
+        proven = _proven_vk_id(request)
+        if proven and proven != claimed:
+            return _err('vk_id_mismatch', 'vk_id не совпадает с параметрами запуска.', status.HTTP_403_FORBIDDEN)
+        # Убрать номер можно только доказанному гостю: без заголовка запуска
+        # любой мог бы стереть чужой телефон, зная vk_id.
+        if not proven:
+            return _err('vk_sign_required', 'Нужны параметры запуска мини-приложения.', status.HTTP_403_FORBIDDEN)
+
+        client = Client.objects.filter(vk_id=claimed).first()
+        if client is None:
+            return _err('client_not_found', 'Профиль гостя не найден.', status.HTTP_404_NOT_FOUND)
+
+        if client.phone or client.phone_source or client.phone_consent_at:
+            client.phone = ''
+            client.phone_source = ''
+            client.phone_consent_at = None
+            client.save(update_fields=['phone', 'phone_source', 'phone_consent_at', 'updated_at'])
+        log.info('guest phone: vk_id=%s согласие отозвано', claimed)
+        return Response({'phone': '', 'revoked': True})

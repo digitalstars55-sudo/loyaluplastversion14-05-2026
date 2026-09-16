@@ -32,6 +32,32 @@ class Client(TimeStampedModel):
         help_text='Берётся из VK API при регистрации (1 = женский, 2 = мужской).',
     )
 
+    # №78 карты переезда: телефон с согласия гостя. Заполняется ручкой
+    # POST /api/v1/client/phone/ по ответу bridge `VKWebAppGetPhoneNumber`
+    # (apps/tenant/branch/api/client_phone.py). Пусто = гость номер не давал;
+    # старый код этих полей не читает, так что с выключенным флагом
+    # GUEST_PHONE_ENABLED всё ведёт себя как раньше.
+    phone = models.CharField(
+        'Телефон',
+        max_length=20,
+        blank=True,
+        default='',
+        help_text='E.164 (+7…), с согласия гостя через ВКонтакте.',
+    )
+    phone_source = models.CharField(
+        'Источник телефона',
+        max_length=16,
+        blank=True,
+        default='',
+        help_text="'vk' — подпись ВК сошлась; 'vk_unverified' — сохранён в режиме наблюдения без проверки подписи.",
+    )
+    phone_consent_at = models.DateTimeField(
+        'Согласие на телефон',
+        null=True,
+        blank=True,
+        help_text='Когда гость поделился номером (окно согласия ВК).',
+    )
+
     is_active = models.BooleanField(
         default=True,
         verbose_name='Активен',

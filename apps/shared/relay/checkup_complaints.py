@@ -207,6 +207,20 @@ def _guest_vk_id(conv) -> int | None:
     return vk_id if vk_id and vk_id > 0 else None
 
 
+def _client_phone(conv) -> str:
+    """Телефон из профиля гостя (`guest.Client.phone`, №78) — запасной, если в сообщениях его нет.
+
+    Гость даёт номер с согласия через ВК; у ВК-тредов профиля в точке нет, у них
+    поле останется пустым. Битая ссылка на гостя жалобу не теряет.
+    """
+    try:
+        if conv.client_id:
+            return getattr(getattr(conv.client, 'client', None), 'phone', '') or ''
+    except Exception as e:
+        log.warning('checkup relay: телефон гостя conv=%s: %s', getattr(conv, 'pk', None), e)
+    return ''
+
+
 def _inference_window_hours(schema_name: str) -> int:
     """Окно свежести подсказки о точке (часы) — из ClientConfig тенанта."""
     from apps.tenant.branch.review_inference import DEFAULT_WINDOW_HOURS
@@ -324,7 +338,8 @@ def build_payload(conv, schema_name: str, message_id: int | None = None) -> dict
         'address':       address,
         'rating':        rating,
         'guest_name':    _guest_name(conv),
-        'guest_phone':   (phone or '')[:50],
+        # Телефон: из сообщений гостя, иначе из профиля (согласие через ВК, №78).
+        'guest_phone':   (phone or _client_phone(conv) or '')[:50],
         # Ссылка на гостя для CheckUp: vk.com/id<...> (см. _guest_vk_id).
         'guest_vk_id':   _guest_vk_id(conv),
         'photos':        photos[:MAX_PHOTOS],
