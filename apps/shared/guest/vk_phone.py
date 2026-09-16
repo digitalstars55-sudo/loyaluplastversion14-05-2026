@@ -38,8 +38,23 @@ MAX_DIGITS = 15
 
 
 def guest_phone_enabled() -> bool:
-    """Флаг фичи целиком: выкл → ручка отвечает 404, поля в API не заполняются."""
-    return bool(getattr(settings, 'GUEST_PHONE_ENABLED', False))
+    """
+    Флаг фичи целиком: общий выключатель платформы (`GUEST_PHONE_ENABLED`) И флаг
+    сети (`ClientConfig.guest_phone_enabled` текущего тенанта). Любой выкл →
+    ручка отвечает 404, кнопки в мини-аппе нет, поля не заполняются.
+    """
+    if not getattr(settings, 'GUEST_PHONE_ENABLED', False):
+        return False
+    return tenant_guest_phone_enabled()
+
+
+def tenant_guest_phone_enabled() -> bool:
+    """Флаг сети из ClientConfig текущего тенанта; вне тенанта (public) — False."""
+    from django.db import connection
+    tenant = getattr(connection, 'tenant', None)
+    # RelatedObjectDoesNotExist — подкласс AttributeError: конфига нет → None → False.
+    config = getattr(tenant, 'config', None) if tenant is not None else None
+    return bool(getattr(config, 'guest_phone_enabled', False))
 
 
 def phone_sign_enforce() -> bool:

@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+from unittest.mock import patch
 
 from django.test import SimpleTestCase, override_settings
 
@@ -11,6 +12,7 @@ from apps.shared.guest.vk_phone import (
     normalize_phone,
     phone_sign_candidates,
     phone_sign_enforce,
+    tenant_guest_phone_enabled,
 )
 
 APP_ID = 53418653
@@ -86,7 +88,19 @@ class FlagsTest(SimpleTestCase):
             self.assertFalse(guest_phone_enabled())
             self.assertFalse(phone_sign_enforce())
 
-    def test_on(self):
+    def test_on_needs_both_platform_and_tenant(self):
         with override_settings(GUEST_PHONE_ENABLED=True, GUEST_PHONE_SIGN_ENFORCE='ON'):
-            self.assertTrue(guest_phone_enabled())
             self.assertTrue(phone_sign_enforce())
+            with patch('apps.shared.guest.vk_phone.tenant_guest_phone_enabled', return_value=True):
+                self.assertTrue(guest_phone_enabled())
+            with patch('apps.shared.guest.vk_phone.tenant_guest_phone_enabled', return_value=False):
+                self.assertFalse(guest_phone_enabled())
+
+    def test_platform_off_wins_over_tenant(self):
+        with override_settings(GUEST_PHONE_ENABLED=False), \
+                patch('apps.shared.guest.vk_phone.tenant_guest_phone_enabled', return_value=True):
+            self.assertFalse(guest_phone_enabled())
+
+    def test_tenant_flag_outside_tenant_is_false(self):
+        """В тестах connection.tenant не задан / без конфига → False, а не исключение."""
+        self.assertFalse(tenant_guest_phone_enabled())

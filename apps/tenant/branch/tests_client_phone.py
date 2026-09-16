@@ -8,6 +8,7 @@ POST/DELETE /api/v1/client/phone/ — телефон гостя с соглас�
 
 import base64
 import hashlib
+from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 from rest_framework.test import APIRequestFactory
@@ -35,6 +36,11 @@ class ClientPhoneViewTest(TestCase):
         self.factory = APIRequestFactory()
         self.guest = Client.objects.create(vk_id=VK_ID, first_name='Тест')
         self.view = ClientPhoneView.as_view()
+        # Флаг сети (ClientConfig.guest_phone_enabled): в тестовой БД тенанта нет,
+        # считаем его включённым; общий выключатель — через override_settings.
+        patcher = patch('apps.shared.guest.vk_phone.tenant_guest_phone_enabled', return_value=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _post(self, body, proven=None):
         request = self.factory.post('/api/v1/client/phone/', body, format='json')
