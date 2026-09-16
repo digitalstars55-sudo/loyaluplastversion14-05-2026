@@ -78,6 +78,7 @@ SHARED_APPS = [
     'apps.shared.audit.apps.AuditConfig',
     'apps.shared.discovery.apps.DiscoveryConfig',
     'apps.shared.monitoring.apps.MonitoringConfig',
+    'apps.shared.checkup.apps.CheckupConfig',  # обмен токена CheckUp → LoyalUP (контракт платформы)
 
     # Django built-ins
     'django.contrib.admin',
@@ -404,6 +405,13 @@ BEAT_PAID_UNTIL_GRACE_DAYS = int(os.getenv("BEAT_PAID_UNTIL_GRACE_DAYS", "7") or
 # уже открывает жалобы и чат). Ручка появится с контрактом платформы; пусто =
 # обмен выключен.
 CHECKUP_TOKEN_EXCHANGE_SECRET = os.getenv("CHECKUP_TOKEN_EXCHANGE_SECRET", "")
+# Белый список сетей для обмена (через запятую). Пусто = любая живая сеть.
+# На проде сначала только dev (песочница), живые сети — по решению владельца.
+CHECKUP_TOKEN_EXCHANGE_TENANTS = [
+    s.strip().lower() for s in os.getenv("CHECKUP_TOKEN_EXCHANGE_TENANTS", "").split(",") if s.strip()
+]
+# Сколько живёт JWT из обмена (refresh не выдаётся — BFF меняет заново).
+CHECKUP_TOKEN_EXCHANGE_MINUTES = int(os.getenv("CHECKUP_TOKEN_EXCHANGE_MINUTES", "60") or 60)
 
 # Мониторинг платформы (apps.shared.monitoring): сертификаты, домены, оплата
 # сетей, callback ВК, доступность входа. Выключен, пока не задано

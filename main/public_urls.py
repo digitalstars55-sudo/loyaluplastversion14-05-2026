@@ -27,6 +27,8 @@ urlpatterns = [
     path('api/v1/delivery/webhook/', PublicDeliveryWebhook.as_view(), name='public-delivery-webhook'),
     path('api/v1/orders/daily/', PublicDailyOrdersIngest.as_view(), name='public-daily-orders-ingest'),
     path('api/v1/internal/support/', include('apps.shared.relay.urls')),
+    # Обмен токена CheckUp → LoyalUP (контракт платформы 2.1): тот же контур, что релей.
+    path('api/v1/internal/auth/', include('apps.shared.checkup.urls')),
 
     # Сетевой вход из каталога VK (новичок без QR) — публичная схема.
     path('api/v1/', include('apps.shared.discovery.api.urls')),
