@@ -73,10 +73,12 @@ class ValidatePayloadTest(SimpleTestCase):
             self.assertEqual((cm.exception.status, cm.exception.code), (403, 'role_not_allowed'))
 
     def test_schema_shape(self):
-        for bad in ('public', 'Levone', '1abc', 'a b', ''):
+        for bad in ('public', '1abc', 'a b', '', 'Public'):
             with self.assertRaises(ExchangeError, msg=bad):
                 validate_payload(_good(tenant_schema=bad))
         self.assertEqual(validate_payload(_good(tenant_schema='asap-arzamas'))['tenant_schema'], 'asap-arzamas')
+        # Регистр нормализуем, а не отвергаем: schema_name у нас всегда в нижнем.
+        self.assertEqual(validate_payload(_good(tenant_schema=' Levone '))['tenant_schema'], 'levone')
 
     def test_user_id_shape(self):
         for bad in ('', 'a:b', 'x' * 65, None, True, 3.5):
