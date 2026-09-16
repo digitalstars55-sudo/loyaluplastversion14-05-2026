@@ -11,3 +11,6 @@ class TenantDomainResponseSerializer(serializers.Serializer):
     # default=False: старый ответ без этих ключей сериализуется как раньше.
     web_entry_enabled = serializers.BooleanField(default=False)
     degrade_enabled = serializers.BooleanField(default=False)
+    # №78: показывать ли гостю кнопку «Поделиться номером» (settings.GUEST_PHONE_ENABLED,
+    # общий на платформу). default=False: старый ответ сериализуется как раньше.
+    guest_phone_enabled = serializers.BooleanField(default=False)

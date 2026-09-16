@@ -57,4 +57,12 @@ def get_tenant_domain(client_id: int) -> dict:
         'name': company.name,
         'web_entry_enabled': bool(getattr(config, 'web_entry_enabled', False)),
         'degrade_enabled': bool(getattr(config, 'degrade_enabled', False)),
+        # №78: кнопка «Поделиться номером» в мини-аппе. Флаг общий на платформу
+        # (settings.GUEST_PHONE_ENABLED), выкл по умолчанию — ответ как раньше.
+        'guest_phone_enabled': _guest_phone_enabled(),
     }
+
+
+def _guest_phone_enabled() -> bool:
+    from django.conf import settings
+    return bool(getattr(settings, 'GUEST_PHONE_ENABLED', False))

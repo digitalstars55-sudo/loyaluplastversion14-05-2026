@@ -51,6 +51,12 @@ class ClientProfileResponseSerializer(serializers.Serializer):
     last_name  = serializers.CharField(source='client.last_name')
     photo_url  = serializers.URLField(source='client.photo_url', allow_blank=True)
 
+    # №78: телефон с согласия через ВК (пусто, пока гость не поделился; мини-апп
+    # по этому решает, показывать ли кнопку «Поделиться номером»).
+    phone            = serializers.CharField(source='client.phone', allow_blank=True)
+    phone_source     = serializers.CharField(source='client.phone_source', allow_blank=True)
+    phone_consent_at = serializers.DateTimeField(source='client.phone_consent_at', allow_null=True)
+
     # ClientVKStatus (OneToOne — may not exist yet → defaults to "not subscribed")
     is_community_member      = serializers.SerializerMethodField()
     community_via_app        = serializers.SerializerMethodField()
