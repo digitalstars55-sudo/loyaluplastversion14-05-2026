@@ -1,0 +1,3192 @@
+{
+ "meta": {
+  "title": "Инвентаризация LoyalUP → модуль «Гости» CheckUp",
+  "generated": "2026-09-09",
+  "sources": [
+   "web.md",
+   "mobile.md",
+   "admin.md",
+   "api.md",
+   "checkup.md"
+  ],
+  "note": "Одна строка = одна возможность (веб-экран, мобильный экран и админ-модель про одно и то же объединены).",
+  "revised": "16 сентября 2026 — волна 0 выкачена со стороны LoyalUP: гард оплаты beat (наблюдение), мониторинг платформы (включён), CORS для CheckUp, наблюдение за секретом вебхука; следующий шаг по карте — контракт платформы"
+ },
+ "summary": {
+  "capabilitiesTotal": 78,
+  "buckets": {
+   "A": 40,
+   "B": 20,
+   "C": 8,
+   "D": 10
+  },
+  "waves": {
+   "W1": 18,
+   "W2": 15,
+   "W3": 7
+  },
+  "sourceScreens": {
+   "webTenant": 29,
+   "webSuperadmin": 9,
+   "mobile": 53,
+   "adminModels": 49,
+   "adminInlines": 9,
+   "modelsWithoutAdmin": 14
+  },
+  "checkupScreens": {
+   "webRoutesTotal": 24,
+   "webRoutesW1": 12,
+   "webRoutesW2": 9,
+   "webRoutesW3": 3,
+   "dashboardWidgets": 7,
+   "mobileW1": 5
+  },
+  "api": {
+   "routesTotal": 166,
+   "realEndpoints": 133,
+   "readyJwtStaffEndpoints": 70,
+   "guestEndpoints": 42,
+   "webCabinetSessionEndpoints": 33,
+   "endpointsToAdd": 21,
+   "backendEffortDays": 36.5,
+   "capabilitiesWithoutApiInBucketA": 5,
+   "allowAnyAnalyticsEndpoints": {
+    "count": 14,
+    "status": "закрыто и выкачено 09.09 (5e18a93): аноним получает 401, тест AnalyticsApiRequiresAuthTest"
+   },
+   "bucketAApiStatus": {
+    "ready": 21,
+    "partial": 13,
+    "none": 5
+   }
+  },
+  "totalEffortDays": 102
+ },
+ "items": [
+  {
+   "id": 1,
+   "name": "Отзывы гостей: лента, карточка, ответ, черновик ИИ, автоответ",
+   "does": "Весь поток отзывов и обращений: лента с фильтрами, переписка с гостем, ответ в ВК, AI-черновик, окно отмены автоответа",
+   "where": {
+    "web": [
+     "/analytics/reviews/detail/",
+     "POST /analytics/reviews/reply/",
+     "POST /analytics/reviews/ai-reply/",
+     "POST /analytics/reviews/cancel-auto-send/"
+    ],
+    "mobile": [
+     "ReviewsScreen",
+     "ReviewDetailModal",
+     "ReviewsFilterSheet"
+    ],
+    "admin": [
+     "TestimonialConversation change_form (чат)",
+     "TestimonialMessage"
+    ]
+   },
+   "users": "Управляющий, владелец",
+   "frequency": "ежедневно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "/loyalty/reviews + /loyalty/reviews/[id]",
+   "api": {
+    "status": "partial",
+    "note": "Есть GET /api/v1/mobile/reviews/, .../{id}/messages/, POST .../reply/, .../resolve/, .../cancel-auto-send/, POST /api/v1/analytics/reviews/{id}/regenerate-draft/, /reject-draft/. Нет пагинации списка и серверных фильтров по тональности/статусу/источнику"
+   },
+   "complexity": "L",
+   "notes": "Ядро продукта, переносить без упрощений. Ответ реализован дважды (reviews_detail.html и change_form админки) через два разных AI-эндпоинта — оставить один. «Вставить ссылки» работает только для позитива и только если у точки заданы обе ссылки"
+  },
+  {
+   "id": 2,
+   "name": "Сводка репутации и рейтинг точек",
+   "does": "Разбивка по тональностям, средняя оценка, гистограмма звёзд, источники, топ жалоб по точке",
+   "where": {
+    "web": [
+     "/analytics/reviews/"
+    ],
+    "mobile": [
+     "BranchRatingsScreen"
+    ],
+    "admin": []
+   },
+   "users": "Владелец, управляющий",
+   "frequency": "ежедневно/еженедельно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "вкладка на /loyalty/reviews",
+   "api": {
+    "status": "partial",
+    "note": "Рейтинг точек — GET /api/v1/mobile/branches/; разбивка по тональностям считается в HTML-вьюхе, JSON-ручки нет"
+   },
+   "complexity": "M",
+   "notes": "Экрана «Отзывы» нет в меню веб-кабинета — только из «Общей статистики»; в CheckUp это пункт первого уровня"
+  },
+  {
+   "id": 3,
+   "name": "Настройки автоответов ИИ",
+   "does": "Вкл/выкл черновиков и автоотправки, тон, тональности, лимит в сутки, тихие часы, окно отмены, кнопки Яндекс/2ГИС, автоотправка по точкам",
+   "where": {
+    "web": [],
+    "mobile": [
+     "AutoReplySettings"
+    ],
+    "admin": [
+     "ReviewAutoReplyConfig (синглтон, 15 полей)"
+    ]
+   },
+   "users": "Владелец",
+   "frequency": "при настройке, ревизия ежемесячно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "/loyalty/reviews/settings",
+   "api": {
+    "status": "ready",
+    "note": "GET/PATCH /api/v1/analytics/auto-reply/settings/"
+   },
+   "complexity": "M",
+   "notes": "auto_send_enabled — решение владельца, дефолт False; пилот включён только у одного тенанта. Тихие часы пушей зашиты в .env и в UI не настраиваются"
+  },
+  {
+   "id": 4,
+   "name": "Дашборд дня («Задачи дня»)",
+   "does": "Что горит сегодня: негатив без ответа, черновики ИИ, сообщение менеджера, поблагодарить позитив; KPI-снимок, топ точек, лента активности",
+   "where": {
+    "web": [
+     "/admin/ (только коды дня + 3 ссылки)"
+    ],
+    "mobile": [
+     "HomeScreen"
+    ],
+    "admin": []
+   },
+   "users": "Владелец, управляющий",
+   "frequency": "ежедневно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "/loyalty (хаб) + виджеты главной CheckUp",
+   "api": {
+    "status": "partial",
+    "note": "Собирается клиентом из GET /api/v1/analytics/rf/, /billing/status/, /branch/daily-codes/; единой ручки «задачи дня» нет"
+   },
+   "complexity": "L",
+   "notes": "Уникальная ценность мобилки — в вебе такого экрана нет вообще; веб-кабинет вместо дашборда показывает дефолтный сайдбар Django"
+  },
+  {
+   "id": 5,
+   "name": "Общая статистика программы",
+   "does": "~40 метрик: сканы QR (кафе/доставка/сториз/сайт), подписки, воронка игры, подарки, ДР, индекс сканирования; клик по метрике → список гостей",
+   "where": {
+    "web": [
+     "/analytics/",
+     "/analytics/stats/detail/"
+    ],
+    "mobile": [
+     "GeneralStatsScreen"
+    ],
+    "admin": []
+   },
+   "users": "Владелец, маркетолог",
+   "frequency": "ежедневно/еженедельно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "/loyalty/stats",
+   "api": {
+    "status": "partial",
+    "note": "GET /api/v1/analytics/stats/, /stats/slow/, /analytics/branches/ есть; детализации метрики (23 метрики) в JSON нет, только HTML"
+   },
+   "complexity": "M",
+   "notes": "Авторизация этих ручек исправлена в коде (5e18a93), ждёт выкатки. У тенанта без POS секции «индекс оцифровки» — нули, а не скрыты"
+  },
+  {
+   "id": 6,
+   "name": "База гостей",
+   "does": "Список всех гостей с поиском по имени/VK ID, счётчики гостей и визитов, подгрузка страницами",
+   "where": {
+    "web": [
+     "админка ClientBranch/Client"
+    ],
+    "mobile": [
+     "GuestsScreen"
+    ],
+    "admin": [
+     "ClientBranch",
+     "Client"
+    ]
+   },
+   "users": "Управляющий",
+   "frequency": "ежедневно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "/loyalty/guests",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/guests/?search=&limit=&offset= — единственная ручка с честным limit/offset"
+   },
+   "complexity": "M",
+   "notes": "В админке branch_access не соблюдается: управляющий одной точки видит гостей всей сети — в CheckUp фильтровать по EmployeeBranchAccess(purpose='guests')"
+  },
+  {
+   "id": 7,
+   "name": "Карточка гостя",
+   "does": "Визиты, баланс и история монет, VK-статусы (подписка/рассылка/бот заблокирован), контакты, отзывы, подарки",
+   "where": {
+    "web": [
+     "админка Client + CoinTransaction"
+    ],
+    "mobile": [
+     "GuestDetailScreen"
+    ],
+    "admin": [
+     "ClientBranch",
+     "ClientBranchVisit",
+     "ClientVKStatus",
+     "CoinTransaction"
+    ]
+   },
+   "users": "Управляющий",
+   "frequency": "ежедневно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "/loyalty/guests/[id]",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/guests/{vk_id}/"
+   },
+   "complexity": "M",
+   "notes": "GuestRFScore.client — FK на guest.Client, а не на ClientBranch: пути фильтров client__vk_id. Ledger монет неизменяемый (баланс = сумма транзакций). Поле «Телефон» (источник ВК, дата согласия) появится после №78."
+  },
+  {
+   "id": 8,
+   "name": "Ручная корректировка баллов гостя",
+   "does": "Плюс/минус монеты с обязательной причиной и шаблонами («компенсация за ожидание»)",
+   "where": {
+    "web": [],
+    "mobile": [
+     "CoinAdjustModal"
+    ],
+    "admin": [
+     "CoinTransaction (только чтение)"
+    ]
+   },
+   "users": "Управляющий",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "модалка в /loyalty/guests/[id]",
+   "api": {
+    "status": "ready",
+    "note": "POST /api/v1/guests/{vk_id}/adjust-coins/ (право adjust_coins)"
+   },
+   "complexity": "S",
+   "notes": "Единственный способ изменить баланс руками; в админке change/delete транзакций запрещены — это должно сохраниться"
+  },
+  {
+   "id": 9,
+   "name": "RF-матрица и сегменты",
+   "does": "Матрица Recency × Frequency (4×3), сводка по сегментам, отдельно ресторан и доставка, список гостей ячейки, пересчёт RF",
+   "where": {
+    "web": [
+     "/analytics/rf/"
+    ],
+    "mobile": [
+     "AnalyticsScreen",
+     "DetailCard",
+     "GuestListModal",
+     "LegendSheet"
+    ],
+    "admin": [
+     "GuestRFScore",
+     "RFSegment"
+    ]
+   },
+   "users": "Маркетолог, владелец",
+   "frequency": "ежедневно/еженедельно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "/loyalty/rf",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/analytics/rf/, POST /api/v1/analytics/rf/recalculate/, GET /api/v1/analytics/segments/"
+   },
+   "complexity": "L",
+   "notes": "Самый тяжёлый экран веба (421 строка шаблона + ~1400 строк JS, три модалки). RF пересчитывается ночью в 03:00. Пересчёт — тяжёлая синхронная операция"
+  },
+  {
+   "id": 10,
+   "name": "Миграции гостей между сегментами",
+   "does": "Кто вырос, кто ушёл в отток за период; эффективность переходов",
+   "where": {
+    "web": [
+     "/analytics/rf/migration/"
+    ],
+    "mobile": [
+     "MigrationsModal"
+    ],
+    "admin": [
+     "RFMigrationLog"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "вкладка на /loyalty/rf",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/analytics/rf/migrations/"
+   },
+   "complexity": "M",
+   "notes": "Дублирует раздел отчёта «Миграция» — в CheckUp показывать один раз"
+  },
+  {
+   "id": 11,
+   "name": "Рассылка по сегменту / всем гостям",
+   "does": "Текст (можно сгенерировать ИИ) + картинка, аудитория по сегменту/полу/точкам, A/B-сплит, предпросмотр охвата, отправка в ВК",
+   "where": {
+    "web": [
+     "/admin/senler/broadcast/<id>/change/ (конструктор)",
+     "/analytics/rf/segment/<id>/create-broadcast/",
+     "/analytics/rf/broadcast-all/"
+    ],
+    "mobile": [
+     "BroadcastModal",
+     "CampaignsScreen"
+    ],
+    "admin": [
+     "Broadcast"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "/loyalty/broadcasts",
+   "api": {
+    "status": "partial",
+    "note": "POST /api/v1/analytics/rf/send-broadcast/, /generate-broadcast-text/ есть; шаблонов-черновиков Broadcast и «отправить сейчас» в API нет — только админка"
+   },
+   "complexity": "L",
+   "notes": "ЧП 21.08 «рассылка на 1 ушла 612»: аудитория обязана быть ровно показанной ячейкой (mode/точки/период), предохранитель expected_count→409 сохранить. Отмена должна работать на идущей рассылке"
+  },
+  {
+   "id": 12,
+   "name": "История рассылок и отклик",
+   "does": "Статусы (запланировано/идёт/доставлено/ошибка), охват, прочтения, победитель A/B, статистика за всё время",
+   "where": {
+    "web": [
+     "/admin/senler/broadcastsend/",
+     "инлайн в конструкторе"
+    ],
+    "mobile": [
+     "CampaignsScreen"
+    ],
+    "admin": [
+     "BroadcastSend",
+     "BroadcastRecipient"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "вкладка на /loyalty/broadcasts",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/analytics/campaigns/, PATCH/DELETE /api/v1/analytics/campaigns/{id}/"
+   },
+   "complexity": "M",
+   "notes": "Прочтения проставляет фоновая задача раз в час (окно 35 дней) — «0 прочитано» сразу после отправки нормально"
+  },
+  {
+   "id": 13,
+   "name": "Аварийное управление отправленной рассылкой",
+   "does": "Массовая правка текста и удаление уже отправленных сообщений в ВК (окно 24 ч), остановка идущей рассылки",
+   "where": {
+    "web": [
+     "/admin/senler/broadcastsend/<id>/edit-in-vk/",
+     "/delete-in-vk/",
+     "/cancel/"
+    ],
+    "mobile": [],
+    "admin": [
+     "те же действия"
+    ]
+   },
+   "users": "Маркетолог, владелец",
+   "frequency": "редко (аварийно)",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "кнопки в карточке рассылки",
+   "api": {
+    "status": "none",
+    "note": "Только админские URL с HTML-подтверждением"
+   },
+   "complexity": "S",
+   "notes": "Именно этим тушили инцидент 21.08 (612/612 удалены). Без этой кнопки клиент в CheckUp остаётся без аварийного выхода"
+  },
+  {
+   "id": 14,
+   "name": "RFM-кампании (награда сегменту)",
+   "does": "Выдать подарок из каталога или баллы ячейке сегмента, контрольная группа (holdout), окно атрибуции, воронка «назначено → активировано → сгорело», сравнение с контролем, отмена",
+   "where": {
+    "web": [
+     "блок на /analytics/rf/"
+    ],
+    "mobile": [
+     "RewardModal",
+     "RfmCampaignsPanel",
+     "RfmCampaignDetailModal"
+    ],
+    "admin": [
+     "RFMCampaign (read-only + «отменить»)",
+     "RFMCampaignMember"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "/loyalty/campaigns",
+   "api": {
+    "status": "ready",
+    "note": "GET/POST /api/v1/analytics/rf/campaigns/, /{id}/, /{id}/cancel/, /kpi/, GET /api/v1/analytics/rf/reward-catalog/"
+   },
+   "complexity": "L",
+   "notes": "Единственное место, где видно эффект лояльности в деньгах; отмена откатывает подарки/баллы. Пул наград ведётся в RewardCatalogItem (корзина B)"
+  },
+  {
+   "id": 15,
+   "name": "Точки сети",
+   "does": "Список точек с рейтингом и числом отзывов, контакты, адрес, карты, тексты подсказок гостю",
+   "where": {
+    "web": [
+     "/admin/branch/branch/<id>/change/ + инлайн BranchConfig"
+    ],
+    "mobile": [
+     "BranchesScreen"
+    ],
+    "admin": [
+     "Branch",
+     "BranchConfig"
+    ]
+   },
+   "users": "Владелец",
+   "frequency": "при настройке; список — ежедневно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "/loyalty/points",
+   "api": {
+    "status": "partial",
+    "note": "GET /api/v1/mobile/branches/ (только чтение); редактирование Branch и BranchConfig — только админка"
+   },
+   "complexity": "M",
+   "notes": "Точка LoyalUP ≠ филиал CheckUp: связь только через LoyalupBranchMap, адресный матчинг запрещён кодом. На «Ленина, 39» у LevOne 4 объекта CheckUp против 1 точки LoyalUP"
+  },
+  {
+   "id": 16,
+   "name": "Сотрудники и права доступа",
+   "does": "Список сотрудников, роли, приглашение и привязка существующего, вкл/выкл, доступ к разделам (feature_access, 18 ключей) и к точкам (branch_access)",
+   "where": {
+    "web": [
+     "/admin/users/user/",
+     "/admin/users/user/<id>/branch-access/"
+    ],
+    "mobile": [
+     "StaffScreen"
+    ],
+    "admin": [
+     "User",
+     "StaffProfile (без админки)"
+    ]
+   },
+   "users": "Владелец",
+   "frequency": "при найме, ревизия ежемесячно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "/loyalty/access",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/staff/, PATCH/DELETE /api/v1/staff/{id}/, POST /api/v1/staff/invite/, /link-existing/; визуальный редактор branch_access — админка"
+   },
+   "complexity": "L",
+   "notes": "Дыра RBAC: из 18 ключей feature_access веб гейтит только 6. StaffProfile.permissions (14 флагов) UI не имеет вообще. В CheckUp права мапить на коды loyalty.*"
+  },
+  {
+   "id": 17,
+   "name": "Уведомления и пуши",
+   "does": "Лента уведомлений (включая фоновые пуши), 12 типов событий, deep-link в раздел, настройка «с каких сетей» и «какие события»",
+   "where": {
+    "web": [],
+    "mobile": [
+     "NotificationsScreen",
+     "PushPrefsScreen"
+    ],
+    "admin": [
+     "Notification (без админки)",
+     "PushToken (без админки)"
+    ]
+   },
+   "users": "Все роли",
+   "frequency": "ежедневно",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "шапка CheckUp (NotificationBell) + /loyalty/settings",
+   "api": {
+    "status": "partial",
+    "note": "GET/POST /api/v1/notifications/, GET/PATCH /api/v1/me/push-prefs/, POST/DELETE /api/v1/push/register/; без курсорной пагинации"
+   },
+   "complexity": "M",
+   "notes": "У CheckUp свой realtime и NotificationBell — типы LoyalUP влить туда, а не строить вторую ленту. Тихие часы 22:00–09:00 МСК зашиты на бэке"
+  },
+  {
+   "id": 18,
+   "name": "Коды дня",
+   "does": "5-значные коды по точкам (игра / квест / ДР) на сегодня, история, ручная генерация",
+   "where": {
+    "web": [
+     "панель «Коды дня на сегодня» на /admin/"
+    ],
+    "mobile": [
+     "DailyCodesScreen"
+    ],
+    "admin": [
+     "DailyCode"
+    ]
+   },
+   "users": "Управляющий, кассир",
+   "frequency": "ежедневно",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "/loyalty/codes + виджет на главной",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/branch/daily-codes/, POST /api/v1/branch/daily-codes/generate/"
+   },
+   "complexity": "S",
+   "notes": "Кодовые сутки с 03:00 МСК; коды генерит cron, руками — аварийно. Виджет кодов на дашборде нужен уже в W1, полный экран — W2"
+  },
+  {
+   "id": 19,
+   "name": "Каталог подарков",
+   "does": "Подарки за баллы: название, описание, цена в баллах, фото, категория, точки, флаг «суперприз», себестоимость",
+   "where": {
+    "web": [
+     "/admin/catalog/product/"
+    ],
+    "mobile": [
+     "CatalogScreen"
+    ],
+    "admin": [
+     "Product",
+     "ProductBranch"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "при настройке кампании",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "/loyalty/gifts",
+   "api": {
+    "status": "ready",
+    "note": "GET/POST /api/v1/catalog/products/, PATCH/DELETE /{id}/"
+   },
+   "complexity": "M",
+   "notes": "Флаги is_birthday_prize, is_story_prize, is_vk_catalog_welcome определяют, в какой механике участвует подарок — показать явно, иначе «подарков нет» в ДР"
+  },
+  {
+   "id": 20,
+   "name": "Категории каталога",
+   "does": "Разделы витрины подарков: название, точка, порядок",
+   "where": {
+    "web": [
+     "/admin/catalog/productcategory/"
+    ],
+    "mobile": [
+     "CategoriesScreen"
+    ],
+    "admin": [
+     "ProductCategory"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "при заводе",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "вкладка на /loyalty/gifts",
+   "api": {
+    "status": "ready",
+    "note": "GET/POST /api/v1/catalog/categories/, PATCH/DELETE /{id}/"
+   },
+   "complexity": "S",
+   "notes": "—"
+  },
+  {
+   "id": 21,
+   "name": "Акции и промо-баннеры",
+   "does": "Баннер на главной приложения гостя: заголовок, условия, период, фото, точка",
+   "where": {
+    "web": [
+     "/admin/branch/promotions/"
+    ],
+    "mobile": [
+     "PromotionsScreen"
+    ],
+    "admin": [
+     "Promotions"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "при запуске акции",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "/loyalty/promotions",
+   "api": {
+    "status": "ready",
+    "note": "GET/POST /api/v1/branch/promotions/, PATCH/DELETE /{id}/"
+   },
+   "complexity": "M",
+   "notes": "Поле dates — строка, а не диапазон дат: в новом UI валидировать на клиенте"
+  },
+  {
+   "id": 22,
+   "name": "Квесты",
+   "does": "Задания гостю за баллы: название, описание, награда, точки, вкл/выкл",
+   "where": {
+    "web": [
+     "/admin/quest/quest/"
+    ],
+    "mobile": [
+     "QuestsScreen"
+    ],
+    "admin": [
+     "Quest",
+     "QuestBranch",
+     "QuestSubmit"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "при настройке",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "/loyalty/quests",
+   "api": {
+    "status": "ready",
+    "note": "GET/POST /api/v1/quests/, PATCH/DELETE /{id}/"
+   },
+   "complexity": "M",
+   "notes": "Есть legacy-FK branch рядом с M2M на точки — использовать только M2M"
+  },
+  {
+   "id": 23,
+   "name": "Механика «Игра через сториз»",
+   "does": "Включение игры для внешних гостей, минимальная сумма заказа, срок «забрать» подарок, тексты активации, напоминание",
+   "where": {
+    "web": [],
+    "mobile": [],
+    "admin": [
+     "ClientConfig (story_*, 9 полей)",
+     "BranchConfig (override)"
+    ]
+   },
+   "users": "Владелец",
+   "frequency": "при запуске, потом редко",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "секция на /loyalty/settings",
+   "api": {
+    "status": "none",
+    "note": "Только админка"
+   },
+   "complexity": "M",
+   "notes": "Одна настройка живёт в трёх местах: сеть → точка → флаг Product.is_story_prize. Схлопнуть в один экран с явным «наследуется от сети»"
+  },
+  {
+   "id": 24,
+   "name": "Аналитика вовлечённости (подарки и квесты)",
+   "does": "Воронка «получили → активировали → сгорело», топ подарков и квестов, среднее время, списанные баллы",
+   "where": {
+    "web": [],
+    "mobile": [
+     "EngagementAnalyticsScreen"
+    ],
+    "admin": [
+     "InventoryItem",
+     "QuestSubmit"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "вкладка на /loyalty/stats",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/analytics/engagement/"
+   },
+   "complexity": "M",
+   "notes": "API есть, а веб-страницы нет — редкий случай, когда перенос дешевле, чем кажется"
+  },
+  {
+   "id": 25,
+   "name": "Дни рождения гостей",
+   "does": "Календарь ближайших ДР: кто, когда, отправлено ли поздравление, пришёл ли отметить",
+   "where": {
+    "web": [],
+    "mobile": [
+     "BirthdaysScreen"
+    ],
+    "admin": [
+     "ClientBranch.birth_date",
+     "ClientConfig.birthday_window_days"
+    ]
+   },
+   "users": "Управляющий",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "/loyalty/birthdays",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/guests/birthdays/?days_ahead=&include_past="
+   },
+   "complexity": "M",
+   "notes": "Скрытое правило: ДР-подарок не даётся, если дата рождения поставлена менее 30 дней назад (birth_date_set_at) — в UI не показано, самая частая причина «подарков нет в ДР»"
+  },
+  {
+   "id": 26,
+   "name": "Точки контакта (QR) и воронка",
+   "does": "Именованные отслеживаемые QR (&src=): сканы → гости → подписались → сыграли → активировали подарок; список гостей любой стадии",
+   "where": {
+    "web": [
+     "/analytics/contact-points/",
+     "/analytics/contact-points/detail/"
+    ],
+    "mobile": [
+     "ContactPointsScreen"
+    ],
+    "admin": [
+     "QRCode",
+     "QRScan (без админки)",
+     "ContactPointEvent (без админки)"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "/loyalty/qr",
+   "api": {
+    "status": "partial",
+    "note": "Воронка — GET /api/v1/analytics/contact-points/; CRUD QR и детализация стадии — только админка/HTML"
+   },
+   "complexity": "M",
+   "notes": "Режим «Отзыв со стола» требует обязательного table_number. Сетевой QR доставки: один QR на город, точку определяет код, окно свежести 7 дней критично"
+  },
+  {
+   "id": 27,
+   "name": "Материалы для гостей: ссылки и QR",
+   "does": "Готовые ссылки и картинки QR: мини-апп ВК, Телеграм-версия, доставка, QR по номеру стола",
+   "where": {
+    "web": [
+     "/admin/branch/branch/<id>/change/",
+     "/admin/branch/qrcode/<id>/change/"
+    ],
+    "mobile": [],
+    "admin": [
+     "Branch",
+     "QRCode"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "при печати материалов",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "вкладка на /loyalty/qr",
+   "api": {
+    "status": "none",
+    "note": "Только change_form админки"
+   },
+   "complexity": "M",
+   "notes": "Маркетинговый артефакт спрятан внутри технической карточки модели — в CheckUp это отдельный экран «Материалы». Тираж 50к коробок готовится по сетевому QR"
+  },
+  {
+   "id": 28,
+   "name": "Отчёт по системе лояльности",
+   "does": "Печатный отчёт владельцу: 11 секций (метрики, рост базы, индекс оцифровки, источники, вовлечение, коммуникации, отзывы, RF-матрица, миграция, выводы, рекомендации) с AI-комментариями и PDF",
+   "where": {
+    "web": [
+     "/analytics/report/",
+     "/analytics/report/?format=pdf"
+    ],
+    "mobile": [
+     "ReportsScreen"
+    ],
+    "admin": []
+   },
+   "users": "Владелец",
+   "frequency": "ежемесячно",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "/loyalty/report",
+   "api": {
+    "status": "partial",
+    "note": "GET /api/v1/analytics/report/ (JSON) + POST /api/v1/analytics/report/generate-comment/; PDF — HTML-страница, открывается по ?token="
+   },
+   "complexity": "L",
+   "notes": "В CheckUp печать бесплатна: в globals.css уже есть полный блок @media print. Сохранение AI-комментариев идёт через страницу — нужна ручка"
+  },
+  {
+   "id": 29,
+   "name": "AI-маркетолог: дайджест и посты",
+   "does": "Еженедельный дайджест «что нового» на стену ВК: настройки (тон бренда, факты владельца, расписание), лента черновиков, «опубликовать / отклонить»",
+   "where": {
+    "web": [
+     "/admin/marketer/marketersettings/",
+     "/admin/marketer/marketerpost/"
+    ],
+    "mobile": [],
+    "admin": [
+     "MarketerSettings",
+     "MarketerPost"
+    ]
+   },
+   "users": "Владелец, маркетолог",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "/loyalty/marketer",
+   "api": {
+    "status": "none",
+    "note": "Только админка (экшены «сгенерировать», «опубликовать», «отклонить»)"
+   },
+   "complexity": "L",
+   "notes": "Требует отдельный VK-токен со «Стеной» — не senler-токен (риск спам-флага уронит отзывы). Кредиты Anthropic кончались 31.08 и 05–08.09: дайджесты пропадали молча, после фикса 08.09 видно как MarketerPost(status=FAILED)"
+  },
+  {
+   "id": 30,
+   "name": "AI-ассистент «Лояльчик»",
+   "does": "Плавающий помощник по системе: отвечает на вопросы, знает контекст тенанта, кнопки-действия ведут в нужный раздел",
+   "where": {
+    "web": [],
+    "mobile": [
+     "LoyalchikAssistant (поверх всех экранов)"
+    ],
+    "admin": []
+   },
+   "users": "Все роли",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "виджет в модуле + раздел «AI» CheckUp",
+   "api": {
+    "status": "ready",
+    "note": "POST /api/v1/assistant/ask/, GET /api/v1/assistant/context/"
+   },
+   "complexity": "L",
+   "notes": "В CheckUp уже есть раздел /ai (ai.view/ai.use) и инструмент apps/ai/tools.py::manage_reviews — «Лояльчик» логичнее влить туда, чем строить второй ассистент"
+  },
+  {
+   "id": 31,
+   "name": "Авторассылки (правила по событиям)",
+   "does": "Правила «событие → задержка → кому → текст → подарок»: 9 событий, A/B-варианты, тихие часы, окно кампании, предпросмотр аудитории",
+   "where": {
+    "web": [
+     "/admin/senler/autobroadcastrule/",
+     "/admin/senler/autobroadcastrule/<id>/preview/"
+    ],
+    "mobile": [
+     "AutoBroadcastsScreen (только текст и вкл/выкл)"
+    ],
+    "admin": [
+     "AutoBroadcastRule",
+     "AutoBroadcastVariant",
+     "AutoBroadcastLog (без админки)"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "при настройке кампании",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "/loyalty/auto-broadcasts",
+   "api": {
+    "status": "partial",
+    "note": "GET /api/v1/auto-broadcasts/, PATCH /{id}/ (правит только текст и is_active), GET /{id}/preview/; условия, аудитория и A/B — только веб-админка"
+   },
+   "complexity": "L",
+   "notes": "Дедуп-лог общий с legacy-шаблонами: несколько правил на одно событие дают гостю одно сообщение (побеждает больший priority); свой отдельный дедуп = дубли тысячам гостей. Пилот RF-правил выключен 26.08"
+  },
+  {
+   "id": 32,
+   "name": "Связь с персональным менеджером",
+   "does": "Карточка менеджера LoyalUP: имя, телефон, часы, статус; кнопки «позвонить» и «открыть чат»",
+   "where": {
+    "web": [],
+    "mobile": [
+     "ManagerContact"
+    ],
+    "admin": []
+   },
+   "users": "Владелец",
+   "frequency": "редко",
+   "bucket": "A",
+   "wave": "W2",
+   "target": "блок на /loyalty",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/support/chat/manager/"
+   },
+   "complexity": "S",
+   "notes": "Сам чат — корзина C (сливается в чат CheckUp через релей); здесь остаётся только точка входа"
+  },
+  {
+   "id": 33,
+   "name": "Журнал действий сотрудников",
+   "does": "Кто, что и когда сделал: 23 типа действий с delta before/after, фильтр по сотруднику и типу",
+   "where": {
+    "web": [],
+    "mobile": [
+     "AuditLogScreen"
+    ],
+    "admin": [
+     "branch.AuditLog — админки нет вообще"
+    ]
+   },
+   "users": "Владелец",
+   "frequency": "редко / при инцидентах",
+   "bucket": "A",
+   "wave": "W3",
+   "target": "/loyalty/audit",
+   "api": {
+    "status": "partial",
+    "note": "GET /api/v1/audit-log/?staff_id=&action_type=&limit= (limit ≤200, без курсора)"
+   },
+   "complexity": "S",
+   "notes": "Журналов три и они не связаны: AuditEvent (платформа), branch.AuditLog (тенант), BroadcastSend.triggered_by. Из одного места нельзя ответить «кто выключил RF-правила 26.08»"
+  },
+  {
+   "id": 34,
+   "name": "Экономика клиента",
+   "does": "Себестоимость выданных подарков (снимок в момент активации), стоимость обслуживания по периодам, цена контакта, цена уникального оцифрованного",
+   "where": {
+    "web": [
+     "/admin/overview/ (блок)",
+     "/admin/overview/export/",
+     "/admin/sync-gift-costs/"
+    ],
+    "mobile": [
+     "блок в CrossOverviewScreen"
+    ],
+    "admin": [
+     "GiftCostEvent",
+     "ServiceCostPeriod"
+    ]
+   },
+   "users": "Суперадмин LoyalUP, владелец",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W3",
+   "target": "блок на /platform/loyalty",
+   "api": {
+    "status": "partial",
+    "note": "Цифры внутри GET /api/v1/overview/stats/; CSV-выгрузка и «синхронизировать себестоимость» — только админка"
+   },
+   "complexity": "L",
+   "notes": "Forward-only: себестоимость фиксируется снимком при активации и задним числом не пересчитывается (кроме ручного бэкфилла)"
+  },
+  {
+   "id": 35,
+   "name": "Кросс-тенантная сводная по клиентам",
+   "does": "Сканы, подписки, сториз, подарки, отзывы и экономика по всем клиентам платформы, сортировка, выгрузка",
+   "where": {
+    "web": [
+     "/admin/overview/ (public)"
+    ],
+    "mobile": [
+     "CrossOverviewScreen"
+    ],
+    "admin": []
+   },
+   "users": "Суперадмин LoyalUP",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W3",
+   "target": "/platform/loyalty (суперюзер)",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/overview/stats/?period= (public-схема, JWT + суперадмин)"
+   },
+   "complexity": "M",
+   "notes": "Ходит всегда на публичный домен, а не на домен тенанта — в BFF CheckUp это отдельный маршрут"
+  },
+  {
+   "id": 36,
+   "name": "Кросс-тенантные отзывы и ответ на чужой отзыв",
+   "does": "Лента отзывов всех клиентов с фильтром по тональности и ответ прямо оттуда, без входа в кабинет тенанта",
+   "where": {
+    "web": [
+     "/admin/overview/reviews/"
+    ],
+    "mobile": [
+     "CrossOverviewReviewsScreen",
+     "CrossReviewReplyScreen"
+    ],
+    "admin": []
+   },
+   "users": "Суперадмин LoyalUP",
+   "frequency": "еженедельно",
+   "bucket": "A",
+   "wave": "W3",
+   "target": "вкладка на /platform/loyalty",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/overview/reviews/ (пагинация 30/стр) + ответ через домен тенанта отзыва"
+   },
+   "complexity": "L",
+   "notes": "Самая нетривиальная механика мобилки: один сеанс работает сразу с несколькими схемами БД (normBase(base) без смены глобального apiBase) — в вебе повторить на BFF"
+  },
+  {
+   "id": 37,
+   "name": "Пороги RF",
+   "does": "Границы свежести (R3/R2/R1) и частоты (F1/F2), период анализа, дата сброса статистики; на сеть или на точку",
+   "where": {
+    "web": [
+     "/admin/analytics/rfsettings/",
+     "/admin/analytics/rfsettings/<id>/apply-all/"
+    ],
+    "mobile": [
+     "RFThresholdsScreen"
+    ],
+    "admin": [
+     "RFSettings"
+    ]
+   },
+   "users": "Владелец, маркетолог",
+   "frequency": "при сезонных изменениях",
+   "bucket": "A",
+   "wave": "W3",
+   "target": "секция на /loyalty/settings",
+   "api": {
+    "status": "ready",
+    "note": "GET/PATCH /api/v1/analytics/rf/thresholds/"
+   },
+   "complexity": "S",
+   "notes": "Прод-значения 14/30/60 утверждены владельцем — менять осознанно, иначе поедут все сегменты и авторассылки. Правка пишется в AuditLog.THRESHOLDS_SAVE"
+  },
+  {
+   "id": 38,
+   "name": "Помощь и база знаний по системе",
+   "does": "FAQ по реальным вопросам владельцев кафе с поиском + контакты поддержки",
+   "where": {
+    "web": [],
+    "mobile": [
+     "HelpScreen"
+    ],
+    "admin": []
+   },
+   "users": "Все роли",
+   "frequency": "редко",
+   "bucket": "A",
+   "wave": "W3",
+   "target": "/loyalty/help (или HowTo CheckUp)",
+   "api": {
+    "status": "none",
+    "note": "Контент захардкожен в мобильном коде"
+   },
+   "complexity": "S",
+   "notes": "В CheckUp есть готовый компонент подсказок components/common/HowTo.tsx — переносить контент, а не экран"
+  },
+  {
+   "id": 39,
+   "name": "Оплата тарифа",
+   "does": "Баннер «истекает/истекло», выбор банка, заявка на оплату",
+   "where": {
+    "web": [
+     "баннер на главной /admin/"
+    ],
+    "mobile": [
+     "PaymentModal",
+     "баннер HomeScreen"
+    ],
+    "admin": [
+     "Company.paid_until",
+     "Company.plan_code"
+    ]
+   },
+   "users": "Владелец",
+   "frequency": "ежемесячно",
+   "bucket": "A",
+   "wave": "W3",
+   "target": "баннер + /loyalty/billing",
+   "api": {
+    "status": "partial",
+    "note": "GET /api/v1/billing/status/, POST /api/v1/billing/pay/ — эквайринга нет: возвращается manager_request, заявка уходит менеджеру в чат"
+   },
+   "complexity": "M",
+   "notes": "Либо выкинуть при переезде, либо доделать по-настоящему. У CheckUp свой биллинг — вероятно, слить туда"
+  },
+  {
+   "id": 40,
+   "name": "Жалобы гостей (негатив LoyalUP)",
+   "does": "Негативные отзывы и обращения попадают в реестр жалоб CheckUp с вердиктом, ответственными, обсуждением и удержаниями",
+   "where": {
+    "web": [
+     "часть ленты /analytics/reviews/ на стороне LoyalUP"
+    ],
+    "mobile": [],
+    "admin": [
+     "TestimonialConversation"
+    ]
+   },
+   "users": "Управляющий, сервисный отдел",
+   "frequency": "ежедневно",
+   "bucket": "C",
+   "wave": null,
+   "target": "/guests/complaints (существует в CheckUp)",
+   "api": {
+    "status": "ready",
+    "note": "Мост работает: POST /api/v1/loyalup/complaints/inbound/, дедуп по loyalup:<tenant>:<id> и 6-часовому окну"
+   },
+   "complexity": "M",
+   "notes": "Обратного канала нет: вердикт, ответ менеджера и статус в LoyalUP не возвращаются. У Автосуши два независимых конвейера жалоб (почта + LoyalUP) без дедупа между каналами. С №78 дедуп по телефону между почтой и LoyalUP становится полным для гостей, давших номер."
+  },
+  {
+   "id": 41,
+   "name": "Саппорт-чат с менеджером",
+   "does": "Переписка владельца заведения с менеджером LoyalUP, вложения, непрочитанные",
+   "where": {
+    "web": [],
+    "mobile": [
+     "ChatScreen"
+    ],
+    "admin": [
+     "SupportChatMessage (без админки)"
+    ]
+   },
+   "users": "Владелец",
+   "frequency": "еженедельно",
+   "bucket": "C",
+   "wave": null,
+   "target": "/chat CheckUp (существует)",
+   "api": {
+    "status": "ready",
+    "note": "GET/POST /api/v1/support/chat/messages/ + двусторонний релей (/api/v1/loyalup/inbound/ ↔ /api/v1/internal/support/inbound-reply/)"
+   },
+   "complexity": "M",
+   "notes": "Мост работает с 14.05.2026, есть outbox с backoff. Второй чат не строить. Пагинации нет — жёсткие 500 записей"
+  },
+  {
+   "id": 42,
+   "name": "Оценочные отзывы CheckUp (звёзды/NPS)",
+   "does": "Собственная лента отзывов CheckUp с рейтингами, NPS, категориями и аналитикой",
+   "where": {
+    "web": [
+     "CheckUp /guests/reviews",
+     "/guests/[id]",
+     "/guests/analytics"
+    ],
+    "mobile": [
+     "CheckUp guests/reviews.js, detail.js, analytics.js"
+    ],
+    "admin": []
+   },
+   "users": "Управляющий",
+   "frequency": "еженедельно",
+   "bucket": "C",
+   "wave": null,
+   "target": "/guests/reviews (существует в CheckUp)",
+   "api": {
+    "status": "ready",
+    "note": "Свои ручки CheckUp: GET /guests/reviews/, /guests/reviews/analytics/"
+   },
+   "complexity": "M",
+   "notes": "Риск смешения: GuestReview источников LEVELUP/QR практически пуст, отзывы LoyalUP — живой поток. Наивная доливка сломает аналитику NPS. Плюс баг: /guests/analytics шлёт объект Branch вместо id"
+  },
+  {
+   "id": 43,
+   "name": "Вход и сессия сотрудника",
+   "does": "Логин по email/телефону и паролю, access + refresh, авто-обновление на 401",
+   "where": {
+    "web": [
+     "форма логина Django-админки"
+    ],
+    "mobile": [
+     "AuthScreen"
+    ],
+    "admin": []
+   },
+   "users": "Все",
+   "frequency": "при входе",
+   "bucket": "C",
+   "wave": null,
+   "target": "/login CheckUp (существует)",
+   "api": {
+    "status": "ready",
+    "note": "POST /api/v1/auth/login/, /api/v1/auth/refresh/, /api/v1/auth/logout/"
+   },
+   "complexity": "M",
+   "notes": "Токены LoyalUP живут долго (access 30 дней, refresh 90) и не отзываются — blacklist отсутствует, logout это заглушка. В CheckUp access 30 минут: сшивать через сервисный обмен, а не переносом токена"
+  },
+  {
+   "id": 44,
+   "name": "Профиль сотрудника",
+   "does": "ФИО, аватар, роль, город, дата рождения, доступные точки, удаление аккаунта",
+   "where": {
+    "web": [
+     "админка User"
+    ],
+    "mobile": [
+     "ProfileScreen"
+    ],
+    "admin": [
+     "User"
+    ]
+   },
+   "users": "Все",
+   "frequency": "редко",
+   "bucket": "C",
+   "wave": null,
+   "target": "UserMenu / /settings CheckUp",
+   "api": {
+    "status": "ready",
+    "note": "GET/PATCH /api/v1/me/, POST /api/v1/me/delete/"
+   },
+   "complexity": "S",
+   "notes": "Самоудаление аккаунта — требование App Store, в вебе LoyalUP его нет; проверить эквивалент в CheckUp до вывода мобилки LoyalUP из сторов"
+  },
+  {
+   "id": 45,
+   "name": "Выбор сети / организации",
+   "does": "Переключение между сетями, если у сотрудника доступ к нескольким",
+   "where": {
+    "web": [
+     "карточки клиентов на public-админке"
+    ],
+    "mobile": [
+     "TenantSelectScreen"
+    ],
+    "admin": [
+     "User.companies"
+    ]
+   },
+   "users": "Владелец нескольких сетей",
+   "frequency": "при входе",
+   "bucket": "C",
+   "wave": null,
+   "target": "TenantSwitcher CheckUp (существует)",
+   "api": {
+    "status": "ready",
+    "note": "profile.companies + GET /api/v1/company/<client_id>/"
+   },
+   "complexity": "M",
+   "notes": "Кардинальность 1:N: у одной организации CheckUp может быть несколько тенантов LoyalUP (client 8 = asap_bryansk + asap_orel) — переключатель организации ≠ переключатель сети лояльности"
+  },
+  {
+   "id": 46,
+   "name": "Глобальный поиск",
+   "does": "Поиск по гостям / отзывам / подаркам / квестам / акциям одним запросом",
+   "where": {
+    "web": [],
+    "mobile": [
+     "SearchScreen"
+    ],
+    "admin": [
+     "поиск в каждом changelist"
+    ]
+   },
+   "users": "Все",
+   "frequency": "еженедельно",
+   "bucket": "C",
+   "wave": null,
+   "target": "CommandPalette (⌘K) CheckUp",
+   "api": {
+    "status": "ready",
+    "note": "GET /api/v1/search/?q= (лимит 20 на тип)"
+   },
+   "complexity": "M",
+   "notes": "Готовая ручка ложится в существующую палитру CheckUp — отдельный экран не нужен"
+  },
+  {
+   "id": 47,
+   "name": "Онбординг-тур по интерфейсу",
+   "does": "Интерактивный тур при первом входе, перезапуск из меню",
+   "where": {
+    "web": [],
+    "mobile": [
+     "OnboardingTour"
+    ],
+    "admin": []
+   },
+   "users": "Новый сотрудник",
+   "frequency": "1 раз",
+   "bucket": "C",
+   "wave": null,
+   "target": "подсказки HowTo CheckUp",
+   "api": {
+    "status": "none",
+    "note": "Клиентский компонент, API нет"
+   },
+   "complexity": "M",
+   "notes": "Тур завязан на самописную навигацию мобилки — переносить нечего, кроме текстов"
+  },
+  {
+   "id": 48,
+   "name": "Справочник RF-сегментов",
+   "does": "12 сегментов: границы R/F, эмодзи, стратегия, подсказка; «применить ко всем точкам»",
+   "where": {
+    "web": [
+     "/admin/analytics/rfsegment/",
+     "/admin/analytics/rfsegment/<id>/apply-all/"
+    ],
+    "mobile": [
+     "LegendSheet (только чтение)"
+    ],
+    "admin": [
+     "RFSegment"
+    ]
+   },
+   "users": "Суперадмин LoyalUP",
+   "frequency": "при заводе тенанта",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим",
+   "api": {
+    "status": "partial",
+    "note": "GET /api/v1/analytics/segments/ (чтение); правка — админка"
+   },
+   "complexity": "M",
+   "notes": "Действия «экспорт» и «создать рассылку» продублированы в admin.py и analytics/views.py — различие только в учёте выбранных точек"
+  },
+  {
+   "id": 49,
+   "name": "Каталог наград (пул призов для RFM и авторассылок)",
+   "does": "Уровни G1/G2/G3, вес, срок жизни, лимит выдач, окно доступности, себестоимость",
+   "where": {
+    "web": [
+     "/admin/inventory/rewardcatalogitem/"
+    ],
+    "mobile": [],
+    "admin": [
+     "RewardCatalogItem"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "при настройке RF-трека",
+   "bucket": "B",
+   "wave": "W2",
+   "target": "экспертный режим",
+   "api": {
+    "status": "partial",
+    "note": "GET /api/v1/analytics/rf/reward-catalog/ (чтение для RFM); CRUD — админка"
+   },
+   "complexity": "M",
+   "notes": "Пустой каталог = гость получает gift_fallback_text, а если и он пуст — гостя молча пропускают. Ветки G2/G3 в RF-треке не закрыты. Владелец трогает это сам → переносится волной «W2-настройки», в экспертном режиме не остаётся."
+  },
+  {
+   "id": 50,
+   "name": "Legacy-шаблоны авторассылок",
+   "does": "Один текст на тип триггера (ДР за 7/1/0 дней, после игры, подарок не забран) с плейсхолдерами",
+   "where": {
+    "web": [
+     "/admin/senler/autobroadcasttemplate/"
+    ],
+    "mobile": [],
+    "admin": [
+     "AutoBroadcastTemplate (9 типов)"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "при запуске механики",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим («тексты по умолчанию»)",
+   "api": {
+    "status": "none",
+    "note": "Только админка"
+   },
+   "complexity": "S",
+   "notes": "Работает параллельно с конструктором правил и пишет в общий дедуп-лог. В новый UI выносить только правила"
+  },
+  {
+   "id": 51,
+   "name": "Экспорт сегмента в Senler",
+   "does": "Выгрузка .txt со списком VK ID сегмента для ручного импорта во внешний сервис",
+   "where": {
+    "web": [
+     "/analytics/rf/segment/<id>/export-senler/",
+     "/admin/analytics/rfsegment/<id>/export-senler/"
+    ],
+    "mobile": [
+     "кнопка в BroadcastModal"
+    ],
+    "admin": [
+     "RFSegment"
+    ]
+   },
+   "users": "Маркетолог",
+   "frequency": "редко",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим",
+   "api": {
+    "status": "none",
+    "note": "HTML-флоу с редиректом"
+   },
+   "complexity": "S",
+   "notes": "Дубль: две реализации одного действия, admin-версия всегда берёт все активные точки, analytics-версия уважает ?branches="
+  },
+  {
+   "id": 52,
+   "name": "База знаний для ИИ",
+   "does": "Документы-инструкции (.docx/.txt), задающие тон и факты для ответов ИИ на отзывы",
+   "where": {
+    "web": [
+     "/admin/analytics/knowledgebasedocument/"
+    ],
+    "mobile": [],
+    "admin": [
+     "KnowledgeBaseDocument"
+    ]
+   },
+   "users": "Владелец",
+   "frequency": "1–2 раза за всё время",
+   "bucket": "B",
+   "wave": "W2",
+   "target": "экспертный режим («Обучить ИИ»)",
+   "api": {
+    "status": "none",
+    "note": "Только админка"
+   },
+   "complexity": "S",
+   "notes": "Подмешивается во все AI-ответы; менять редко, но эффект мгновенный на весь поток отзывов. Владелец трогает это сам → переносится волной «W2-настройки», в экспертном режиме не остаётся."
+  },
+  {
+   "id": 53,
+   "name": "Ссылки на карты (Яндекс / 2ГИС) точки",
+   "does": "URL для кнопок «оставьте отзыв» под ответом ИИ и в карточке точки, плюс фолбэк сети",
+   "where": {
+    "web": [
+     "/admin/branch/branch/<id>/change/"
+    ],
+    "mobile": [],
+    "admin": [
+     "Branch.review_link_yandex",
+     "Branch.review_link_2gis",
+     "Branch.review_links_default",
+     "BranchConfig.yandex_map",
+     "BranchConfig.gis_map"
+    ]
+   },
+   "users": "Владелец",
+   "frequency": "один раз на точку",
+   "bucket": "B",
+   "wave": "W2",
+   "target": "экспертный режим (или блок в /loyalty/points)",
+   "api": {
+    "status": "none",
+    "note": "Только админка"
+   },
+   "complexity": "S",
+   "notes": "Если у точки заполнена не обе ссылки — кнопка «Вставить ссылки» в отзывах молча не работает. Владелец трогает это сам → переносится волной «W2-настройки», в экспертном режиме не остаётся."
+  },
+  {
+   "id": 54,
+   "name": "Брендинг мини-аппа",
+   "does": "Логотип, иконка монеты, главный и акцентный цвет мини-аппа гостя",
+   "where": {
+    "web": [
+     "/admin/config/clientconfig/"
+    ],
+    "mobile": [],
+    "admin": [
+     "ClientConfig (5 полей)"
+    ]
+   },
+   "users": "Суперадмин LoyalUP",
+   "frequency": "при подключении брендинга",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим",
+   "api": {
+    "status": "partial",
+    "note": "Отдаётся гостю в GET /api/v1/branches/<branch_id>/; правка — только админка"
+   },
+   "complexity": "S",
+   "notes": "«Платный брендинг» — коммерческая опция; править должен суперадмин, не клиент"
+  },
+  {
+   "id": 55,
+   "name": "Подключение ВКонтакте",
+   "does": "Токен сообщества, ID группы, Callback API (подтверждение + секрет), Long Poll",
+   "where": {
+    "web": [
+     "/admin/senler/senlerconfig/"
+    ],
+    "mobile": [],
+    "admin": [
+     "SenlerConfig (на точку)"
+    ]
+   },
+   "users": "Суперадмин LoyalUP",
+   "frequency": "при заводе и перевыпуске токена",
+   "bucket": "B",
+   "wave": "W2",
+   "target": "экспертный режим (мастер подключения)",
+   "api": {
+    "status": "none",
+    "note": "Только админка"
+   },
+   "complexity": "M",
+   "notes": "На одну группу может быть несколько конфигов; секрет callback принимается от любого конфига группы. Инвариант vk_group_id (ClientConfig = SenlerConfig) проверять при заводе тенанта. Владелец трогает это сам → переносится волной «W2-настройки», в экспертном режиме не остаётся."
+  },
+  {
+   "id": 56,
+   "name": "Флаги механик тенанта",
+   "does": "8 рубильников: сториз-игра, каталог ВК, веб-вход, деградация, RF-оркестратор, автоответы, AI-маркетолог, авторассылки",
+   "where": {
+    "web": [
+     "/admin/config/clientconfig/"
+    ],
+    "mobile": [],
+    "admin": [
+     "ClientConfig",
+     "ReviewAutoReplyConfig",
+     "MarketerSettings",
+     "AutoBroadcastRule"
+    ]
+   },
+   "users": "Суперадмин LoyalUP, владелец",
+   "frequency": "при запуске механики",
+   "bucket": "B",
+   "wave": "W2",
+   "target": "экспертный режим + служебный экран «Что включено у клиента»",
+   "api": {
+    "status": "partial",
+    "note": "Часть отдаётся в GET /api/v1/company/<client_id>/ (web_entry_enabled, degrade_enabled); правка — админка"
+   },
+   "complexity": "M",
+   "notes": "Ответ «что у этого клиента включено» собирается из 4 моделей в 2 схемах — первый кандидат на служебный экран платформы. Владелец трогает это сам → переносится волной «W2-настройки», в экспертном режиме не остаётся."
+  },
+  {
+   "id": 57,
+   "name": "Подключение кассы (iiko / Dooglys)",
+   "does": "Тип POS, доступы к API, привязка точки к организации/торговой точке кассы",
+   "where": {
+    "web": [
+     "/admin/config/clientconfig/",
+     "/admin/branch/branch/"
+    ],
+    "mobile": [],
+    "admin": [
+     "ClientConfig (pos_type + 5 полей)",
+     "Branch.iiko_organization_id",
+     "Branch.dooglys_branch_id"
+    ]
+   },
+   "users": "Суперадмин LoyalUP",
+   "frequency": "при заводе",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим",
+   "api": {
+    "status": "none",
+    "note": "Только админка"
+   },
+   "complexity": "M",
+   "notes": "Без POS «индекс оцифровки» и «суточные заказы» — нули (пустая страница, а не скрытая). При заводе доставки проверять коллизии dooglys_branch_id"
+  },
+  {
+   "id": 58,
+   "name": "Подарки гостя: инвентарь, суперпризы, подарки из сториз",
+   "does": "Разбор спорных случаев: отметить использованным, сбросить активацию, сбросить выбор приза",
+   "where": {
+    "web": [
+     "/admin/inventory/inventoryitem/",
+     "/admin/inventory/superprizeentry/",
+     "/admin/inventory/storygiftentry/"
+    ],
+    "mobile": [
+     "видно в GuestDetailScreen"
+    ],
+    "admin": [
+     "InventoryItem",
+     "SuperPrizeEntry",
+     "StoryGiftEntry"
+    ]
+   },
+   "users": "Управляющий",
+   "frequency": "точечно, по обращению гостя",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим",
+   "api": {
+    "status": "partial",
+    "note": "Видно в GET /api/v1/guests/{vk_id}/; управление — админка"
+   },
+   "complexity": "M",
+   "notes": "Два разных срока: claim_expires_at (успеть забрать, 14 дней) и expires_at (окно после активации) — путать нельзя"
+  },
+  {
+   "id": 59,
+   "name": "Перезарядки (cooldown) гостя",
+   "does": "Снять 18-часовую перезарядку игры / инвентаря / магазина / квеста по жалобе гостя",
+   "where": {
+    "web": [
+     "/admin/branch/cooldown/"
+    ],
+    "mobile": [],
+    "admin": [
+     "Cooldown"
+    ]
+   },
+   "users": "Управляющий",
+   "frequency": "редко",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим",
+   "api": {
+    "status": "none",
+    "note": "Только админка"
+   },
+   "complexity": "S",
+   "notes": "Единственный сервисный рычаг при жалобе «не даёт играть»"
+  },
+  {
+   "id": 60,
+   "name": "Заявки новых клиентов (лиды)",
+   "does": "Заявка из мобильного онбординга, заполненная AI-менеджером, и экшен «подтвердить и создать тенант» (Company + Domain + User + секрет + письмо)",
+   "where": {
+    "web": [
+     "/admin/leads/lead/"
+    ],
+    "mobile": [
+     "ChoiceScreen",
+     "OnboardingSlideshow",
+     "OnboardingChatScreen",
+     "OnboardingPendingScreen"
+    ],
+    "admin": [
+     "Lead",
+     "CompanySecret (без админки)"
+    ]
+   },
+   "users": "Суперадмин LoyalUP",
+   "frequency": "по мере заявок",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим (воронка продаж)",
+   "api": {
+    "status": "ready",
+    "note": "POST /api/v1/leads/, GET/PATCH /leads/{token}/, /submit/, /chat/; подтверждение — только админка"
+   },
+   "complexity": "L",
+   "notes": "Самообслуживания нет: менеджер вручную заводит тенанта и высылает пароль письмом. AI-чат падает при исчерпании кредитов Anthropic (есть скриптованный фолбэк)"
+  },
+  {
+   "id": 61,
+   "name": "Клиенты платформы (тенанты)",
+   "does": "Компания, поддомен, client_id в QR, статус оплаты, тариф, история стоимости обслуживания",
+   "where": {
+    "web": [
+     "/admin/ (public)",
+     "/admin/clients/company/<id>/change/"
+    ],
+    "mobile": [],
+    "admin": [
+     "Company",
+     "Domain",
+     "ServiceCostPeriod"
+    ]
+   },
+   "users": "Суперадмин LoyalUP",
+   "frequency": "при заводе и продлении",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим (+ ссылка из /platform CheckUp)",
+   "api": {
+    "status": "none",
+    "note": "Только админка"
+   },
+   "complexity": "M",
+   "notes": "Домен тенанта — единственный способ маршрутизации: TenantMainMiddleware определяет схему по Host, заголовка X-Tenant нет"
+  },
+  {
+   "id": 62,
+   "name": "Кросс-тенантный журнал входов",
+   "does": "Кто, в какой роли, у какого клиента, что сделал, с какого IP — по всей платформе",
+   "where": {
+    "web": [
+     "/admin/audit/"
+    ],
+    "mobile": [],
+    "admin": [
+     "AuditEvent (read-only)"
+    ]
+   },
+   "users": "Суперадмин LoyalUP",
+   "frequency": "при инцидентах",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим",
+   "api": {
+    "status": "none",
+    "note": "Только страница админки"
+   },
+   "complexity": "M",
+   "notes": "Второй из трёх несвязанных журналов; фиксирует входы/выходы в веб-админку, но не действия через мобильное API"
+  },
+  {
+   "id": 63,
+   "name": "Воронка сетевого входа из каталога VK",
+   "does": "Заходы из каталога → сыграли → «забрать» → выбрали город → активировали на кассе, с разбивкой по городам",
+   "where": {
+    "web": [
+     "/admin/discovery/"
+    ],
+    "mobile": [],
+    "admin": [
+     "DiscoveryEvent",
+     "DiscoveryClaim"
+    ]
+   },
+   "users": "Суперадмин LoyalUP",
+   "frequency": "еженедельно",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим",
+   "api": {
+    "status": "none",
+    "note": "Страница админки (гостевые события — /api/v1/discovery/*)"
+   },
+   "complexity": "M",
+   "notes": "Пустая при выключенном vk_catalog_enabled — это норма, а не поломка"
+  },
+  {
+   "id": 64,
+   "name": "Суточные заказы (POS) и индекс сканирования",
+   "does": "Сколько заказов пробила касса за сутки по точкам — знаменатель «индекса оцифровки»",
+   "where": {
+    "web": [
+     "/admin/analytics/dailyorderstat/"
+    ],
+    "mobile": [
+     "цифра в GeneralStatsScreen"
+    ],
+    "admin": [
+     "DailyOrderStat",
+     "POSGuestCache (без админки)"
+    ]
+   },
+   "users": "Никто руками; смотрят в статистике",
+   "frequency": "еженедельно",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим (цифра — в /loyalty/stats)",
+   "api": {
+    "status": "partial",
+    "note": "Приём — POST /api/v1/orders/daily/; просмотр — админка + GET /api/v1/analytics/stats/slow/"
+   },
+   "complexity": "S",
+   "notes": "ORDERS_INGEST_SECRET при пустом значении пропускает всех — закрыть до подключения новых потребителей"
+  },
+  {
+   "id": 65,
+   "name": "Telegram-боты для админов точки",
+   "does": "Бот уведомлений: токен, привязка админа, регистрация webhook",
+   "where": {
+    "web": [
+     "/admin/telegram/telegrambot/",
+     "/admin/telegram/telegrambot/<bot>/connect/<admin>/"
+    ],
+    "mobile": [],
+    "admin": [
+     "TelegramBot",
+     "BotAdmin"
+    ]
+   },
+   "users": "Никто — фактически мёртвая ветка",
+   "frequency": "никогда",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим / кандидат на удаление",
+   "api": {
+    "status": "none",
+    "note": "Только админка (вебхук /telegram/webhook/<token>/ жив)"
+   },
+   "complexity": "S",
+   "notes": "send_message не вызывается ниоткуда: живут только вебхук верификации и setWebhook. Не путать с ТГ мини-аппом loyalupp.ru — это другой репозиторий"
+  },
+  {
+   "id": 66,
+   "name": "Служебные данные RF и лоялти-заказов",
+   "does": "RF-метрики гостей, снапшоты сегментов, лог миграций, заказы и ключи идемпотентности сервис-API",
+   "where": {
+    "web": [
+     "/admin/analytics/*",
+     "/admin/loyalty/*"
+    ],
+    "mobile": [],
+    "admin": [
+     "GuestRFScore",
+     "BranchSegmentSnapshot",
+     "RFMigrationLog",
+     "LoyaltyOrder",
+     "LoyaltyIdempotencyKey"
+    ]
+   },
+   "users": "Никто (пишется системой)",
+   "frequency": "только при разборе",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим",
+   "api": {
+    "status": "none",
+    "note": "Только просмотр в админке"
+   },
+   "complexity": "S",
+   "notes": "Delivery-двойники (GuestRFScoreDelivery и др.) админки не имеют вовсе — правятся только из shell"
+  },
+  {
+   "id": 67,
+   "name": "Гости платформы (общий справочник VK-пользователей)",
+   "does": "Карточка VK-гостя на всю платформу, флаг активности = бан гостя",
+   "where": {
+    "web": [
+     "/admin/guest/client/ (public)"
+    ],
+    "mobile": [],
+    "admin": [
+     "Client"
+    ]
+   },
+   "users": "Только суперадмин",
+   "frequency": "почти никогда",
+   "bucket": "B",
+   "wave": null,
+   "target": "экспертный режим",
+   "api": {
+    "status": "none",
+    "note": "Только админка"
+   },
+   "complexity": "S",
+   "notes": "Живёт в public-схеме и общий для всех тенантов: бан здесь отключает гостя во всех сетях сразу"
+  },
+  {
+   "id": 68,
+   "name": "Мини-апп гостя ВКонтакте",
+   "does": "Игра-колесо, каталог за баллы, «мои подарки», квесты, ДР-подарок, сториз-механика, отзыв гостя, ввод кода доставки",
+   "where": {
+    "web": [
+     "гостевой фронт (отдельный репозиторий)"
+    ],
+    "mobile": [],
+    "admin": []
+   },
+   "users": "Гость",
+   "frequency": "ежедневно",
+   "bucket": "D",
+   "wave": null,
+   "target": "не переносим",
+   "api": {
+    "status": "ready",
+    "note": "42 гостевые ручки под VK-подписью / X-Web-Session: /client/, /catalog/, /game/, /inventory/, /quest/, /story/, /birthday/, /testimonials/, /code/"
+   },
+   "complexity": "L",
+   "notes": "Решение владельца: не трогаем. Гостевое API опознаётся middleware по списку префиксов и живёт в отдельном пространстве путей"
+  },
+  {
+   "id": 69,
+   "name": "Веб-вход гостя вне ВК (VK ID) и Телеграм-версия",
+   "does": "Вход в игру из браузера и Телеграма через VK ID OAuth2 PKCE, «умная деградация» при сбое ВК",
+   "where": {
+    "web": [
+     "гостевой фронт"
+    ],
+    "mobile": [],
+    "admin": [
+     "ClientConfig.web_entry_enabled",
+     "ClientConfig.degrade_enabled"
+    ]
+   },
+   "users": "Гость",
+   "frequency": "по мере",
+   "bucket": "D",
+   "wave": null,
+   "target": "не переносим",
+   "api": {
+    "status": "ready",
+    "note": "POST /api/v1/vk/auth/ → X-Web-Session (TTL 30 дней)"
+   },
+   "complexity": "M",
+   "notes": "Заблокировано не кодом: VK ID-апп 54473505 ждёт подтверждения профиля бизнеса и домена levonework.ru. Enforce подписи ВК включать нельзя — реальные подписи не сходятся у всех"
+  },
+  {
+   "id": 70,
+   "name": "Сетевой вход новичка из каталога VK",
+   "does": "Гость без QR получает приветственный приз, выбирает город и забирает его в любой точке",
+   "where": {
+    "web": [
+     "гостевой фронт"
+    ],
+    "mobile": [],
+    "admin": [
+     "DiscoveryEvent",
+     "DiscoveryClaim"
+    ]
+   },
+   "users": "Новый гость",
+   "frequency": "по мере",
+   "bucket": "D",
+   "wave": null,
+   "target": "не переносим",
+   "api": {
+    "status": "ready",
+    "note": "/api/v1/discovery/* — 6 ручек, public-схема"
+   },
+   "complexity": "M",
+   "notes": "Один приз на VK ID глобально (unique) — повторно забрать нельзя ни в одном городе"
+  },
+  {
+   "id": 71,
+   "name": "Код доставки и вебхук от кассы",
+   "does": "POS присылает заказ доставки → гость вводит последние 5 цифр → доступ к игре; сетевой QR определяет точку по коду",
+   "where": {
+    "web": [],
+    "mobile": [],
+    "admin": [
+     "Delivery (только просмотр)"
+    ]
+   },
+   "users": "Гость, касса",
+   "frequency": "ежедневно",
+   "bucket": "D",
+   "wave": null,
+   "target": "не переносим",
+   "api": {
+    "status": "ready",
+    "note": "POST /api/v1/delivery/webhook/, POST /api/v1/code/, POST /api/v1/code/resolve/"
+   },
+   "complexity": "M",
+   "notes": "Тенант ищется перебором всех схем на каждый вебхук. Окно свежести кода 7 дней критично: pending копятся годами, возможны коллизии по последним 5 цифрам"
+  },
+  {
+   "id": 72,
+   "name": "Приём суточных заказов от POS",
+   "does": "Касса после закрытия смены пушит количество заказов по точкам",
+   "where": {
+    "web": [],
+    "mobile": [],
+    "admin": [
+     "DailyOrderStat"
+    ]
+   },
+   "users": "Касса",
+   "frequency": "ежедневно",
+   "bucket": "D",
+   "wave": null,
+   "target": "не переносим",
+   "api": {
+    "status": "ready",
+    "note": "POST /api/v1/orders/daily/ (X-Webhook-Secret, batch points[])"
+   },
+   "complexity": "S",
+   "notes": "При пустом ORDERS_INGEST_SECRET принимает без проверки"
+  },
+  {
+   "id": 73,
+   "name": "Сервис-API лояльности для ordering-BFF",
+   "does": "Баланс, начисление кэшбэка, списание, возврат, сумма трат — для внешнего приложения заказа",
+   "where": {
+    "web": [],
+    "mobile": [],
+    "admin": [
+     "LoyaltyOrder",
+     "LoyaltyIdempotencyKey"
+    ]
+   },
+   "users": "Внешний сервис",
+   "frequency": "постоянно",
+   "bucket": "D",
+   "wave": null,
+   "target": "не переносим",
+   "api": {
+    "status": "ready",
+    "note": "5 ручек /api/v1/loyalty/* под сервис-ключом, идемпотентность по ключу"
+   },
+   "complexity": "M",
+   "notes": "Образцовый server-to-server контракт: fail-closed при пустом ключе. Взять за образец для обмена CheckUp ↔ LoyalUP"
+  },
+  {
+   "id": 74,
+   "name": "Приём сообщений и подписок из ВК",
+   "does": "Callback API в реальном времени, резервный поллинг каждые 2 мин, Long Poll catchup подписок",
+   "where": {
+    "web": [],
+    "mobile": [],
+    "admin": [
+     "SenlerConfig (настройка)"
+    ]
+   },
+   "users": "Система",
+   "frequency": "постоянно",
+   "bucket": "D",
+   "wave": null,
+   "target": "не переносим",
+   "api": {
+    "status": "ready",
+    "note": "POST /api/v1/vk/callback/ (секрет в теле)"
+   },
+   "complexity": "M",
+   "notes": "Callback застревает в failed после простоев — лечится переустановкой через getCallbackConfirmationCode → editCallbackServer теми же url/secret"
+  },
+  {
+   "id": 75,
+   "name": "Фоновые автоматизации",
+   "does": "17 периодических задач: RF-пересчёт 03:00, коды дня 03:00, ДР-рассылки 10:00, после игры, напоминания о подарке, чистка вложений, сверка прочтений, напоминания о черновиках, дайджест маркетолога",
+   "where": {
+    "web": [],
+    "mobile": [],
+    "admin": [
+     "main/celery.py (beat)"
+    ]
+   },
+   "users": "Система",
+   "frequency": "постоянно",
+   "bucket": "D",
+   "wave": null,
+   "target": "не переносим",
+   "api": {
+    "status": "none",
+    "note": "API нет — фоновые задачи"
+   },
+   "complexity": "L",
+   "notes": "Ни одна задача не проверяет Company.is_active и paid_until — отключённый клиент продолжает получать рассылки гостям. Потерянная задача weekly_client_digest_task описана в докстринге, но в расписании её нет"
+  },
+  {
+   "id": 76,
+   "name": "Релеи LoyalUP ↔ CheckUp",
+   "does": "Жалобы гостей → реестр CheckUp, саппорт-чат в обе стороны",
+   "where": {
+    "web": [],
+    "mobile": [],
+    "admin": [
+     "apps/shared/relay (LoyalUP)",
+     "apps/loyalup_relay (CheckUp)"
+    ]
+   },
+   "users": "Система",
+   "frequency": "постоянно",
+   "bucket": "D",
+   "wave": null,
+   "target": "не переносим (расширяем контрактом)",
+   "api": {
+    "status": "ready",
+    "note": "3 канала на общем секрете X-LoyalUP-Relay-Secret + loopback"
+   },
+   "complexity": "M",
+   "notes": "Мост продуман лучше остального проекта (дедуп по 6-часовому окну, отложенная отправка 90 с, различение «сбой / настройка»). Но секрет один на всё и требует loopback"
+  },
+  {
+   "id": 77,
+   "name": "Пуш-инфраструктура (Expo)",
+   "does": "Регистрация и снятие токенов устройств, каналы urgent/info, тихие часы",
+   "where": {
+    "web": [],
+    "mobile": [
+     "src/push.ts"
+    ],
+    "admin": [
+     "PushToken (без админки)"
+    ]
+   },
+   "users": "Система",
+   "frequency": "постоянно",
+   "bucket": "D",
+   "wave": null,
+   "target": "не переносим",
+   "api": {
+    "status": "ready",
+    "note": "POST/DELETE /api/v1/push/register/"
+   },
+   "complexity": "S",
+   "notes": "Исторический баг: DELETE требовал platform, из-за чего токен не снимался и пуши шли после logout — починено, но при новой мобилке проверить снова"
+  },
+  {
+   "id": 78,
+   "name": "Телефон гостя с согласием через ВК",
+   "does": "Гость по кнопке даёт номер через окно ВК (VKWebAppGetPhoneNumber); бэк проверяет подпись «Защищённым ключом» и хранит номер у гостя; номер уходит в жалобы CheckUp и становится ключом сшивки гостя с почтой жалоб, заказами iiko/Dooglys и карточкой гостя в CheckUp",
+   "where": {
+    "web": [],
+    "mobile": [],
+    "admin": []
+   },
+   "users": "Гость даёт; управляющий и сервисный отдел видят",
+   "frequency": "один раз на гостя",
+   "bucket": "A",
+   "wave": "W1",
+   "target": "контракт платформы (до волны 1) + поле «Телефон» в /loyalty/guests/[id] и в карточке жалобы",
+   "api": {
+    "status": "none",
+    "note": "Ручки нет. Телефон сейчас только у отзывов из мини-аппа (TestimonialMessage.phone); у гостя (guest.Client) поля нет"
+   },
+   "complexity": "M",
+   "notes": "Новая возможность, сейчас нет нигде. Условия ВК: окно согласия показывается при каждом вызове, ответ ВК не запоминает — спрашиваем один раз и храним у себя; работает в приложениях ВК Android/iOS и в вебе, в m.vk.ru недоступно; правила 1.1.2 и 1.1.4 — номер нужен для основной функции, до запроса гость принимает политику конфиденциальности и соглашение; 4.2.3 запрещает телефон только категории «Игры» — проверить категорию приложения 53418653 в кабинете; 152-ФЗ — согласие и политика, регистрацию оператора уточнить у юриста. Просить там, где польза очевидна гостю (доставка, подарок на ДР), не на первом экране. Зависимость: «Защищённый ключ» приложения (он же нужен для проверки подписи запуска, волна 0 п. 4)."
+  }
+ ],
+ "apiGaps": [
+  {
+   "capabilityIds": [
+    5
+   ],
+   "capability": "Общая статистика",
+   "missing": "Детализации метрики нет в JSON — только HTML /analytics/stats/detail/ (23 метрики)",
+   "todo": "GET /api/v1/analytics/stats/detail/?metric=&branch_ids=&period= со списком гостей",
+   "days": 1
+  },
+  {
+   "capabilityIds": [
+    28
+   ],
+   "capability": "Отчёт по лояльности",
+   "missing": "JSON есть, но PDF и сохранение AI-комментариев живут в HTML-странице",
+   "todo": "Ручки «сохранить комментарий секции» и «состав секций»; PDF рендерить в CheckUp (@media print уже есть)",
+   "days": 2
+  },
+  {
+   "capabilityIds": [
+    26
+   ],
+   "capability": "Точки контакта",
+   "missing": "Нет JSON-детализации стадии воронки",
+   "todo": "GET /api/v1/analytics/contact-points/detail/?qr=&stage=",
+   "days": 1
+  },
+  {
+   "capabilityIds": [
+    26,
+    27
+   ],
+   "capability": "QR и материалы",
+   "missing": "CRUD QR-кодов и генерация ссылок/картинок — только админка",
+   "todo": "GET/POST/PATCH/DELETE /api/v1/branch/qrcodes/ + готовая ссылка и PNG",
+   "days": 2
+  },
+  {
+   "capabilityIds": [
+    15,
+    53
+   ],
+   "capability": "Точки сети",
+   "missing": "mobile/branches/ только читает; Branch + BranchConfig + ссылки на карты правятся в админке",
+   "todo": "PATCH /api/v1/mobile/branches/<id>/ (контакты, тексты, ссылки Яндекс/2ГИС, раздатка)",
+   "days": 2
+  },
+  {
+   "capabilityIds": [
+    11
+   ],
+   "capability": "Рассылки",
+   "missing": "Нет API для черновиков Broadcast и «отправить сейчас»",
+   "todo": "JSON-CRUD рассылки + POST .../send/ с обязательным expected_count (предохранитель после ЧП 21.08)",
+   "days": 3
+  },
+  {
+   "capabilityIds": [
+    13
+   ],
+   "capability": "Аварийные действия над рассылкой",
+   "missing": "edit-in-vk / delete-in-vk / cancel — только админские URL с HTML",
+   "todo": "3 POST-ручки поверх существующих сервисов",
+   "days": 1
+  },
+  {
+   "capabilityIds": [
+    31
+   ],
+   "capability": "Авторассылки",
+   "missing": "PATCH правит только текст и is_active; событие, задержка, аудитория, A/B — только веб",
+   "todo": "Полный CRUD AutoBroadcastRule + AutoBroadcastVariant + существующий preview",
+   "days": 3
+  },
+  {
+   "capabilityIds": [
+    48,
+    51
+   ],
+   "capability": "Сегменты: экспорт и рассылка",
+   "missing": "«Экспорт в Senler», «создать рассылку из сегмента», «рассылка всем» — HTML-редиректы",
+   "todo": "JSON-эквиваленты трёх флоу (или явно оставить в экспертном режиме)",
+   "days": 1
+  },
+  {
+   "capabilityIds": [
+    52
+   ],
+   "capability": "База знаний для ИИ",
+   "missing": "Только админка",
+   "todo": "GET/POST/DELETE /api/v1/analytics/knowledge-base/ + переключатель активности",
+   "days": 1
+  },
+  {
+   "capabilityIds": [
+    29
+   ],
+   "capability": "AI-маркетолог",
+   "missing": "Настройки и посты только в админке",
+   "todo": "GET/PATCH /api/v1/marketer/settings/, GET /api/v1/marketer/posts/, POST .../publish/, .../reject/, .../generate/",
+   "days": 2
+  },
+  {
+   "capabilityIds": [
+    34,
+    35
+   ],
+   "capability": "Экономика и кросс-сводная",
+   "missing": "Нет CSV-выгрузки и пересчёта себестоимости в API",
+   "todo": "GET /api/v1/overview/export/, POST /api/v1/overview/sync-gift-costs/",
+   "days": 1
+  },
+  {
+   "capabilityIds": [
+    33
+   ],
+   "capability": "Журнал действий",
+   "missing": "limit ≤200, курсора нет",
+   "todo": "Курсорная пагинация + фильтр по диапазону дат",
+   "days": 0.5
+  },
+  {
+   "capabilityIds": [
+    1
+   ],
+   "capability": "Отзывы",
+   "missing": "Список без пагинации и без серверных фильтров",
+   "todo": "pagination_class + фильтры тональность/статус/источник/поиск",
+   "days": 1
+  },
+  {
+   "capabilityIds": [
+    41
+   ],
+   "capability": "Саппорт-чат",
+   "missing": "Жёсткие 500 записей",
+   "todo": "Курсорная пагинация",
+   "days": 0.5
+  },
+  {
+   "capabilityIds": [
+    17
+   ],
+   "capability": "Уведомления",
+   "missing": "Только limit, без курсора и фильтра по типу",
+   "todo": "Курсор + фильтр type",
+   "days": 0.5
+  },
+  {
+   "capabilityIds": [
+    56
+   ],
+   "capability": "Флаги механик тенанта",
+   "missing": "Ответ «что включено у клиента» собирается из 4 моделей в 2 схемах",
+   "todo": "GET/PATCH /api/v1/tenant/features/ — единая сводка флагов",
+   "days": 1
+  },
+  {
+   "capabilityIds": [
+    23
+   ],
+   "capability": "Механика «Игра через сториз»",
+   "missing": "Только ClientConfig/BranchConfig в админке",
+   "todo": "GET/PATCH /api/v1/tenant/story-settings/ с явным наследованием сеть→точка",
+   "days": 1
+  },
+  {
+   "capabilityIds": [
+    4
+   ],
+   "capability": "Дашборд дня",
+   "missing": "Собирается клиентом из трёх ручек",
+   "todo": "GET /api/v1/dashboard/today/ — задачи дня одним запросом",
+   "days": 1
+  },
+  {
+   "capabilityIds": [
+    38
+   ],
+   "capability": "Помощь",
+   "missing": "Контент захардкожен в мобильном коде",
+   "todo": "Вынести в данные (или перенести тексты в HowTo CheckUp — тогда 0)",
+   "days": 0.5
+  },
+  {
+   "capabilityIds": [],
+   "capability": "ОБЩЕЕ: CORS для домена CheckUp",
+   "missing": "Whitelist покрывает только levelupapp.ru, levonework.ru, loyalupp.ru, vk.com — Next.js CheckUp получит CORS-ошибку на первом запросе",
+   "todo": "Добавить https://checkupapp.ru в CORS_ALLOWED_ORIGINS (+regex поддоменов), ALLOWED_HOSTS и CSRF_TRUSTED_ORIGINS. Authorization уже разрешён через default_headers",
+   "days": 0.5
+  },
+  {
+   "capabilityIds": [],
+   "capability": "ОБЩЕЕ: сервисная авторизация CheckUp → LoyalUP",
+   "missing": "Нет обмена токенами: секрет один на сервер, «кто именно смотрит» в LoyalUP не передаётся",
+   "todo": "POST /api/v1/internal/auth/exchange/ (public-схема) по образцу релея: X-LoyalUP-Relay-Secret + loopback/private + запрет X-Forwarded-For; на вход tenant_schema, пользователь CheckUp и его права; на выход короткоживущий JWT сотрудника с branch_access из EmployeeBranchAccess(purpose='guests')",
+   "days": 2
+  },
+  {
+   "capabilityIds": [],
+   "capability": "ОБЩЕЕ: OpenAPI и типизация мобильного API",
+   "missing": "37 ручек apps/tenant/mobile/api/views.py отдают ручные dict — схема drf-spectacular пустая",
+   "todo": "Сериализаторы ответов хотя бы для W1-ручек + генерация TS-клиента для CheckUp",
+   "days": 4
+  },
+  {
+   "capabilityIds": [],
+   "capability": "ОБЩЕЕ: версионирование",
+   "missing": "/api/v1/ — литерал в urlpatterns, DEFAULT_VERSIONING_CLASS не задан",
+   "todo": "Namespace-версионирование, чтобы v2 не делался копированием urlconf",
+   "days": 1
+  },
+  {
+   "capabilityIds": [],
+   "capability": "ОБЩЕЕ: выкатка закрытия AllowAny",
+   "missing": "14 ручек аналитики шли без авторизации — исправлено в коде (5e18a93), ждёт выкатки",
+   "todo": "Выкатить до подключения CheckUp; проверить, что веб-кабинет (session) и мобилка не сломались",
+   "days": 0.5
+  },
+  {
+   "capabilityIds": [],
+   "capability": "ОБЩЕЕ: пагинация по умолчанию",
+   "missing": "DEFAULT_PAGINATION_CLASS / PAGE_SIZE не заданы; django_filters установлен и нигде не используется",
+   "todo": "Задать дефолтную пагинацию и подключить django_filters в списковых вьюхах",
+   "days": 0.5
+  },
+  {
+   "capabilityIds": [
+    78
+   ],
+   "capability": "Телефон гостя",
+   "missing": "Номера у гостя нет: только в отзывах из мини-аппа (TestimonialMessage.phone); в /api/v1/guests/{vk_id}/ и в payload жалоб телефона нет",
+   "todo": "POST /api/v1/client/phone/ — приём phone_number + sign из VKWebAppGetPhoneNumber, проверка подписи (sha256(app_id + secret + user_id + \"phone_number\" + value) → base64) «Защищённым ключом»; поля guest.Client.phone / phone_norm + дата согласия; отдача в /api/v1/guests/{vk_id}/ и guest_phone в payload релея жалоб",
+   "days": 2
+  }
+ ],
+ "mapping": [
+  {
+   "checkup": "Организация core.Client",
+   "loyalup": "Тенант clients.Company (схема PostgreSQL)",
+   "existing": "guests.LoyalupTenantMap — 4 строки (levone, shavuha_ot_leo, asap_bryansk, asap_orel); tenant_schema unique глобально",
+   "missing": "Связь 1:N не выражена в UI: у client 8 «Автосуши» два тенанта LoyalUP",
+   "proposal": "LoyalupTenantMap оставить как есть (она уже 1:N); в модуле добавить селектор «сеть лояльности», когда тенантов больше одного. Логика «один тенант на организацию» неверна с первого дня"
+  },
+  {
+   "checkup": "Филиал branches.Branch",
+   "loyalup": "Точка branch.Branch (branch_id, тот же, что в QR)",
+   "existing": "guests.LoyalupBranchMap — 11 строк, unique_together (tenant_map, loyalup_point_id), защита _belongs_to",
+   "missing": "Нет автозаведения при появлении новой точки; default_branch намеренно пуст",
+   "proposal": "Синхронизация словаря из GET /api/v1/mobile/branches/ + экран маппинга в /platform. Матчинг только по LoyalupBranchMap, адреса запрещены (опечатки в улицах, пустые адреса, 4 объекта CheckUp на одну точку)"
+  },
+  {
+   "checkup": "Пользователь users.User (логин = телефон)",
+   "loyalup": "users.User (логин = email/телефон, роли superadmin/network_admin/client)",
+   "existing": "Ничего; единственный «мост пользователей» — служебный юзер loyalup_relay",
+   "missing": "Нет SSO, нет таблицы соответствия, нет общего идентификатора",
+   "proposal": "Не сшивать учётки; опциональный LoyalupUserLink(user, tenant_map, loyalup_user_id), а доступ выдавать обменом сервисного токена с указанием, кто смотрит"
+  },
+  {
+   "checkup": "Право permissions.Permission (~112 кодов, категория guests)",
+   "loyalup": "User.feature_access (18 ключей) + StaffProfile.permissions (14 флагов)",
+   "existing": "Категория прав guests в CheckUp",
+   "missing": "Кода лояльности нет; 12 из 18 ключей LoyalUP в вебе ничего не закрывают",
+   "proposal": "Миграция permissions/00XX_loyalty: loyalty.view / loyalty.manage / loyalty.broadcast / loyalty.settings / loyalty.audit; таблица соответствия feature_access → loyalty.* заполняется при обмене токена"
+  },
+  {
+   "checkup": "Роль permissions.Role (level 100/80/60/40, пер-клиент)",
+   "loyalup": "Глобальные роли LoyalUP",
+   "existing": "—",
+   "missing": "Роли LoyalUP глобальные, CheckUp — пер-клиентные; кросс-тенантный юзер холдинга работает под разной ролью в разных организациях",
+   "proposal": "Сопоставление по смыслу: Владелец (100) → network_admin, Управляющий (80) → подмножество feature_access; роль client не использовать (она не видит в админке ни одной модели)"
+  },
+  {
+   "checkup": "Гость: GuestReview.guest_phone_norm (телефон)",
+   "loyalup": "guest.Client.vk_id + ClientBranch",
+   "existing": "—",
+   "missing": "Общего идентификатора нет: у CheckUp телефон, у LoyalUP VK ID. Телефон в LoyalUP есть только у отзывов из мини-аппа",
+   "proposal": "Ключ сшивки — телефон, который гость даёт сам через окно ВК (№78, контракт платформы): guest.Client.phone_norm ↔ GuestReview.guest_phone_norm ↔ телефон заказа в iiko/Dooglys. Дедуп жалоб по нормализованному телефону + окно 24 ч между почтой (EMAIL) и LoyalUP (LOYALUP) — у Автосуши один гость пишет в оба канала; пока номер дал не каждый гость, дедуп частичный и источник всегда виден. Автослияния нет: в W2 LoyalupGuestLink как подсказка «возможно, тот же гость»."
+  },
+  {
+   "checkup": "Жалоба GuestReview(source='LOYALUP')",
+   "loyalup": "TestimonialConversation",
+   "existing": "Работает: external_id = loyalup:<tenant>:<id>, дедуп по 6-часовому окну",
+   "missing": "Обратного канала нет — вердикт, ответ менеджера и статус в LoyalUP не возвращаются",
+   "proposal": "Добавить в LoyalUP POST /api/v1/internal/complaints/verdict/ по образцу входящего релея — первый кандидат в контракт платформы"
+  },
+  {
+   "checkup": "Чат chat.Message",
+   "loyalup": "SupportChatMessage",
+   "existing": "Работает в обе стороны (/api/v1/loyalup/inbound/ ↔ /api/v1/internal/support/inbound-reply/), outbox с backoff",
+   "missing": "—",
+   "proposal": "Оставить как есть; в модуле — только точка входа"
+  },
+  {
+   "checkup": "clientcare.ManagedClient.loyalup_ref",
+   "loyalup": "Company.client_id",
+   "existing": "Поле есть",
+   "missing": "Логики нет",
+   "proposal": "Заполнить client_id тенанта и связать с LoyalupTenantMap — карточка клиент-менеджера получит ссылку в модуль лояльности"
+  },
+  {
+   "checkup": "Модуль по тарифу onboarding.FeatureFlag (15 кодов)",
+   "loyalup": "—",
+   "existing": "ClientFeatureOverride на конкретного клиента; ClientConfig.loyalup_complaints_enabled",
+   "missing": "Кода loyalty в FeatureCode нет — модуль нечем включить на уровне тарифа",
+   "proposal": "Добавить FeatureCode.loyalty + флаг loyalty_enabled в ClientConfig; обновить захардкоженный каталог фич в platform/create/page.tsx"
+  },
+  {
+   "checkup": "Активная организация (заголовок X-Active-Tenant)",
+   "loyalup": "Домен тенанта <schema>.levelupapp.ru",
+   "existing": "LoyalupTenantMap.tenant_schema",
+   "missing": "LoyalUP определяет схему только по Host, заголовка X-Tenant не существует",
+   "proposal": "Ходить в LoyalUP через BFF CheckUp: по X-Active-Tenant найти tenant_schema → домен (GET /api/v1/company/<client_id>/) → подставить Host. Снимает половину вопросов CORS и прячет JWT LoyalUP от браузера"
+  }
+ ],
+ "accessHandover": {
+  "sso": [
+   "Пользователь открывает /loyalty/*; проверяется loyalty.view (три слоя RBAC) и FeatureCode.loyalty у организации",
+   "BFF CheckUp по X-Active-Tenant находит LoyalupTenantMap → tenant_schema и домен тенанта",
+   "BFF зовёт POST /api/v1/internal/auth/exchange/ с X-LoyalUP-Relay-Secret (loopback), передаёт tenant_schema, идентификатор и коды прав пользователя, разрешённые branch_id из EmployeeBranchAccess(purpose='guests') через LoyalupBranchMap",
+   "LoyalUP отдаёт короткоживущий JWT сотрудника с суженными branch_access и feature_access; BFF кеширует и не отдаёт в браузер",
+   "Все запросы модуля идут браузер → BFF CheckUp → домен тенанта LoyalUP; действия пишутся в branch.AuditLog с указанием исходного пользователя CheckUp",
+   "Почему не отдавать токен фронту: access LoyalUP живёт 30 дней и не отзывается (blacklist отсутствует), CheckUp работает на 30-минутных токенах с ротацией"
+  ],
+  "loyalupOnlyClient": [
+   "Организация заводится в CheckUp как обычно; включается только FeatureCode.loyalty (и guest_service, если нужны жалобы) — сайдбар схлопывается до группы «Гости» с пунктами лояльности",
+   "В LoyalupTenantMap заводится строка тенанта, в LoyalupBranchMap — все точки (ops-скрипт apps/guests/ops_loyalup_map.py, APPLY=1)",
+   "Роль «Владелец» (level 100) получает loyalty.*; управляющие — loyalty.view + loyalty.manage без loyalty.settings",
+   "ClientConfig.loyalup_complaints_enabled включается, если клиент хочет и реестр жалоб",
+   "Django-админка LoyalUP остаётся доступной суперадмину как «экспертный режим» по прямой ссылке из /platform/loyalty"
+  ]
+ },
+ "risks": [
+  {
+   "id": 1,
+   "source": "api.md",
+   "risk": "Массовая рассылка гостям без авторизации: DEFAULT_PERMISSION_CLASSES не задан, 14 analytics-ручек шли AllowAny — любой, кто знает домен тенанта, мог запустить VK-рассылку, создать/отменить RFM-кампанию и сжечь кредиты Anthropic",
+   "decision": "Закрыто 09.09: выкачено на прод, аноним получает 401; тест AnalyticsApiRequiresAuthTest не даёт новой ручке родиться открытой. Веб-кабинет и мобилка проверены."
+  },
+  {
+   "id": 2,
+   "source": "web.md + история проекта (ЧП 21.08)",
+   "risk": "Аудитория рассылки может разъехаться с показанной цифрой — «рассылка на 1 ушла 612»",
+   "decision": "Аудитория = ровно показанная ячейка (mode + точки + период), обязательный предохранитель expected_count → 409, отмена работает на идущей рассылке"
+  },
+  {
+   "id": 3,
+   "source": "checkup.md (риск №1)",
+   "risk": "Смешение двух разных «отзывов»: GuestReview CheckUp — оценочные со звёздами и NPS, практически пустые; отзывы LoyalUP — живой поток с ответами ИИ",
+   "decision": "Не доливать в существующую таблицу: модуль показывает поток LoyalUP через API, в реестр CheckUp уходит только негатив (жалобы) Пункт меню «Отзывы» — ОДИН: поток LoyalUP становится основным, оценочная лента CheckUp (/guests/reviews, источники LEVELUP/QR/MANUAL) прячется под флаг и включается только там, где в ней есть данные. Реестр «Жалобы» остаётся отдельным."
+  },
+  {
+   "id": 4,
+   "source": "checkup.md (риск №3), api.md",
+   "risk": "Жалоба уходит в CheckUp, но обратно ничего не возвращается — гость не видит вердикт и ответ менеджера",
+   "decision": "Первым контрактом платформы сделать обратный канал POST /api/v1/internal/complaints/verdict/"
+  },
+  {
+   "id": 5,
+   "source": "checkup.md (риск №2)",
+   "risk": "Дубли жалоб между каналами: у Автосуши два конвейера (IMAP каждые 3 мин и LoyalUP), один гость породит две карточки",
+   "decision": "Правило контракта: дедуп по guest_phone_norm + окно 24 ч между EMAIL и LOYALUP. Оговорка: телефон в LoyalUP есть только у отзывов из мини-аппа (поле phone), у сообщений из ВК-группы его нет — дедуп частичный, поэтому источник всегда виден в карточке, а аналитика считает по источнику. С №78 (телефон из ВК) дедуп покрывает всех, кто дал номер."
+  },
+  {
+   "id": 6,
+   "source": "checkup.md (риск №4)",
+   "risk": "Точки не сопоставляются по адресам: опечатки в улицах, разные дома, пустые адреса, 4 объекта CheckUp на одну точку LoyalUP",
+   "decision": "Только LoyalupBranchMap; новая точка = ручное добавление строки, иначе данные лягут в «Без филиала»"
+  },
+  {
+   "id": 7,
+   "source": "checkup.md (риск №5)",
+   "risk": "У организации может быть несколько тенантов LoyalUP (client 8 = asap_bryansk + asap_orel)",
+   "decision": "Селектор сети лояльности в модуле; ни одна ручка BFF не предполагает «один тенант на организацию»"
+  },
+  {
+   "id": 8,
+   "source": "checkup.md (риск №6)",
+   "risk": "SSO нечем сделать: у CheckUp логин — телефон, у LoyalUP — VK ID, общих полей нет",
+   "decision": "Обменивать сервисный токен вместо сшивания учёток; кросс-тенантный сотрудник холдинга получает разные права в разных организациях"
+  },
+  {
+   "id": 9,
+   "source": "web.md",
+   "risk": "Дыра RBAC в LoyalUP: из 18 ключей feature_access веб гейтит только 6; branch_access не соблюдается в changelist'ах — управляющий одной точки видит данные всей сети",
+   "decision": "Гейтить на бэке (for_user + get_user_branch_ids(purpose='guests')), не полагаться на скрытие пункта меню"
+  },
+  {
+   "id": 10,
+   "source": "checkup.md (риск №12)",
+   "risk": "Страницы раздела «Гости» CheckUp не обёрнуты в PermissionGate — прямой переход по URL открывает каркас страницы",
+   "decision": "Для нового модуля закладывать PermissionGate сразу, а не копировать текущий паттерн"
+  },
+  {
+   "id": 11,
+   "source": "admin.md (наблюдение №10)",
+   "risk": "Единая точка отказа — общий ANTHROPIC_API_KEY: классификация тональности, черновики, автоответы, дайджесты, AI-менеджер лидов. Кредиты кончались 31.08 и 05–08.09; тихо ломается и канал жалоб в CheckUp",
+   "decision": "Виджет «Здоровье ИИ» на дашборде + алерт суперадмину; отдельный лимит/ключ на маркетолога"
+  },
+  {
+   "id": 12,
+   "source": "admin.md (наблюдение №8)",
+   "risk": "Все 17 beat-задач ходят по всем тенантам и не смотрят на Company.is_active и paid_until — неоплативший клиент продолжает слать рассылки гостям",
+   "decision": "Волна 0: фильтр is_active + paid_until в диспетчерах beat (до появления тарифа «только LoyalUP» в CheckUp)."
+  },
+  {
+   "id": 13,
+   "source": "api.md, checkup.md (риски №7–8)",
+   "risk": "LOYALUP_RELAY_SECRET один на жалобы, чат и будущий обмен токенами; оба моста требуют loopback — системы обязаны жить на одной машине",
+   "decision": "Разделить секреты по каналам при добавлении SSO-обмена и заранее предусмотреть TLS/mTLS на случай разъезда хостов"
+  },
+  {
+   "id": 14,
+   "source": "checkup.md (риск №9)",
+   "risk": "Спящая ручка POST /api/v1/guests/webhook/levelup/ живёт в проде и ищет филиал без фильтра по клиенту — при заданном секрете отзыв уедет в чужую организацию",
+   "decision": "Волна 0: починить или удалить до слияния."
+  },
+  {
+   "id": 15,
+   "source": "admin.md (наблюдение №3)",
+   "risk": "Три несвязанных журнала действий (AuditEvent, branch.AuditLog без админки, BroadcastSend.triggered_by) — нельзя из одного места ответить «кто выключил RF-правила 26.08»",
+   "decision": "Сводить оба журнала в /loyalty/audit; действия из CheckUp писать с указанием исходного пользователя"
+  },
+  {
+   "id": 16,
+   "source": "checkup.md (риск №13)",
+   "risk": "Жалобы завязаны на деньги: вердикт «засчитан» → FinancialAdjustment(FINE) в расчётный лист → KPI",
+   "decision": "Любое изменение потока жалоб LoyalUP тестировать вместе с финансами, а не отдельно"
+  },
+  {
+   "id": 17,
+   "source": "ревью CheckUp 09.09 + проверка прода",
+   "risk": "Вебхук доставки POST /api/v1/delivery/webhook/ на проде без секрета: DELIVERY_WEBHOOK_SECRET пуст, а код при пустом секрете пропускает всех — любой, кто знает адрес, создаст доставку и заберёт подарок по коду. Секрет приёма суточных заказов (ORDERS_INGEST_SECRET) задан.",
+   "decision": "Волна 0: задать секрет и заголовок X-Webhook-Secret на стороне Dooglys/iiko одновременно (иначе доставка встанет)."
+  },
+  {
+   "id": 18,
+   "source": "ответ поддержки ВК 09.09 + правила mini-apps 2.6.2",
+   "risk": "Одно приложение 53418653 обслуживает 11 сетей с разными сообществами, а награда за подписку по правилам ВК разрешена только на официальное сообщество приложения и одно дополнительное. Монеты за подписку в «Заданиях» у всех сетей — серая зона",
+   "decision": "Ничего не менять до решения владельца: проверить категорию и официальное сообщество в кабинете приложения; при переезде на платформу решить — отдельное приложение на сеть или награда только за официальное сообщество. Кнопки подписки у нас нажимает гость сам, всплывашек при первом запуске нет (2.6.3 соблюдено)."
+  },
+  {
+   "id": 19,
+   "source": "вопрос владельца 10.09 + ответ поддержки ВК + проверка кода апы",
+   "risk": "Простой сервера, домена или сертификата кладёт мини-апп у всех гостей (были: домен levonework.ru, wildcard-сертификат). Хостинг ВК бесперебойности не даёт: без бэка апа показывает экран ошибки, кнопки подписки появляются только после ответа бэка, а бутстрап всё равно идёт на levonework.ru",
+   "decision": "Статику на хостинг ВК не переносим: адрес меняется на каждой выкладке, лимит 24 выкладки в сутки, код с origin переписывать, выигрыш — только оболочка. Вместо этого волна 0 п. 10: мониторинг + алерты о сроке домена и сертификата, статика и бутстрап на levelupapp.ru. Аварийный экран подписки без бэка — опция по желанию (подписки в ВК бэк догоняет catch-up раз в 5 минут, но новый гость появится в базе только при следующем открытии и подарка в моменте не получит)."
+  }
+ ],
+ "targetMap": {
+  "sidebarNote": "Группа «Гости» в CheckUp уже занята 7 пунктами (Брони, Кухня сейчас, Отзывы, Банкеты, Тайный гость, Звонки, Клиент-менеджер) и перегружена. Добавляем 3 пункта верхнего уровня, всё остальное — внутри хаба /loyalty со вкладками. Каждый новый пункт требует правок в Sidebar.tsx + CommandPalette.tsx (веб), home.js + dockCatalog.js (мобилка) и кода права в трёх слоях RBAC. Пункт «Отзывы» в группе не дублируется: его занимает поток LoyalUP, старая оценочная лента CheckUp (звёзды/NPS, почти пустая) прячется под флаг. «Жалобы» остаются как есть.",
+  "sidebarTopLevel": [
+   {
+    "label": "Отзывы — один пункт: поток LoyalUP основной, оценочная лента CheckUp под флагом",
+    "href": "/loyalty/reviews",
+    "itemIds": [
+     1,
+     2
+    ],
+    "wave": "W1"
+   },
+   {
+    "label": "Рассылки и кампании",
+    "href": "/loyalty/broadcasts",
+    "itemIds": [
+     11,
+     12,
+     13
+    ],
+    "wave": "W1"
+   },
+   {
+    "label": "Лояльность (хаб)",
+    "href": "/loyalty",
+    "itemIds": [
+     4
+    ],
+    "wave": "W1"
+   }
+  ],
+  "groups": [
+   {
+    "group": "Дашборд",
+    "items": [
+     {
+      "label": "Дашборд дня",
+      "href": "/loyalty",
+      "itemIds": [
+       4
+      ],
+      "wave": "W1"
+     }
+    ]
+   },
+   {
+    "group": "Отзывы",
+    "items": [
+     {
+      "label": "Лента и карточка отзыва",
+      "href": "/loyalty/reviews",
+      "itemIds": [
+       1
+      ],
+      "wave": "W1"
+     },
+     {
+      "label": "Репутация по точкам (вкладка)",
+      "href": "/loyalty/reviews",
+      "itemIds": [
+       2
+      ],
+      "wave": "W1"
+     },
+     {
+      "label": "Настройки автоответов ИИ",
+      "href": "/loyalty/reviews/settings",
+      "itemIds": [
+       3
+      ],
+      "wave": "W1"
+     }
+    ]
+   },
+   {
+    "group": "Гости",
+    "items": [
+     {
+      "label": "База гостей",
+      "href": "/loyalty/guests",
+      "itemIds": [
+       6
+      ],
+      "wave": "W1"
+     },
+     {
+      "label": "Карточка гостя (+баллы)",
+      "href": "/loyalty/guests/[id]",
+      "itemIds": [
+       7,
+       8
+      ],
+      "wave": "W1"
+     },
+     {
+      "label": "Дни рождения",
+      "href": "/loyalty/birthdays",
+      "itemIds": [
+       25
+      ],
+      "wave": "W2"
+     }
+    ]
+   },
+   {
+    "group": "Сегменты",
+    "items": [
+     {
+      "label": "RF-матрица",
+      "href": "/loyalty/rf",
+      "itemIds": [
+       9
+      ],
+      "wave": "W1"
+     },
+     {
+      "label": "Миграции (вкладка)",
+      "href": "/loyalty/rf",
+      "itemIds": [
+       10
+      ],
+      "wave": "W1"
+     }
+    ]
+   },
+   {
+    "group": "Коммуникации",
+    "items": [
+     {
+      "label": "Рассылки и история",
+      "href": "/loyalty/broadcasts",
+      "itemIds": [
+       11,
+       12,
+       13
+      ],
+      "wave": "W1"
+     },
+     {
+      "label": "RFM-кампании",
+      "href": "/loyalty/campaigns",
+      "itemIds": [
+       14
+      ],
+      "wave": "W1"
+     },
+     {
+      "label": "Авторассылки (правила)",
+      "href": "/loyalty/auto-broadcasts",
+      "itemIds": [
+       31
+      ],
+      "wave": "W2"
+     },
+     {
+      "label": "AI-маркетолог",
+      "href": "/loyalty/marketer",
+      "itemIds": [
+       29
+      ],
+      "wave": "W2"
+     }
+    ]
+   },
+   {
+    "group": "Контент и механики",
+    "items": [
+     {
+      "label": "Подарки и категории",
+      "href": "/loyalty/gifts",
+      "itemIds": [
+       19,
+       20
+      ],
+      "wave": "W2"
+     },
+     {
+      "label": "Акции",
+      "href": "/loyalty/promotions",
+      "itemIds": [
+       21
+      ],
+      "wave": "W2"
+     },
+     {
+      "label": "Квесты",
+      "href": "/loyalty/quests",
+      "itemIds": [
+       22
+      ],
+      "wave": "W2"
+     },
+     {
+      "label": "Коды дня",
+      "href": "/loyalty/codes",
+      "itemIds": [
+       18
+      ],
+      "wave": "W2"
+     }
+    ]
+   },
+   {
+    "group": "Привлечение",
+    "items": [
+     {
+      "label": "Точки контакта (QR)",
+      "href": "/loyalty/qr",
+      "itemIds": [
+       26
+      ],
+      "wave": "W2"
+     },
+     {
+      "label": "Материалы: ссылки и QR (вкладка)",
+      "href": "/loyalty/qr",
+      "itemIds": [
+       27
+      ],
+      "wave": "W2"
+     }
+    ]
+   },
+   {
+    "group": "Аналитика",
+    "items": [
+     {
+      "label": "Общая статистика",
+      "href": "/loyalty/stats",
+      "itemIds": [
+       5
+      ],
+      "wave": "W1"
+     },
+     {
+      "label": "Вовлечённость (вкладка)",
+      "href": "/loyalty/stats",
+      "itemIds": [
+       24
+      ],
+      "wave": "W2"
+     },
+     {
+      "label": "Отчёт по лояльности (+PDF)",
+      "href": "/loyalty/report",
+      "itemIds": [
+       28
+      ],
+      "wave": "W2"
+     }
+    ]
+   },
+   {
+    "group": "Точки и доступ",
+    "items": [
+     {
+      "label": "Точки сети",
+      "href": "/loyalty/points",
+      "itemIds": [
+       15
+      ],
+      "wave": "W1"
+     },
+     {
+      "label": "Сотрудники и права",
+      "href": "/loyalty/access",
+      "itemIds": [
+       16
+      ],
+      "wave": "W1"
+     },
+     {
+      "label": "Журнал действий",
+      "href": "/loyalty/audit",
+      "itemIds": [
+       33
+      ],
+      "wave": "W3"
+     }
+    ]
+   },
+   {
+    "group": "Настройки и поддержка",
+    "items": [
+     {
+      "label": "Настройки лояльности (пороги RF, механики, пуши)",
+      "href": "/loyalty/settings",
+      "itemIds": [
+       37,
+       23,
+       17
+      ],
+      "wave": "W3"
+     },
+     {
+      "label": "Помощь",
+      "href": "/loyalty/help",
+      "itemIds": [
+       38
+      ],
+      "wave": "W3"
+     },
+     {
+      "label": "Оплата тарифа",
+      "href": "/loyalty/billing",
+      "itemIds": [
+       39
+      ],
+      "wave": "W3"
+     },
+     {
+      "label": "Связь с менеджером (блок на хабе)",
+      "href": "/loyalty",
+      "itemIds": [
+       32
+      ],
+      "wave": "W2"
+     },
+     {
+      "label": "AI-ассистент «Лояльчик» (виджет / раздел AI)",
+      "href": "/ai",
+      "itemIds": [
+       30
+      ],
+      "wave": "W2"
+     }
+    ]
+   },
+   {
+    "group": "Платформа (только суперюзер)",
+    "items": [
+     {
+      "label": "Лояльность: клиенты, экономика, кросс-отзывы",
+      "href": "/platform/loyalty",
+      "itemIds": [
+       34,
+       35,
+       36
+      ],
+      "wave": "W3"
+     }
+    ]
+   }
+  ],
+  "dashboardWidgets": [
+   {
+    "label": "Отзывы без ответа / срочный негатив",
+    "itemIds": [
+     1,
+     2
+    ],
+    "wave": "W1",
+    "source": "GET /api/v1/mobile/reviews/"
+   },
+   {
+    "label": "Черновики ИИ ждут решения (и автоответы в окне отмены)",
+    "itemIds": [
+     1,
+     3
+    ],
+    "wave": "W1",
+    "source": "GET /api/v1/mobile/reviews/ (auto_send_status)"
+   },
+   {
+    "label": "Коды дня на сегодня по точкам",
+    "itemIds": [
+     18
+    ],
+    "wave": "W1",
+    "source": "GET /api/v1/branch/daily-codes/"
+   },
+   {
+    "label": "RF: активные гости и отток за неделю",
+    "itemIds": [
+     9,
+     10
+    ],
+    "wave": "W1",
+    "source": "GET /api/v1/analytics/rf/, /rf/migrations/"
+   },
+   {
+    "label": "Последняя рассылка: охват и отклик",
+    "itemIds": [
+     11,
+     12
+    ],
+    "wave": "W1",
+    "source": "GET /api/v1/analytics/campaigns/"
+   },
+   {
+    "label": "База гостей: новые за неделю",
+    "itemIds": [
+     5,
+     6
+    ],
+    "wave": "W2",
+    "source": "GET /api/v1/analytics/stats/"
+   },
+   {
+    "label": "Здоровье ИИ (кредиты Anthropic, MarketerPost=FAILED, залипшие WAITING)",
+    "itemIds": [
+     1,
+     29
+    ],
+    "wave": "W2",
+    "source": "новая служебная ручка"
+   }
+  ],
+  "dashboardWidgetsNote": "Готовый компонент под все семь — components/dashboard/StatsCard.tsx; в разделе «Гости» он пока не используется, KPI собраны вручную — новый модуль делать сразу на нём.",
+  "mobileW1": [
+   {
+    "label": "Отзывы: лента + карточка (ответ, AI-черновик, «отменить автоответ», «вставить ссылки»)",
+    "itemIds": [
+     1
+    ]
+   },
+   {
+    "label": "Дашборд «Задачи дня»",
+    "itemIds": [
+     4
+    ]
+   },
+   {
+    "label": "Коды дня (просмотр по точкам + ручная генерация)",
+    "itemIds": [
+     18
+    ]
+   },
+   {
+    "label": "Лента уведомлений (в существующий NotificationBell/pushRouting: добавить draft_ready, auto_reply_pending, daily_code_missing)",
+    "itemIds": [
+     17
+    ]
+   },
+   {
+    "label": "Гости: поиск + карточка с корректировкой баллов",
+    "itemIds": [
+     6,
+     7,
+     8
+    ]
+   }
+  ],
+  "mobileW1Note": "Скелет берётся из app/guests/ мобилки CheckUp (_layout.js + RouteGuard + тройка «service → store → screen»); навигационный слой LoyalUP не переносится — он самописный на useState и navBridge."
+ },
+ "wave0": [
+  {
+   "id": 1,
+   "item": "14 ручек /api/v1/analytics/* без авторизации (в т.ч. массовая рассылка)",
+   "status": "✅ закрыто 09.09",
+   "action": "Выкачено (5e18a93), аноним → 401, тест не даёт новой ручке родиться открытой. Веб-кабинет и мобилка проверены.",
+   "owner": "LoyalUP"
+  },
+  {
+   "id": 2,
+   "item": "Вебхук доставки без секрета: на проде DELIVERY_WEBHOOK_SECRET пуст, код при пустом секрете пропускает всех",
+   "status": "🟡 наблюдение с 16.09",
+   "action": "Решение о допуске не менялось (пустой секрет = пускаем всех, как раньше). 16.09 на проде задан DELIVERY_WEBHOOK_SECRET_CANDIDATE: он только логирует, шлёт ли POS уже верный X-Webhook-Secret («ok/missing/mismatch» по каждому запросу). Заголовок ставит сторона Dooglys по 4 городам (Тула, Брянск, Кинешма, Орёл) — значение у владельца. Когда лог покажет «ok» везде — значение переносится в DELIVERY_WEBHOOK_SECRET одним пересозданием web. ORDERS_INGEST_SECRET задан — там дыры нет.",
+   "owner": "Dooglys (заголовок) → LoyalUP (включение)"
+  },
+  {
+   "id": 3,
+   "item": "Beat-задачи не смотрят на Company.is_active / paid_until",
+   "status": "✅ выкачено 16.09 (режим наблюдения)",
+   "action": "beat_tenants() в 14 диспетчерах beat (коммит 5edc0bc; чистка фото и ручной backfill ВК — намеренно без гарда). Режим BEAT_TENANT_GUARD=log: обходим всех, в лог пишем, кого бы пропустил строгий режим (сейчас — только asap-murom, выключен). Строгий режим on (грейс 7 дней) — по решению владельца: у Birfest и Кинешмы оплата до 18.09, Арзамаса 20.09, Тулы 22.09 — владелец сказал «пока не трогай».",
+   "owner": "LoyalUP"
+  },
+  {
+   "id": 4,
+   "item": "Подпись запуска ВК не проверяется (VK_SIGN_ENFORCE=off, в .env не тот ключ)",
+   "status": "🟡 ждём владельца",
+   "action": "Нужен «Защищённый ключ» мини-аппа 53418653 → проверка по живым launch-строкам → enforce=on. До этого гостевые ручки защищены только логикой. Тот же ключ нужен для проверки подписи телефона гостя (№78).",
+   "owner": "Владелец → LoyalUP"
+  },
+  {
+   "id": 5,
+   "item": "CORS / ALLOWED_HOSTS без checkupapp.ru",
+   "status": "✅ закрыто 16.09",
+   "action": "CORS_ALLOWED_ORIGINS + regex и CSRF_TRUSTED_ORIGINS: https://checkupapp.ru и https://*.checkupapp.ru (коммит 5edc0bc). ALLOWED_HOSTS не трогали — CheckUp ходит на наши домены, а не наоборот.",
+   "owner": "LoyalUP"
+  },
+  {
+   "id": 6,
+   "item": "Предохранитель expected_count в новых ручках рассылки (ЧП 21.08: «рассылка на 1 ушла 612»)",
+   "status": "🟡 при написании модуля",
+   "action": "Все ручки отправки модуля принимают expected_count и отвечают 409 при расхождении с аудиторией.",
+   "owner": "LoyalUP"
+  },
+  {
+   "id": 7,
+   "item": "Спящий POST /api/v1/guests/webhook/levelup/ в CheckUp ищет филиал без фильтра по клиенту",
+   "status": "🟡 план",
+   "action": "Починить или удалить до слияния.",
+   "owner": "CheckUp"
+  },
+  {
+   "id": 8,
+   "item": "Общий ANTHROPIC_API_KEY на обе системы (кредиты кончались 31.08 и 05–08.09 — падали и отзывы, и маркетолог)",
+   "status": "🟡 план",
+   "action": "Отдельные ключи или лимиты по продукту; канарейка-алерт при 400 от Anthropic.",
+   "owner": "Владелец"
+  },
+  {
+   "id": 9,
+   "item": "LOYALUP_RELAY_SECRET один на жалобы, чат и будущий обмен токена",
+   "status": "🟡 настройка есть, ручки нет (16.09)",
+   "action": "CHECKUP_TOKEN_EXCHANGE_SECRET объявлен отдельной настройкой (пусто = обмен выключен). Сама ручка POST /api/v1/internal/auth/exchange/ — по контракту платформы (следующий шаг карты). LOYALUP_RELAY_SECRET остаётся только на жалобах и чате.",
+   "owner": "LoyalUP + CheckUp"
+  },
+  {
+   "id": 10,
+   "item": "Мини-апп зависит от levonework.ru (статика + бутстрап API) и от одного сервера; мониторинга и алертов о сроке домена/сертификата нет",
+   "status": "✅ мониторинг выкачен 16.09 · перенос статики открыт",
+   "action": "apps/shared/monitoring (5edc0bc): раз в час TLS-сертификаты, продление доменов (whois + запасные даты), оплата сетей, статус наших callback ВК у всех сетей, пробы входа мини-аппа и API; пуш суперадминам (дедуп сутки, сводка при >3). Включён на проде, первый прогон 17:05 дал 5 сигналов: мёртвая «белая дверь» api-ya.levelupapp.ru (не было в сертификате — снята по решению владельца) и близкие сроки оплаты 4 сетей. ОТКРЫТО: статику и бутстрап мини-аппа перевести с levonework.ru на levelupapp.ru и сменить адрес в кабинете ВК (кабинет — у владельца). Хостинг ВК — нет (риск №19).",
+   "owner": "LoyalUP + владелец (кабинет ВК)"
+  }
+ ],
+ "wave0Note": "Порядок по ревью CheckUp 09.09: волна 0 → контракт платформы → волна 1 (17 возможностей ежедневного пользования) → решение по остальному по реальной частоте использования. Сроки клиентам называть после волны 0. | 16.09.2026: со стороны LoyalUP волна 0 выполнена (п. 3, 5, 10-мониторинг; п. 9 — настройка). Открыто: п. 2 ждёт заголовка от Dooglys, п. 4 ключ ВК у владельца, п. 7 — CheckUp, п. 8 — владелец (ключи Anthropic), п. 10 — перенос статики/адрес в кабинете ВК. Идёт следующий шаг карты — контракт платформы.",
+ "frontEstimate": {
+  "note": "34,5 дня в карте считали только недостающие ручки бэкенда LoyalUP. Фронт CheckUp (24 веб-роута, 5 экранов мобилки, 7 виджетов) и BFF (обмен токена, прокси ручек, права) добавлены ниже. Это оценка, не обязательство: календарно с 2–3 агентами параллельно волна 1 ≈ 3–4 недели, всё целиком ≈ 2–2,5 месяца — совпадает с оценкой агента CheckUp. 10.09: в строке «Контракт платформы» добавлен телефон гостя (№78) — столбец «Мобилка» там означает мини-апп гостя ВК (кнопка и экран согласия), а не мобилку CheckUp; волна 0 +1 день на мониторинг.",
+  "rows": [
+   {
+    "wave": "Волна 0",
+    "capabilities": "10 пунктов безопасности и стыковки",
+    "webRoutes": 0,
+    "mobileScreens": 0,
+    "backendDays": 5,
+    "bffDays": 0,
+    "webDays": 0,
+    "mobileDays": 0,
+    "totalDays": 5,
+    "calendar": "✅ сторона LoyalUP сделана 16.09 (5 дней по плану → 1 день фактически); открыты пункты за POS/владельцем/CheckUp"
+   },
+   {
+    "wave": "Контракт платформы",
+    "capabilities": "identity, обмен токена, обратный канал жалоб, дедуп по телефону, телефон гостя из ВК (№78)",
+    "webRoutes": 0,
+    "mobileScreens": 0,
+    "backendDays": 8,
+    "bffDays": 4,
+    "webDays": 0,
+    "mobileDays": 1.5,
+    "totalDays": 13.5,
+    "calendar": "≈ 1,5 недели"
+   },
+   {
+    "wave": "Волна 1",
+    "capabilities": "17 + №78 в контракте",
+    "webRoutes": 12,
+    "mobileScreens": 5,
+    "backendDays": 18,
+    "bffDays": 4,
+    "webDays": 14,
+    "mobileDays": 6,
+    "totalDays": 42,
+    "calendar": "≈ 3–4 недели с агентами"
+   },
+   {
+    "wave": "Волна 2",
+    "capabilities": 15,
+    "webRoutes": 9,
+    "mobileScreens": 0,
+    "backendDays": 12,
+    "bffDays": 2,
+    "webDays": 11,
+    "mobileDays": 0,
+    "totalDays": 25,
+    "calendar": "≈ 2–3 недели"
+   },
+   {
+    "wave": "W2-настройки (5 из экспертного режима)",
+    "capabilities": "№ 49, 52, 53, 55, 56",
+    "webRoutes": 5,
+    "mobileScreens": 0,
+    "backendDays": 3,
+    "bffDays": 0,
+    "webDays": 5,
+    "mobileDays": 0,
+    "totalDays": 8,
+    "calendar": "≈ 1 неделя, вместе с волной 2"
+   },
+   {
+    "wave": "Волна 3",
+    "capabilities": 7,
+    "webRoutes": 3,
+    "mobileScreens": 0,
+    "backendDays": 4.5,
+    "bffDays": 0,
+    "webDays": 4,
+    "mobileDays": 0,
+    "totalDays": 8.5,
+    "calendar": "≈ 1 неделя"
+   },
+   {
+    "wave": "Итого",
+    "capabilities": "40 + 5 настроек",
+    "webRoutes": 29,
+    "mobileScreens": 5,
+    "backendDays": 50.5,
+    "bffDays": 10,
+    "webDays": 34,
+    "mobileDays": 7.5,
+    "totalDays": 102,
+    "calendar": "≈ 2–2,5 месяца календарно"
+   }
+  ]
+ },
+ "expertNote": "Экспертный режим — не навсегда: для клиентов старая Django-админка закрывается по окончании волны 3 (дата ставится после волны 0). Пять вещей, которые владелец трогает сам (№ 49, 52, 53, 55, 56), уезжают отдельной волной «W2-настройки». Для суперадмина LoyalUP админка остаётся операционным инструментом."
+}
