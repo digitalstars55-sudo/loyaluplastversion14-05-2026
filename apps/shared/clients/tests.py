@@ -526,26 +526,35 @@ class BeatGuardSettingsTest(SimpleTestCase):
 
 
 class BeatTenantsQuerysetTest(TestCase):
-    """Что именно попадает в SQL в каждом режиме (без записей в Company)."""
+    """Что именно попадает в WHERE в каждом режиме (без записей в Company).
+
+    Смотрим только на условие: в списке колонок SELECT `is_active` и
+    `paid_until` есть всегда, по ним судить нельзя.
+    """
+
+    @staticmethod
+    def _where(qs) -> str:
+        sql = str(qs.query)
+        return sql.split('WHERE', 1)[1] if 'WHERE' in sql else ''
 
     def test_off_mode_only_excludes_public(self):
         with override_settings(BEAT_TENANT_GUARD='off'):
-            sql = str(beat_tenants().query)
-        self.assertIn('public', sql)
-        self.assertNotIn('is_active', sql)
-        self.assertNotIn('paid_until', sql)
+            where = self._where(beat_tenants())
+        self.assertIn('public', where)
+        self.assertNotIn('is_active', where)
+        self.assertNotIn('paid_until', where)
 
     def test_log_mode_keeps_full_list(self):
         with override_settings(BEAT_TENANT_GUARD='log'):
             qs = beat_tenants()
-            sql = str(qs.query)
+            where = self._where(qs)
             self.assertEqual(list(qs), [])  # пустая таблица — просто не падает
-        self.assertNotIn('is_active', sql)
-        self.assertNotIn('paid_until', sql)
+        self.assertNotIn('is_active', where)
+        self.assertNotIn('paid_until', where)
 
     def test_on_mode_filters_inactive_and_expired(self):
         with override_settings(BEAT_TENANT_GUARD='on', BEAT_PAID_UNTIL_GRACE_DAYS=7):
-            sql = str(beat_tenants().query)
-        self.assertIn('is_active', sql)
-        self.assertIn('paid_until', sql)
-        self.assertIn('public', sql)
+            where = self._where(beat_tenants())
+        self.assertIn('is_active', where)
+        self.assertIn('paid_until', where)
+        self.assertIn('public', where)
