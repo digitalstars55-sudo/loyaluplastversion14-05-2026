@@ -12,6 +12,7 @@ import logging
 
 from celery import shared_task
 from django_tenants.utils import get_tenant_model
+from apps.shared.clients.beat_guard import beat_tenants
 from apps.tenant.analytics.pos_service import sync_get_guests_for_period
 
 logger = logging.getLogger(__name__)
@@ -95,7 +96,7 @@ def reclassify_waiting_reviews_task() -> dict:
     TenantModel = get_tenant_model()
     dispatched  = 0
 
-    for tenant in TenantModel.objects.exclude(schema_name='public'):
+    for tenant in beat_tenants():
         with schema_context(tenant.schema_name):
             from django.utils import timezone as _tz
             from datetime import timedelta as _td
@@ -150,7 +151,7 @@ def fetch_pos_data_all_tenants_task(self, date_str: str = None, day_offset: int 
     TenantModel = get_tenant_model()
     summary = {'tenants': 0, 'branches': 0, 'errors': []}
 
-    for tenant in TenantModel.objects.exclude(schema_name='public').select_related('config'):
+    for tenant in beat_tenants().select_related('config'):
         try:
             config = tenant.config
         except Exception:
@@ -218,7 +219,7 @@ def calculate_rf_all_tenants_task(self) -> dict:
     TenantModel = get_tenant_model()
     summary = {'tenants': 0, 'errors': []}
 
-    for tenant in TenantModel.objects.exclude(schema_name='public'):
+    for tenant in beat_tenants():
         try:
             with schema_context(tenant.schema_name):
                 for mode in ('restaurant', 'delivery'):
@@ -412,7 +413,7 @@ def send_draft_reminders_task() -> dict:
     TenantModel = get_tenant_model()
     summary = {'tenants': 0, 'reminders_sent': 0}
 
-    for tenant in TenantModel.objects.exclude(schema_name='public'):
+    for tenant in beat_tenants():
         try:
             with schema_context(tenant.schema_name):
                 from apps.tenant.branch.models import (

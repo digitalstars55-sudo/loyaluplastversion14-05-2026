@@ -12,6 +12,7 @@ import logging
 
 from celery import shared_task
 from django.utils import timezone
+from apps.shared.clients.beat_guard import beat_tenants
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ def run_marketer_digest_task(self) -> dict:
     now_msk = timezone.localtime()
     summary = {'checked': 0, 'dispatched': [], 'errors': []}
 
-    for tenant in get_tenant_model().objects.exclude(schema_name='public'):
+    for tenant in beat_tenants():
         schema = tenant.schema_name
         try:
             with schema_context(schema):

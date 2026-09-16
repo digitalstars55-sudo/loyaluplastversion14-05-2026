@@ -1,4 +1,5 @@
 import hmac
+import logging
 import os
 from datetime import timedelta
 
@@ -7,6 +8,8 @@ from django.utils import timezone
 
 from apps.tenant.branch.models import Branch, ClientBranch
 from ..models import Delivery, OrderSource, _NO_EXPIRY_DAYS
+
+logger = logging.getLogger(__name__)
 
 
 # ── Exceptions ────────────────────────────────────────────────────────────────
@@ -42,22 +45,59 @@ class AmbiguousDeliveryCode(Exception):
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
+def _secret_matches(received: str, secret: str) -> bool:
+    """Constant-time сравнение (защита от timing-атаки)."""
+    return hmac.compare_digest(received.encode('utf-8'), secret.encode('utf-8'))
+
+
+def observe_webhook_secret_candidate(request, candidate: str | None = None) -> str:
+    """
+    Наблюдение перед включением секрета (волна 0, 16.09.2026).
+
+    Dooglys шлёт заказы по 4 городам без заголовка. Если просто задать
+    DELIVERY_WEBHOOK_SECRET, доставка встанет у всех разом, пока POS не
+    проставит заголовок. Поэтому сначала кладём значение в
+    DELIVERY_WEBHOOK_SECRET_CANDIDATE: оно НИЧЕГО не решает, только пишет в
+    лог, совпал ли уже присланный X-Webhook-Secret с будущим секретом.
+    Когда в логе все запросы 'ok' — переносим значение в DELIVERY_WEBHOOK_SECRET.
+
+    Возвращает 'off' (кандидата нет) | 'ok' | 'missing' | 'mismatch'.
+    """
+    if candidate is None:
+        candidate = os.getenv('DELIVERY_WEBHOOK_SECRET_CANDIDATE', '')
+    if not candidate:
+        return 'off'
+    received = request.headers.get('X-Webhook-Secret', '')
+    if not received:
+        status = 'missing'
+    elif _secret_matches(received, candidate):
+        status = 'ok'
+    else:
+        status = 'mismatch'
+    who = request.headers.get('X-Forwarded-For') or request.META.get('REMOTE_ADDR', '?')
+    logger.warning('delivery webhook: кандидат секрета → %s (from=%s)', status, who)
+    return status
+
+
 def verify_webhook_signature(request) -> bool:
     """
     Validates the X-Webhook-Secret header against the DELIVERY_WEBHOOK_SECRET
     environment variable using constant-time comparison (timing-attack safe).
 
     If DELIVERY_WEBHOOK_SECRET is not set, verification is skipped and all
-    requests are allowed — useful for local development.
+    requests are allowed — useful for local development. В этом случае
+    дополнительно отрабатывает наблюдение за кандидатом секрета (см.
+    observe_webhook_secret_candidate) — на решение оно не влияет.
     """
     secret = os.getenv('DELIVERY_WEBHOOK_SECRET', '')
     if not secret:
+        try:
+            observe_webhook_secret_candidate(request)
+        except Exception:  # наблюдение не должно мешать приёму заказа
+            logger.exception('delivery webhook: наблюдение за кандидатом секрета упало')
         return True
     received = request.headers.get('X-Webhook-Secret', '')
-    return hmac.compare_digest(
-        received.encode('utf-8'),
-        secret.encode('utf-8'),
-    )
+    return _secret_matches(received, secret)
 
 
 # ── Public service functions ──────────────────────────────────────────────────

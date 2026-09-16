@@ -26,6 +26,7 @@ PUSH_TYPES: list[tuple[str, str, str]] = [
     ('guest_birthday',  'ДР гостя',            'У гостя сегодня день рождения.'),
     ('broadcast_done',  'Рассылка отправлена', 'ВК-рассылка завершена.'),
     ('report_ready',    'Отчёт готов',         'Аналитический отчёт сгенерирован.'),
+    ('platform_alert',  'Платформа',           'Сбои и сроки: сертификаты, домены, оплата сетей, callback ВК.'),
 ]
 PUSH_TYPE_CODES = [t[0] for t in PUSH_TYPES]
 

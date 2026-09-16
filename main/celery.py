@@ -113,6 +113,14 @@ app.conf.beat_schedule = {
         'task': 'apps.tenant.marketer.tasks.run_marketer_digest_task',
         'schedule': crontab(minute=10),  # every hour at :10
     },
+    # Волна 0 (16.09.2026): мониторинг платформы — сертификаты, домены,
+    # оплата сетей, callback ВК, доступность входа. Пуш суперадминам, один
+    # сигнал не чаще раза в сутки. Пока PLATFORM_MONITOR_ENABLED не задан —
+    # задача выходит сразу, ничего не проверяя.
+    'platform-monitor-hourly': {
+        'task': 'apps.shared.monitoring.tasks.platform_health_check_task',
+        'schedule': crontab(minute=5),  # every hour at :05
+    },
     # LU-42: еженедельный авто-reconcile УБРАН. Он догонял ВСЮ историю VK и
     # засыпал владельцев пушами за старьё (sentiment по умолчанию WAITING ->
     # reclassify перемалывал backlog). reconcile_all_vk_messages_task остаётся

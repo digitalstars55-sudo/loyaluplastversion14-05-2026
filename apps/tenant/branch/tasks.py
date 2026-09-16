@@ -31,6 +31,7 @@ import logging
 import urllib.error
 import urllib.parse
 import urllib.request
+from apps.shared.clients.beat_guard import beat_tenants
 
 logger = logging.getLogger(__name__)
 
@@ -507,7 +508,7 @@ def generate_daily_codes_task() -> dict:
     today = current_code_date()
     created_total = 0
 
-    for tenant in TenantModel.objects.exclude(schema_name='public'):
+    for tenant in beat_tenants():
         with schema_context(tenant.schema_name):
             created_total += ensure_today_daily_codes()
 
@@ -531,7 +532,7 @@ def push_daily_codes_task() -> dict:
     today = current_code_date()
     sent_total = 0
 
-    for tenant in TenantModel.objects.exclude(schema_name='public'):
+    for tenant in beat_tenants():
         body = ''
         with schema_context(tenant.schema_name):
             from apps.tenant.branch.models import DailyCode
@@ -573,7 +574,7 @@ def poll_all_vk_messages_task() -> dict:
     total_new   = 0
     total_err: list[str] = []
 
-    for tenant in TenantModel.objects.exclude(schema_name='public'):
+    for tenant in beat_tenants():
         with schema_context(tenant.schema_name):
             from apps.tenant.senler.models import SenlerConfig
             seen_groups: set[int] = set()
@@ -613,6 +614,8 @@ def reconcile_all_vk_messages_task() -> dict:
     total_convs = 0
     total_err: list[str] = []
 
+    # Без beat_guard намеренно: ручной backfill (не по расписанию), должен
+    # уметь догнать историю и у выключенной сети.
     for tenant in TenantModel.objects.exclude(schema_name='public'):
         with schema_context(tenant.schema_name):
             from apps.tenant.senler.models import SenlerConfig
@@ -723,6 +726,8 @@ def purge_old_vk_attachments_task() -> dict:
     TenantModel = get_tenant_model()
     purged_files = 0
 
+    # Без beat_guard намеренно: чистка по сроку хранения — гигиена, а не
+    # услуга; у неоплаченной сети фото тоже должны удаляться вовремя.
     for tenant in TenantModel.objects.exclude(schema_name='public'):
         with schema_context(tenant.schema_name):
             from apps.tenant.branch.models import TestimonialMessage
@@ -900,7 +905,7 @@ def vk_membership_catchup_task() -> dict:
     total_events     = 0
     total_errors: list[str] = []
 
-    for tenant in TenantModel.objects.exclude(schema_name='public'):
+    for tenant in beat_tenants():
         with schema_context(tenant.schema_name):
             from apps.tenant.senler.models import SenlerConfig
             seen_groups: set[int] = set()

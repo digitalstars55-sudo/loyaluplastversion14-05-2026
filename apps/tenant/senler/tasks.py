@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 import pytz
 from celery import shared_task
 from django.utils import timezone
+from apps.shared.clients.beat_guard import beat_tenants
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ def send_birthday_broadcasts_task() -> dict:
     TenantModel = get_tenant_model()
     total_sent = 0
 
-    for tenant in TenantModel.objects.exclude(schema_name='public'):
+    for tenant in beat_tenants():
         try:
             with schema_context(tenant.schema_name):
                 # Load active templates for this tenant
@@ -244,7 +245,7 @@ def send_after_game_broadcast_task(process_evening: bool = False) -> dict:
     TenantModel = get_tenant_model()
     total_sent = 0
 
-    for tenant in TenantModel.objects.exclude(schema_name='public'):
+    for tenant in beat_tenants():
         try:
             with schema_context(tenant.schema_name):
                 try:
@@ -431,7 +432,7 @@ def send_gift_reminder_broadcasts_task() -> dict:
     TenantModel = get_tenant_model()
     total_sent = 0
 
-    for tenant in TenantModel.objects.exclude(schema_name='public'):
+    for tenant in beat_tenants():
         try:
             # ClientConfig живёт в public и привязан к Company — читаем ЯВНО по
             # tenant, а не через connection.tenant (в schema_context он не выставлен).
@@ -580,7 +581,7 @@ def run_auto_broadcast_rules_task(dry_run: bool = False) -> dict:
 
     TenantModel = get_tenant_model()
     dispatched: list[str] = []
-    for tenant in TenantModel.objects.exclude(schema_name='public'):
+    for tenant in beat_tenants():
         try:
             with schema_context(tenant.schema_name):
                 has_rules = AutoBroadcastRule.objects.filter(is_active=True).exists()
@@ -734,7 +735,7 @@ def check_read_status_task() -> dict:
     )
 
     TenantModel = get_tenant_model()
-    tenants = TenantModel.objects.exclude(schema_name='public')
+    tenants = beat_tenants()
 
     total_marked = 0
     # 35 дней (чуть больше стандартного 30-дневного окна дашборда), чтобы

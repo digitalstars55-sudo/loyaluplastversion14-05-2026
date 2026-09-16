@@ -25,7 +25,11 @@ CSRF_TRUSTED_ORIGINS = [
     'https://levonework.ru',
     'https://loyalupp.ru',
     'https://vk.com',
-    'https://*.vk.com'
+    'https://*.vk.com',
+    # Платформа CheckUp (волна 0 переезда, 16.09.2026): кабинет CheckUp
+    # ходит в API LoyalUP из браузера. Только https и только их домены.
+    'https://checkupapp.ru',
+    'https://*.checkupapp.ru',
 ]
 
 # Django стоит за TLS-терминирующим nginx (прод + белые прокси-«двери»). Доверяем
@@ -38,7 +42,9 @@ CORS_ALLOWED_ORIGINS = [
     'https://levonework.ru',
     'https://loyalupp.ru',
     'https://vk.com',
-    'https://*.vk.com'
+    'https://*.vk.com',
+    # Платформа CheckUp (волна 0, 16.09.2026) — см. CSRF_TRUSTED_ORIGINS.
+    'https://checkupapp.ru',
 ]
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
@@ -47,6 +53,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r'^https://.*\.loyalupp\.ru$',
     r'^https://.*\.vk\.com$',
     r'^https://vk\.com$',
+    r'^https://.*\.checkupapp\.ru$',
 ]
 
 # Кастомный заголовок подписи запуска мини-аппа (X-VK-Launch-Params) делает
@@ -70,6 +77,7 @@ SHARED_APPS = [
     'apps.shared.leads.apps.LeadsConfig',
     'apps.shared.audit.apps.AuditConfig',
     'apps.shared.discovery.apps.DiscoveryConfig',
+    'apps.shared.monitoring.apps.MonitoringConfig',
 
     # Django built-ins
     'django.contrib.admin',
@@ -369,6 +377,64 @@ CHECKUP_COMPLAINTS_RELAY_UNPOINTED = os.getenv(
 CHECKUP_RELAY_MEDIA_BASE = os.getenv("CHECKUP_RELAY_MEDIA_BASE", "https://levelupapp.ru")
 
 
+
+
+# ── Волна 0 переезда LoyalUP → CheckUp (16.09.2026) ─────────────────────────
+# Всё ниже — с безопасными значениями по умолчанию: пока переменные окружения
+# не заданы, прод ведёт себя ровно как раньше.
+
+# Фоновые задачи beat обходят все сети подряд, даже выключенные и неоплаченные.
+# Режим гарда: 'off' — как раньше; 'log' — обходим всех, но пишем в лог, кого
+# бы пропустили; 'on' — пропускаем is_active=False и paid_until старше
+# BEAT_PAID_UNTIL_GRACE_DAYS дней. Гость сеть с истёкшей оплатой не видит и так
+# (CompanyExpired в clients/api/services.py) — гард лишь догоняет beat.
+BEAT_TENANT_GUARD = os.getenv("BEAT_TENANT_GUARD", "log").strip().lower()
+BEAT_PAID_UNTIL_GRACE_DAYS = int(os.getenv("BEAT_PAID_UNTIL_GRACE_DAYS", "7") or 7)
+
+# Вебхук доставки (Dooglys/iiko → /api/v1/delivery/webhook/). Секрет
+# DELIVERY_WEBHOOK_SECRET проверяется в delivery/api/services.py; при ПУСТОМ
+# секрете вебхук пускает всех (так сейчас на проде). Чтобы включить секрет, не
+# уронив доставку по 4 городам, сначала кладём значение в
+# DELIVERY_WEBHOOK_SECRET_CANDIDATE — оно ничего не решает, только логирует,
+# шлёт ли POS уже верный X-Webhook-Secret. Когда в логе всё 'ok' — переносим
+# значение в DELIVERY_WEBHOOK_SECRET. Обе переменные читаются из окружения
+# прямо в services.py, здесь — только памятка.
+
+# Обмен токена CheckUp → LoyalUP: СВОЙ секрет, не LOYALUP_RELAY_SECRET (тот
+# уже открывает жалобы и чат). Ручка появится с контрактом платформы; пусто =
+# обмен выключен.
+CHECKUP_TOKEN_EXCHANGE_SECRET = os.getenv("CHECKUP_TOKEN_EXCHANGE_SECRET", "")
+
+# Мониторинг платформы (apps.shared.monitoring): сертификаты, домены, оплата
+# сетей, callback ВК, доступность входа. Выключен, пока не задано
+# PLATFORM_MONITOR_ENABLED=1 — задача beat тикает вхолостую.
+PLATFORM_MONITOR_ENABLED = os.getenv("PLATFORM_MONITOR_ENABLED", "0") == "1"
+# За сколько дней предупреждать о сроке (сертификат, домен, оплата сети).
+PLATFORM_MONITOR_WARN_DAYS = int(os.getenv("PLATFORM_MONITOR_WARN_DAYS", "14") or 14)
+# Хосты, у которых проверяем TLS-сертификат (через запятую).
+PLATFORM_MONITOR_TLS_HOSTS = [
+    h.strip() for h in os.getenv(
+        "PLATFORM_MONITOR_TLS_HOSTS",
+        "levelupapp.ru,vkapp.levelupapp.ru,levone.levelupapp.ru,api-ya.levelupapp.ru,levonework.ru",
+    ).split(",") if h.strip()
+]
+# Домены: срок продления. Сначала живой whois (whois.tcinet.ru:43, поле
+# paid-till), при молчании — эти даты как запасные. Формат: домен=ГГГГ-ММ-ДД.
+PLATFORM_MONITOR_DOMAIN_EXPIRY = dict(
+    kv.split("=", 1) for kv in os.getenv(
+        "PLATFORM_MONITOR_DOMAIN_EXPIRY",
+        "levelupapp.ru=2026-12-19,levonework.ru=2027-06-25,loyalupp.ru=2027-03-04",
+    ).split(",") if "=" in kv
+)
+# Адреса, которые должны отвечать 200 (вход мини-аппа и API).
+PLATFORM_MONITOR_PROBE_URLS = [
+    u.strip() for u in os.getenv(
+        "PLATFORM_MONITOR_PROBE_URLS",
+        "https://levonework.ru/,https://levone.levelupapp.ru/api/v1/branches/1/",
+    ).split(",") if u.strip()
+]
+# Один и тот же сигнал повторяем пушем не чаще, чем раз в столько часов.
+PLATFORM_MONITOR_REPEAT_HOURS = int(os.getenv("PLATFORM_MONITOR_REPEAT_HOURS", "24") or 24)
 
 
 # ── Логирование ────────────────────────────────────────────────────────────────

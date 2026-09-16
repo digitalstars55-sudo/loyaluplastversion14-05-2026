@@ -457,3 +457,95 @@ class TenantAdminPermissionTest(TestCase):
     def test_superadmin_role_without_is_superuser_flag(self):
         request = self._request(role='superadmin', is_superuser=False, tenant_pk=1)
         self.assertTrue(tenant_admin.has_permission(request))
+
+
+# ---------------------------------------------------------------------------
+# beat_guard — гард фоновых задач по оплате/активности (волна 0, 16.09.2026)
+# ---------------------------------------------------------------------------
+
+from django.test import SimpleTestCase, override_settings  # noqa: E402
+
+from .beat_guard import beat_tenants, grace_days, guard_mode, skip_reason  # noqa: E402
+
+
+class BeatGuardSkipReasonTest(SimpleTestCase):
+    """Чистая логика «пропускать ли сеть» — без БД и настроек."""
+
+    today = date(2026, 9, 16)
+
+    def test_inactive_is_skipped_regardless_of_payment(self):
+        self.assertEqual(skip_reason(False, date(2030, 1, 1), self.today), 'inactive')
+
+    def test_empty_paid_until_means_paid(self):
+        self.assertEqual(skip_reason(True, None, self.today), '')
+
+    def test_paid_in_future_is_fine(self):
+        self.assertEqual(skip_reason(True, date(2026, 9, 18), self.today), '')
+
+    def test_expired_inside_grace_is_still_fine(self):
+        # истекло 5 дней назад, грейс 7 — ещё обслуживаем
+        self.assertEqual(skip_reason(True, date(2026, 9, 11), self.today, grace=7), '')
+
+    def test_expired_on_grace_boundary_is_still_fine(self):
+        # ровно 7 дней назад — последний день грейса
+        self.assertEqual(skip_reason(True, date(2026, 9, 9), self.today, grace=7), '')
+
+    def test_expired_past_grace_is_skipped(self):
+        reason = skip_reason(True, date(2026, 9, 8), self.today, grace=7)
+        self.assertTrue(reason.startswith('paid_until=2026-09-08'))
+
+    def test_zero_grace_skips_next_day(self):
+        self.assertEqual(skip_reason(True, date(2026, 9, 16), self.today, grace=0), '')
+        self.assertNotEqual(skip_reason(True, date(2026, 9, 15), self.today, grace=0), '')
+
+
+class BeatGuardSettingsTest(SimpleTestCase):
+    """Разбор режима и грейса: незнакомое → безопасное."""
+
+    def test_default_mode_is_log(self):
+        with override_settings(BEAT_TENANT_GUARD='log'):
+            self.assertEqual(guard_mode(), 'log')
+
+    def test_mode_is_normalised(self):
+        with override_settings(BEAT_TENANT_GUARD='  ON '):
+            self.assertEqual(guard_mode(), 'on')
+
+    def test_unknown_mode_falls_back_to_log(self):
+        with override_settings(BEAT_TENANT_GUARD='strict'):
+            self.assertEqual(guard_mode(), 'log')
+        with override_settings(BEAT_TENANT_GUARD=''):
+            self.assertEqual(guard_mode(), 'log')
+
+    def test_grace_days_parsing(self):
+        with override_settings(BEAT_PAID_UNTIL_GRACE_DAYS='3'):
+            self.assertEqual(grace_days(), 3)
+        with override_settings(BEAT_PAID_UNTIL_GRACE_DAYS=-5):
+            self.assertEqual(grace_days(), 0)
+        with override_settings(BEAT_PAID_UNTIL_GRACE_DAYS='мусор'):
+            self.assertEqual(grace_days(), 7)
+
+
+class BeatTenantsQuerysetTest(TestCase):
+    """Что именно попадает в SQL в каждом режиме (без записей в Company)."""
+
+    def test_off_mode_only_excludes_public(self):
+        with override_settings(BEAT_TENANT_GUARD='off'):
+            sql = str(beat_tenants().query)
+        self.assertIn('public', sql)
+        self.assertNotIn('is_active', sql)
+        self.assertNotIn('paid_until', sql)
+
+    def test_log_mode_keeps_full_list(self):
+        with override_settings(BEAT_TENANT_GUARD='log'):
+            qs = beat_tenants()
+            sql = str(qs.query)
+            self.assertEqual(list(qs), [])  # пустая таблица — просто не падает
+        self.assertNotIn('is_active', sql)
+        self.assertNotIn('paid_until', sql)
+
+    def test_on_mode_filters_inactive_and_expired(self):
+        with override_settings(BEAT_TENANT_GUARD='on', BEAT_PAID_UNTIL_GRACE_DAYS=7):
+            sql = str(beat_tenants().query)
+        self.assertIn('is_active', sql)
+        self.assertIn('paid_until', sql)
+        self.assertIn('public', sql)
