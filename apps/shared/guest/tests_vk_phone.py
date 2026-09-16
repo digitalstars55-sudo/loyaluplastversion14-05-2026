@@ -50,7 +50,10 @@ class CheckPhoneSignTest(SimpleTestCase):
     def test_ok_other_encodings_named(self):
         cands = phone_sign_candidates(APP_ID, SECRET, USER_ID, PHONE)
         self.assertEqual(check_phone_sign(USER_ID, PHONE, cands['hex']), 'ok:hex')
-        self.assertEqual(check_phone_sign(USER_ID, PHONE, cands['b64url_nopad']), 'ok:b64url_nopad')
+        # base64 и base64url совпадают, если в дайджесте нет '+'/'/', — тогда
+        # первым сходится 'b64_nopad'; важно лишь, что вариант без '=' принят.
+        self.assertIn(check_phone_sign(USER_ID, PHONE, cands['b64url_nopad']),
+                      ('ok:b64_nopad', 'ok:b64url_nopad'))
 
     def test_user_id_from_body_cannot_forge(self):
         """Подпись выдана для другого user_id — с доказанным id гостя не сходится."""
