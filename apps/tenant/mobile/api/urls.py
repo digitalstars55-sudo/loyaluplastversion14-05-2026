@@ -4,6 +4,7 @@
 
 from django.urls import path
 
+from .branch_edit import BranchDetailAPIView
 from .views import (
     AutoBroadcastRulesAPIView,
     AutoBroadcastRuleDetailAPIView,
@@ -56,6 +57,8 @@ urlpatterns = [
     path(
         'mobile/branches/',
         MobileBranchListAPIView.as_view(),
+    # Карточка и правка точки для внешнего кабинета (контракт №15) — branch_edit.py
+    path('mobile/branches/<int:pk>/', BranchDetailAPIView.as_view(), name='mobile-branch-detail'),
         name='mobile-branch-list',
     ),
 
