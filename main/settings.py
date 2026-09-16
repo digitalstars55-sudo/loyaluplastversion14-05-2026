@@ -267,6 +267,9 @@ TENANT_DOMAIN_MODEL = 'clients.Domain'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 VK_SECRET = os.getenv('VK_SECRET', '')
+# Кандидат «Защищённого ключа» мини-аппа: пока задан — при несовпадении подписи с VK_SECRET
+# в лог пишется 'vk_sign candidate=ok|mismatch'. Ничего не решает (guest/vk_sign.candidate_check).
+VK_SECRET_CANDIDATE = os.getenv('VK_SECRET_CANDIDATE', '')
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
 
 # Сервис-API лояльности для внешнего ordering-BFF (приложение заказа).

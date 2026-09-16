@@ -185,6 +185,14 @@ class VKLaunchParamsMiddleware:
         params = verify_launch_params(raw)
         vk_user_id = extract_vk_user_id(params)
         if vk_user_id is None:
+            # Подпись не сошлась с VK_SECRET — проверяем кандидата ключа (только лог).
+            try:
+                from .vk_sign import candidate_check
+                cand = candidate_check(raw)
+                if cand != 'off':
+                    logger.warning('vk_sign candidate=%s path=%s', cand, request.path)
+            except Exception:
+                pass
             return 'invalid', None, 'invalid', claimed
 
         if any(value != vk_user_id for value in claimed):

@@ -35,6 +35,9 @@ urlpatterns = [
     path('api/v1/', include('apps.shared.users.api.urls')),
     path('api/v1/', include('apps.tenant.mobile.api.urls')),
 
+    # Вердикт по жалобе CheckUp → LoyalUP (контракт 5.2): на хосте сети — по Host.
+    path('api/v1/internal/complaints/', include('apps.shared.relay.complaints_urls')),
+
     # Сервис-API лояльности для ordering-BFF (server-to-server, ключ-аутентификация).
     path('api/v1/', include('apps.tenant.loyalty.api.urls')),
 

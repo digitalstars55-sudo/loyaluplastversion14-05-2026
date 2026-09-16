@@ -101,6 +101,11 @@
         </div>
       </div>
 
+      {% if conv.checkup_status %}
+      <div class="px-3 py-2 border-bottom" style="font-size:11px;background:#eef2ff;color:#3730a3;" title="Статус жалобы в CheckUp (обратный канал вердикта)">
+        🧾 CheckUp: <b>{{ conv.get_checkup_status_display }}</b>{% if conv.checkup_manager %} · {{ conv.checkup_manager }}{% endif %}{% if conv.checkup_resolved_at %} · {{ conv.checkup_resolved_at|date:"d.m.Y H:i" }}{% elif conv.checkup_verdict_at %} · {{ conv.checkup_verdict_at|date:"d.m.Y H:i" }}{% endif %}{% if conv.checkup_verdict %} — {{ conv.checkup_verdict }}{% endif %}
+      </div>
+      {% endif %}
       <!-- AI comment -->
       {% if conv.ai_comment %}
       <div class="px-3 py-2 bg-light border-bottom" style="font-size:11px;color:#6b7280;font-style:italic;">

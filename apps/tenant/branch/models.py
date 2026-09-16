@@ -1385,6 +1385,27 @@ class TestimonialConversation(TimeStampedModel):
         branch_name = self.branch.name if self.branch_id else 'ВК группа'
         return f'{ident} — {branch_name}'
 
+    # ── Вердикт CheckUp (контракт платформы 5.2) ─────────────────────────
+    # Жалоба уезжает в реестр CheckUp (relay/checkup_complaints.py); менеджер
+    # там решает, CheckUp присылает статус и вердикт обратно
+    # (relay/verdict.py). Это служебные поля карточки, не сообщения гостю.
+    # db_default='' — чтобы воркер на старом коде (окно между миграцией и рестартом)
+    # мог создавать переписки, не зная новых колонок.
+    class CheckUpStatus(models.TextChoices):
+        IN_PROGRESS = 'in_progress', 'В работе в CheckUp'
+        RESOLVED    = 'resolved',    'Решено в CheckUp'
+        REJECTED    = 'rejected',    'Отклонено в CheckUp'
+
+    checkup_status = models.CharField(
+        'Статус жалобы в CheckUp', max_length=20, blank=True, default='', db_default='',
+        choices=CheckUpStatus.choices,
+    )
+    checkup_verdict = models.TextField('Вердикт CheckUp', blank=True, default='', db_default='')
+    checkup_manager = models.CharField('Менеджер CheckUp', max_length=120, blank=True, default='', db_default='')
+    checkup_complaint_id = models.CharField('ID жалобы в CheckUp', max_length=40, blank=True, default='', db_default='')
+    checkup_verdict_at = models.DateTimeField('Вердикт получен', null=True, blank=True)
+    checkup_resolved_at = models.DateTimeField('Жалоба закрыта в CheckUp', null=True, blank=True)
+
     class Meta:
         verbose_name = 'Отзыв / Обращение'
         verbose_name_plural = 'Отзывы и Обращения'

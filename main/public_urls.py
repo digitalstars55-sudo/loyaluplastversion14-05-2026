@@ -29,6 +29,8 @@ urlpatterns = [
     path('api/v1/internal/support/', include('apps.shared.relay.urls')),
     # Обмен токена CheckUp → LoyalUP (контракт платформы 2.1): тот же контур, что релей.
     path('api/v1/internal/auth/', include('apps.shared.checkup.urls')),
+    # Вердикт по жалобе CheckUp → LoyalUP (контракт 5.2): на публичном хосте сеть — в теле.
+    path('api/v1/internal/complaints/', include('apps.shared.relay.complaints_urls')),
 
     # Сетевой вход из каталога VK (новичок без QR) — публичная схема.
     path('api/v1/', include('apps.shared.discovery.api.urls')),

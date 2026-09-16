@@ -86,6 +86,11 @@ class ReviewListSerializer(serializers.ModelSerializer):
             'vk_sender_id',
             'text',
             'rating',
+            # Вердикт CheckUp (контракт 5.2): статус/менеджер/текст/дата — пусто, пока жалоба не разобрана.
+            'checkup_status',
+            'checkup_verdict',
+            'checkup_manager',
+            'checkup_resolved_at',
             'last_message_at',
             'has_unread',
             'is_replied',

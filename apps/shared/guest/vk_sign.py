@@ -94,3 +94,28 @@ def extract_vk_user_id(params: dict | None) -> int | None:
     except (TypeError, ValueError):
         return None
     return value if value > 0 else None
+
+
+def candidate_check(query_string: str) -> str:
+    """
+    Наблюдение за кандидатом ключа `VK_SECRET_CANDIDATE`: 'off' | 'ok' | 'mismatch'.
+
+    Зачем: на проде в VK_SECRET годами лежал не тот ключ (сервисный, 71 hex),
+    и подписи «не сходились у всех». Прежде чем менять ключ, смотрим на живом
+    трафике, сходится ли подпись с кандидатом («Защищённый ключ» мини-аппа).
+    Функция НИЧЕГО не решает — только возвращает слово для строки лога.
+    """
+    candidate = getattr(settings, 'VK_SECRET_CANDIDATE', '') or ''
+    if not candidate:
+        return 'off'
+    pairs = parse_qsl((query_string or '').lstrip('?'), keep_blank_values=True)
+    sign = None
+    vk_pairs: list[tuple[str, str]] = []
+    for key, value in pairs:
+        if key == 'sign':
+            sign = value
+        elif key.startswith(VK_PREFIX):
+            vk_pairs.append((key, value))
+    if not sign or not vk_pairs:
+        return 'mismatch'
+    return 'ok' if hmac.compare_digest(calc_sign(vk_pairs, candidate), sign) else 'mismatch'
