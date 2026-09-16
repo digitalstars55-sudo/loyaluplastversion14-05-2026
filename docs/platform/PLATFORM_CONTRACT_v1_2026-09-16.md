@@ -104,10 +104,10 @@ BFF CheckUp живёт в Django (мобилка CheckUp ходит только
 | № | Возможность | Ручки LoyalUP (все под JWT) | Готовность | Что LoyalUP добавляет к волне 1 |
 |---|---|---|---|---|
 | 1 | Отзывы: лента, карточка, ответ, черновик ИИ, автоответ | `GET /api/v1/mobile/reviews/` · `GET /api/v1/mobile/reviews/{id}/messages/` · `POST …/{id}/reply/` · `POST …/{id}/resolve/` · `POST …/{pk}/cancel-auto-send/` · `POST /api/v1/analytics/reviews/{id}/regenerate-draft/` · `POST …/{id}/reject-draft/` | готово (16.09) | ✅ сделано 16.09: `limit/offset` (+ `total` в ответе), `sentiment` (в т.ч. `bad` = весь негатив), `status=unread\|replied\|unanswered`, `source=app\|vk`, `checkup_status`, `q` (VK ID / имя); без параметров ответ прежний |
-| 2 | Сводка репутации и рейтинг точек | `GET /api/v1/mobile/branches/` (рейтинг и число отзывов по точке) | частично | разбивка по тональностям за период в JSON: `GET /api/v1/analytics/reviews/summary/?period=` — входит в п. 5 |
+| 2 | Сводка репутации и рейтинг точек | `GET /api/v1/mobile/branches/` (рейтинг и число отзывов по точке) | готово (16.09) | ✅ `GET /api/v1/analytics/reviews/summary/?period=&branch_ids=` — тональности, рейтинг, источники, негатив без ответа, по точкам, статусы CheckUp; цифры теми же запросами, что веб-страница «Анализ отзывов» |
 | 3 | Настройки автоответов ИИ | `GET/PATCH /api/v1/analytics/auto-reply/settings/` | готово | — |
-| 4 | Дашборд дня («Задачи дня») | сейчас собирается клиентом из `GET /api/v1/analytics/rf/`, `GET /api/v1/billing/status/`, `GET /api/v1/branch/daily-codes/` | частично | единая ручка `GET /api/v1/dashboard/today/` (негатив без ответа, черновики ИИ, коды дня, срок оплаты, топ точек) — 1 день |
-| 5 | Общая статистика программы | `GET /api/v1/analytics/stats/` · `GET /api/v1/analytics/stats/slow/` · `GET /api/v1/analytics/branches/` | частично | детализация метрики списком гостей `GET /api/v1/analytics/stats/detail/?metric=&period=` — 1 день |
+| 4 | Дашборд дня («Задачи дня») | сейчас собирается клиентом из `GET /api/v1/analytics/rf/`, `GET /api/v1/billing/status/`, `GET /api/v1/branch/daily-codes/` | готово (16.09) | ✅ `GET /api/v1/dashboard/today/?branch_ids=` — негатив без ответа, ждут ответа, черновики ИИ, автоответы в очереди, новые за день, жалобы в работе; коды дня и точки без кода; срок оплаты; топ точек за 30 дней |
+| 5 | Общая статистика программы | `GET /api/v1/analytics/stats/` · `GET /api/v1/analytics/stats/slow/` · `GET /api/v1/analytics/branches/` | готово (16.09) | ✅ `GET /api/v1/analytics/stats/detail/?metric=&period=&limit=&offset=` — те же гости, что веб-страница `/analytics/stats/detail/`; неизвестная метрика → `400` со списком ключей |
 | 6 | База гостей | `GET /api/v1/guests/?search=&limit=&offset=` | готово | — |
 | 7 | Карточка гостя | `GET /api/v1/guests/{vk_id}/` | готово | поля `phone`, `phone_source`, `phone_consent_at` появятся с №78 |
 | 8 | Корректировка баллов | `POST /api/v1/guests/{vk_id}/adjust-coins/` (причина обязательна) | готово | — |
@@ -242,7 +242,7 @@ X-LoyalUP-Relay-Secret: <LOYALUP_RELAY_SECRET>
 | Обмен токена `internal/auth/exchange/` + таблица соответствия + роли/точки + тесты — **сделано 16.09** (ждёт выкатки на `dev`) | 2 дня |
 | Вердикт `internal/complaints/verdict/` + статус в карточке отзыва (веб, мобилка, API) — **сделано 16.09** | 1 день |
 | Телефон гостя №78: гостевая ручка с проверкой подписи ВК, поля в карточке гостя, мини-апп | 2 дня (бэк) + 1,5 (мини-апп) |
-| Пробелы API волны 1: ~~фильтры и пагинация отзывов (1) — сделано 16.09~~, сводка тональностей и детализация метрик (1), дашборд дня (1), рассылки JSON-CRUD + отправка с `expected_count` (3), аварийные действия (1), точки `PATCH` (2), уведомления курсор (0,5) | 9,5 дней |
+| Пробелы API волны 1: ~~фильтры и пагинация отзывов (1), сводка тональностей и детализация метрик (1), дашборд дня (1) — сделано 16.09~~, рассылки JSON-CRUD + отправка с `expected_count` (3), аварийные действия (1), точки `PATCH` (2), уведомления курсор (0,5) | 9,5 дней |
 | OpenAPI-срез волны 1 + TypeScript-типы для BFF + пакет записанных ответов песочницы для контрактных тестов CheckUp | 1 день |
 | Песочница `dev`: вторая точка, учётка, тихие тестовые отзывы (`seed_checkup_sandbox`) — **сделано 16.09** | 0,5 дня |
 | **Итого** | **≈ 17 дней** (карта: 13,5 контракт + часть 18 дней бэка волны 1) |
