@@ -1060,3 +1060,84 @@ class CheckupPayloadWithInferredPointTest(SimpleTestCase):
         self.assertIsNone(payload['point_inferred_scan_at'])
         self.assertEqual(payload['table_number'], 5)
         self.assertEqual(payload['rating'], 2)
+
+
+# ──────────────────────────────────────────────────────────────────
+# guest_vk_id в жалобе: без БД, на тех же фейках
+# ──────────────────────────────────────────────────────────────────
+from types import SimpleNamespace  # noqa: E402
+
+
+@override_settings(CHECKUP_COMPLAINTS_RELAY_UNPOINTED=False)
+@patch('apps.shared.relay.checkup_complaints._inference_window_hours', return_value=24)
+class CheckupPayloadGuestVkIdTest(SimpleTestCase):
+    """`guest_vk_id`: по нему CheckUp открывает vk.com/id<...> и пишет гостю."""
+
+    @staticmethod
+    def _conv(**kw):
+        branch = _FakeInferBranch(branch_id=202, name='Институтская')
+        return _FakeRelayConv(
+            branch_id=branch.pk, branch=branch,
+            msgs=[_FakeRelayMsg(text='Холодный суп', source='APP', rating=2)],
+            **kw,
+        )
+
+    def test_from_app_guest_profile(self, _hours):
+        """Отзыв из мини-аппа: ClientBranch → guest.Client.vk_id."""
+        from apps.shared.relay.checkup_complaints import build_payload
+        conv = self._conv()
+        conv.client_id = 5
+        conv.client = SimpleNamespace(client=SimpleNamespace(vk_id=123456789))
+        self.assertEqual(build_payload(conv, 'levone')['guest_vk_id'], 123456789)
+
+    def test_from_vk_guest_card(self, _hours):
+        """Тред из ВК-группы: карточка гостя."""
+        from apps.shared.relay.checkup_complaints import build_payload
+        conv = self._conv()
+        conv.vk_guest_id = 9
+        conv.vk_guest = SimpleNamespace(vk_id=777000111, first_name='Пётр', last_name='Иванов')
+        self.assertEqual(build_payload(conv, 'levone')['guest_vk_id'], 777000111)
+
+    def test_from_sender_id_when_no_card(self, _hours):
+        """Карточки нет — берём id отправителя треда (он хранится строкой)."""
+        from apps.shared.relay.checkup_complaints import build_payload
+        conv = self._conv(vk_sender_id='42424242')
+        self.assertEqual(build_payload(conv, 'levone')['guest_vk_id'], 42424242)
+
+    def test_profile_wins_over_sender(self, _hours):
+        from apps.shared.relay.checkup_complaints import build_payload
+        conv = self._conv(vk_sender_id='42424242')
+        conv.vk_guest_id = 9
+        conv.vk_guest = SimpleNamespace(vk_id=777000111, first_name='Пётр', last_name='Иванов')
+        self.assertEqual(build_payload(conv, 'levone')['guest_vk_id'], 777000111)
+
+    def test_no_guest_at_all_is_null(self, _hours):
+        """Поле необязательное: id нет — жалоба уходит с null, а не падает."""
+        from apps.shared.relay.checkup_complaints import build_payload
+        payload = build_payload(self._conv(), 'levone')
+        self.assertIsNotNone(payload)
+        self.assertIsNone(payload['guest_vk_id'])
+
+    def test_non_numeric_and_group_author_are_null(self, _hours):
+        """Мусор и отрицательный id (группа-автор) ссылкой на гостя не станут."""
+        from apps.shared.relay.checkup_complaints import build_payload
+        for raw in ('club123', '-50', '0'):
+            with self.subTest(raw=raw):
+                payload = build_payload(self._conv(vk_sender_id=raw), 'levone')
+                self.assertIsNone(payload['guest_vk_id'])
+
+    def test_broken_guest_link_does_not_lose_complaint(self, _hours):
+        """Битая ссылка на гостя: пишем warning, жалобу отдаём без vk_id."""
+        from apps.shared.relay.checkup_complaints import build_payload
+
+        class _Boom:
+            @property
+            def client(self):
+                raise RuntimeError('гость уехал в другую схему')
+
+        conv = self._conv()
+        conv.client_id = 5
+        conv.client = _Boom()
+        payload = build_payload(conv, 'levone')
+        self.assertIsNotNone(payload)
+        self.assertIsNone(payload['guest_vk_id'])

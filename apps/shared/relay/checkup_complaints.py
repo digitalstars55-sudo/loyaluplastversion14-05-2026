@@ -70,6 +70,16 @@ CheckUp сначала смотрит словарь `LoyalupBranchMap` по `po
 подстраховка и способ завести соответствие руками.
 
 ────────────────────────────────────────────────────────────────────────
+Кто гость
+────────────────────────────────────────────────────────────────────────
+Гость уходит тремя полями: `guest_name`, `guest_phone` и `guest_vk_id`
+(последнее — с 16.09.2026, по просьбе стороны CheckUp). Телефона может не
+быть: у ВК-тредов его нет вообще, у отзывов из мини-аппа — не всегда.
+Поэтому кладём ещё и публичный числовой VK ID: по нему CheckUp открывает
+из карточки жалобы `https://vk.com/id<guest_vk_id>` и связывается с
+гостем. Поле необязательное — приёмник принимает и `null`.
+
+────────────────────────────────────────────────────────────────────────
 Дедуп: почему ключ не «id сообщения»
 ────────────────────────────────────────────────────────────────────────
 Гость редко пишет одно сообщение — он пишет три подряд. Если ключом
@@ -166,6 +176,35 @@ def _guest_name(conv) -> str:
         if name:
             return name[:255]
     return ''
+
+
+def _guest_vk_id(conv) -> int | None:
+    """Публичный VK ID гостя: профиль в точке → карточка ВК → отправитель треда.
+
+    Нужен CheckUp, чтобы из карточки жалобы открыть `https://vk.com/id<vk_id>`
+    и написать гостю. Телефон для этого не годится: у ВК-тредов его нет
+    ВООБЩЕ, а у отзывов из мини-аппа он есть не всегда (до №78 — телефон
+    через `VKWebAppGetPhoneNumber` — так и останется). Поле необязательное:
+    `None` — жалоба всё равно уходит, просто без ссылки на гостя.
+    """
+    raw = None
+    try:
+        if conv.client_id:              # отзыв из мини-аппа: ClientBranch → guest.Client
+            raw = getattr(getattr(conv.client, 'client', None), 'vk_id', None)
+        if not raw and conv.vk_guest_id:  # тред из ВК-группы: карточка гостя
+            raw = getattr(conv.vk_guest, 'vk_id', None)
+    except Exception as e:  # ссылка на гостя — не повод потерять жалобу
+        log.warning('checkup relay: vk_id гостя conv=%s: %s', getattr(conv, 'pk', None), e)
+    if not raw:
+        # Тред из группы без карточки: id отправителя есть всегда (по нему
+        # тред и заводится), хранится строкой.
+        raw = getattr(conv, 'vk_sender_id', '') or None
+    try:
+        vk_id = int(raw) if raw not in (None, '') else None
+    except (TypeError, ValueError):
+        return None
+    # Отрицательный id — это группа-автор, а не гость: ссылка на него бесполезна.
+    return vk_id if vk_id and vk_id > 0 else None
 
 
 def _inference_window_hours(schema_name: str) -> int:
@@ -286,6 +325,8 @@ def build_payload(conv, schema_name: str, message_id: int | None = None) -> dict
         'rating':        rating,
         'guest_name':    _guest_name(conv),
         'guest_phone':   (phone or '')[:50],
+        # Ссылка на гостя для CheckUp: vk.com/id<...> (см. _guest_vk_id).
+        'guest_vk_id':   _guest_vk_id(conv),
         'photos':        photos[:MAX_PHOTOS],
         # Точка — подсказка по скану, а не выбор гостя (см. шапку модуля).
         'point_inferred':          point_inferred,
@@ -322,7 +363,7 @@ def relay_complaint_to_checkup_task(self, conversation_id: int, schema_name: str
     try:
         with schema_context(schema_name):
             conv = (TestimonialConversation.objects
-                    .select_related('branch', 'client', 'vk_guest', 'inferred_branch')
+                    .select_related('branch', 'client', 'client__client', 'vk_guest', 'inferred_branch')
                     .filter(pk=conversation_id).first())
             if conv is None:
                 return {'skipped': True, 'reason': 'conversation_gone'}
