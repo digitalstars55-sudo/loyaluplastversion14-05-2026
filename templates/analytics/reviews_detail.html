@@ -127,7 +127,18 @@
           <div class="msg-rating">{% for i in "12345" %}{% if forloop.counter <= msg.rating %}★{% else %}☆{% endif %}{% endfor %}</div>
           {% endif %}
           {% if msg.phone %}<div class="msg-meta">📞 {{ msg.phone }}</div>{% endif %}
-          {% if msg.table_number %}<div class="msg-meta">🪑 Стол {{ msg.table_number }}</div>{% endif %}
+          {# Точка + стол у САМОГО сообщения: столы на точках повторяются,
+             по одному номеру стола точку не отличить (16.09.2026). #}
+          {% if msg.branch or msg.table_number %}
+          <div class="msg-meta">
+            {% if msg.branch %}📍 {{ msg.branch.name }}{% if msg.table_number %} · {% endif %}{% endif %}
+            {% if msg.table_number %}🪑 Стол {{ msg.table_number }}{% endif %}
+            {% if msg.branch_id and conv.branch_id and msg.branch_id != conv.branch_id %}
+            <span class="badge" style="background:#fee2e2;color:#991b1b;font-size:10px;"
+                  title="Точка в ссылке отзыва не совпала с точкой переписки">точка не совпадает</span>
+            {% endif %}
+          </div>
+          {% endif %}
           <div class="msg-meta">
             {% if msg.source == 'APP' %}из приложения{% elif msg.source == 'VK_MESSAGE' %}ВКонтакте{% elif msg.is_ai_generated %}🤖 Ответ ИИ{% else %}администратор{% endif %}
             · {{ msg.created_at|date:"d.m H:i" }}

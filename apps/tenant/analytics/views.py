@@ -13,7 +13,7 @@ from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views import View
 from django.utils import timezone
 
-from django.db.models import Avg, Count, Q, Case, When, IntegerField
+from django.db.models import Avg, Count, Q, Case, When, IntegerField, Prefetch
 
 from apps.tenant.branch.models import Branch, TestimonialConversation, TestimonialMessage
 from apps.tenant.analytics.api.services import (
@@ -774,7 +774,11 @@ class ReviewsDetailView(View):
             last_message_at__date__lte=end,
         ).select_related(
             'branch', 'client__client', 'vk_guest', 'inferred_branch',
-        ).prefetch_related('messages')
+        ).prefetch_related(
+            # select_related('branch') — карточка показывает точку у каждого
+            # сообщения, без этого был бы запрос на сообщение.
+            Prefetch('messages', queryset=TestimonialMessage.objects.select_related('branch')),
+        )
         if branch_ids:
             qs = qs.filter(branch_id__in=branch_ids)
         if sentiment:

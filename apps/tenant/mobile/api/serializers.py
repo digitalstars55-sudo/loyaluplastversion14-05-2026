@@ -253,6 +253,9 @@ class ReviewListSerializer(serializers.ModelSerializer):
 class ReviewMessageSerializer(serializers.ModelSerializer):
     admin_name  = serializers.SerializerMethodField()
     attachments = serializers.SerializerMethodField()
+    # Точка и стол самого сообщения (16.09.2026): столы на точках повторяются,
+    # поэтому один номер стола точку не определяет. Пустые, если их нет.
+    branch_name = serializers.SerializerMethodField()
 
     class Meta:
         model = TestimonialMessage
@@ -263,8 +266,13 @@ class ReviewMessageSerializer(serializers.ModelSerializer):
             # LU-40: контекст «на что ответил гость» (текст+дата предыдущего
             # сообщения — обычно авто-опрос «Понравилось?»). Пустые если нет.
             'reply_to_text', 'reply_to_date',
+            # Откуда отзыв: точка из ссылки QR + стол
+            'branch_name', 'table_number',
         ]
         read_only_fields = fields
+
+    def get_branch_name(self, obj) -> str:
+        return (obj.branch.name or '') if obj.branch_id else ''
 
     def get_admin_name(self, obj):
         # У TestimonialMessage сейчас нет поля admin — отдаём None.

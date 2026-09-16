@@ -1416,6 +1416,18 @@ class TestimonialMessage(models.Model):
     rating       = models.PositiveSmallIntegerField('Оценка (1–5)', null=True, blank=True)
     phone        = models.CharField('Телефон', max_length=20, blank=True)
     table_number = models.PositiveIntegerField('Столик', null=True, blank=True)
+    # Точка ЭТОГО сообщения (16.09.2026). Раньше точка жила только на треде,
+    # а у сообщения был голый номер стола — а столы на точках ПОВТОРЯЮТСЯ
+    # (у levone Ленина 1–29, Набережная 1–10), поэтому «Стол 7» сам по себе
+    # точку не определяет. Пишется из branch_id, который прислал мини-апп,
+    # то есть из ссылки QR на столе. У ВК-сообщений и ответов админа пусто.
+    branch = models.ForeignKey(
+        Branch,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='testimonial_messages',
+        verbose_name='Точка (из ссылки отзыва)',
+    )
 
     # ── VK-only (deduplication) ────────────────────────────────────────────────
     vk_message_id = models.CharField(

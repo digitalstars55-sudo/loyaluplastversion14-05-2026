@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from django.db import transaction
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
@@ -89,7 +90,9 @@ class MobileReviewListAPIView(generics.ListAPIView):
         # пустыми карточками и прятали настоящие отзывы.
         qs = TestimonialConversation.objects.select_related(
             'branch', 'client__client', 'vk_guest', 'inferred_branch',
-        ).prefetch_related('messages').exclude(
+        ).prefetch_related(
+            Prefetch('messages', queryset=TestimonialMessage.objects.select_related('branch')),
+        ).exclude(
             last_message_at__isnull=True,
         ).order_by('-last_message_at', '-id')
 
@@ -167,13 +170,15 @@ class MobileReviewMessagesAPIView(generics.ListAPIView):
         # Исторически диалог мог разъехаться (legacy branch=X + новый branch=None):
         # сообщения гостя в одном треде, ответы менеджера в другом. Показываем
         # полный диалог, чтобы в мобилке были видны и сообщения, и ответы.
+        # select_related('branch') — у сообщения своя точка (16.09.2026),
+        # и в объединённом диалоге она у разных сообщений разная.
         if conv.vk_sender_id:
             return TestimonialMessage.objects.filter(
                 conversation__vk_sender_id=conv.vk_sender_id,
-            ).order_by('created_at')
+            ).select_related('branch').order_by('created_at')
         return TestimonialMessage.objects.filter(
             conversation_id=review_id,
-        ).order_by('created_at')
+        ).select_related('branch').order_by('created_at')
 
     def list(self, request, *args, **kwargs):
         qs = self.get_queryset()

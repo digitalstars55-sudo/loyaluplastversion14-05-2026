@@ -8,7 +8,7 @@ from django.http import HttpResponseRedirect
 from django.db.models.functions import Coalesce
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import format_html, mark_safe
+from django.utils.html import escape, format_html, mark_safe
 from datetime import timedelta
 
 from apps.shared.config.admin_sites import tenant_admin
@@ -831,6 +831,10 @@ class TestimonialMessageInline(admin.TabularInline):
     def has_add_permission(self, request, obj=None):
         return request.user.is_superuser
 
+    def get_queryset(self, request):
+        # У сообщения своя точка — тянем её одним запросом.
+        return super().get_queryset(request).select_related('branch')
+
     @admin.display(description='')
     def chat_bubble(self, msg):
         icon, color, label = _SOURCE_STYLES.get(
@@ -847,8 +851,17 @@ class TestimonialMessageInline(admin.TabularInline):
             extras.append(f'<div style="font-size:15px;margin-bottom:4px;">{stars}</div>')
         if msg.phone:
             extras.append(f'<div style="font-size:11px;color:#6b7280;">📞 {msg.phone}</div>')
-        if msg.table_number:
-            extras.append(f'<div style="font-size:11px;color:#6b7280;">🪑 Столик {msg.table_number}</div>')
+        # Точка сообщения — рядом со столом: номера столов на точках
+        # повторяются, по одному «Столик 7» точку не отличить (16.09.2026).
+        if msg.branch_id or msg.table_number:
+            parts = []
+            if msg.branch_id:
+                parts.append(f'📍 {escape(msg.branch.name)}')
+            if msg.table_number:
+                parts.append(f'🪑 Столик {msg.table_number}')
+            extras.append(
+                '<div style="font-size:11px;color:#6b7280;">' + ' · '.join(parts) + '</div>'
+            )
 
         extras_html = ''.join(extras)
         ts = msg.created_at.strftime('%d.%m.%Y %H:%M')

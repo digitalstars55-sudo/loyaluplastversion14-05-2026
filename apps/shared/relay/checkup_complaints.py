@@ -211,7 +211,10 @@ def build_payload(conv, schema_name: str, message_id: int | None = None) -> dict
         return None
 
     # ── точка ─────────────────────────────────────────────────────
-    branch = conv.branch if conv.branch_id else None
+    # Сначала точка САМОГО сообщения (её прислал мини-апп из ссылки QR,
+    # 16.09.2026), потом — точка треда. Сейчас они всегда совпадают (тред
+    # заводится на пару «точка + гость»), но у сообщения она точнее.
+    branch = msg.branch if getattr(msg, 'branch_id', None) else (conv.branch if conv.branch_id else None)
     point_inferred = False
     if branch is None and getattr(conv, 'inferred_branch_id', None):
         # Подсказка по последнему скану QR (см. шапку модуля). Берём её

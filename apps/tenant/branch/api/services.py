@@ -1379,6 +1379,9 @@ def submit_app_review(
         rating=rating,
         phone=phone or '',
         table_number=table,
+        # Точка пишется и в само сообщение: номера столов на точках
+        # повторяются, и по одному «Стол 7» точку не отличить (16.09.2026).
+        branch=branch,
     )
 
     conv.has_unread = True

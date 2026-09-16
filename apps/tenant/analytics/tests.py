@@ -912,7 +912,7 @@ class BranchInferenceFreshnessTest(SimpleTestCase):
 
 class _FakeRelayMsg:
     def __init__(self, text='', source='VK_MESSAGE', created_at=None, rating=None,
-                 phone='', table_number=None, pk=1):
+                 phone='', table_number=None, pk=1, branch=None):
         self.pk = pk
         self.id = pk
         self.text = text
@@ -921,6 +921,9 @@ class _FakeRelayMsg:
         self.rating = rating
         self.phone = phone
         self.table_number = table_number
+        # Точка самого сообщения (16.09.2026): пришла из ссылки QR на столе.
+        self.branch = branch
+        self.branch_id = getattr(branch, 'pk', None)
 
     def display_attachments(self):
         return []
@@ -1010,6 +1013,36 @@ class CheckupPayloadWithInferredPointTest(SimpleTestCase):
             inferred_source='qr_scan',
         )
         self.assertIsNone(build_payload(conv, 'levone'))
+
+    def test_message_point_wins_over_thread_point(self, _hours):
+        """Точка у сообщения точнее точки треда: в жалобу уходит она."""
+        from apps.shared.relay.checkup_complaints import build_payload
+        thread_branch = _FakeInferBranch(branch_id=202, name='Институтская')
+        msg_branch = _FakeInferBranch(branch_id=303, name='Ленина')
+        conv = _FakeRelayConv(
+            branch_id=thread_branch.pk, branch=thread_branch,
+            msgs=[_FakeRelayMsg(text='Холодный суп', source='APP', rating=2,
+                                table_number=7, branch=msg_branch)],
+        )
+        payload = build_payload(conv, 'levone')
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload['point_id'], '303')
+        self.assertEqual(payload['point_name'], 'Ленина')
+        self.assertFalse(payload['point_inferred'])
+        self.assertEqual(payload['table_number'], 7)
+
+    def test_message_without_point_falls_back_to_thread(self, _hours):
+        """Старые сообщения (поля ещё нет/пусто) берут точку треда, как раньше."""
+        from apps.shared.relay.checkup_complaints import build_payload
+        branch = _FakeInferBranch(branch_id=202, name='Институтская')
+        conv = _FakeRelayConv(
+            branch_id=branch.pk, branch=branch,
+            msgs=[_FakeRelayMsg(text='Холодный суп', source='APP', rating=2,
+                                table_number=5)],
+        )
+        payload = build_payload(conv, 'levone')
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload['point_id'], '202')
 
     def test_app_review_with_real_point_is_not_marked_inferred(self, _hours):
         from apps.shared.relay.checkup_complaints import build_payload
