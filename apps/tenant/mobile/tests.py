@@ -145,3 +145,14 @@ class ReviewDetailEndpointTest(TestCase):
         with mock.patch('apps.shared.users.access.user_allowed_branches', return_value=set()):
             qs = review_card_queryset(SimpleNamespace(user=User(username='nobody'), query_params={}))
         self.assertEqual(list(qs), [])
+
+    def test_missing_thread_answers_in_words(self):
+        # Тело 404 — словами и по-русски (приёмка §9 контракта платформы),
+        # а не стандартный текст DRF с именем модели по-английски.
+        from django.http import Http404
+        from rest_framework import generics
+        from rest_framework.exceptions import NotFound
+        with mock.patch.object(generics.RetrieveAPIView, 'get_object', side_effect=Http404):
+            with self.assertRaises(NotFound) as ctx:
+                MobileReviewDetailAPIView().get_object()
+        self.assertEqual(str(ctx.exception.detail), 'Отзыв не найден')

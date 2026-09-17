@@ -200,6 +200,16 @@ class MobileReviewDetailAPIView(generics.RetrieveAPIView):
     def get_queryset(self):
         return review_card_queryset(self.request)
 
+    def get_object(self):
+        from django.http import Http404
+        from rest_framework.exceptions import NotFound
+        try:
+            return super().get_object()
+        except Http404:
+            # Словами и по-русски (приёмка §9 контракта): стандартный текст DRF
+            # называет модель по-английски («No TestimonialConversation matches…»).
+            raise NotFound('Отзыв не найден')
+
 
 def _check_conv_access(request, conv) -> bool:
     """
