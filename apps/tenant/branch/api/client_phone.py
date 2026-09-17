@@ -63,6 +63,9 @@ class ClientPhoneSerializer(serializers.Serializer):
     sign = serializers.CharField(max_length=256)
     # Где гость дал номер ('profile' | 'review' | …) — чтобы сравнивать места.
     placement = serializers.CharField(max_length=32, required=False, allow_blank=True, default='')
+    # Публичный id точки, где гость сейчас: на её счёт падают баллы за номер
+    # (баллы пер-точечные). Без него награды нет, номер всё равно сохраняется.
+    branch_id = serializers.IntegerField(required=False, allow_null=True, default=None)
 
 
 _PLACEMENT_RE = re.compile(r'^[a-z0-9_-]{1,32}$')
@@ -79,6 +82,35 @@ class ClientPhoneRevokeSerializer(serializers.Serializer):
 
 def _err(code: str, detail: str, http_status: int) -> Response:
     return Response({'code': code, 'detail': detail}, status=http_status)
+
+
+def _grant_phone_reward(client, branch_id) -> int:
+    """
+    Баллы за первый номер (№78): `ClientConfig.guest_phone_reward_coins` сети,
+    один раз на гостя (`Client.phone_reward_at`), на счёт точки `branch_id`
+    (баллы пер-точечные). Без branch_id, без профиля в точке или при нуле в
+    настройках — 0. При отзыве согласия баллы не отбираются.
+    """
+    if client.phone_reward_at or not branch_id:
+        return 0
+    from django.db import connection
+    from apps.tenant.branch.models import ClientBranch, CoinTransaction, TransactionSource, TransactionType
+
+    tenant = getattr(connection, 'tenant', None)
+    cfg = getattr(tenant, 'config', None) if tenant is not None else None
+    amount = int(getattr(cfg, 'guest_phone_reward_coins', 0) or 0)
+    if amount <= 0:
+        return 0
+    cb = ClientBranch.objects.filter(client=client, branch__branch_id=branch_id).first()
+    if cb is None:
+        return 0
+    CoinTransaction.objects.create_transfer(
+        cb, amount, TransactionType.INCOME, TransactionSource.PHONE,
+        description='Спасибо за номер телефона',
+    )
+    client.phone_reward_at = timezone.now()
+    client.save(update_fields=['phone_reward_at', 'updated_at'])
+    return amount
 
 
 def _proven_vk_id(request) -> int | None:
@@ -143,12 +175,24 @@ class ClientPhoneView(APIView):
         client.phone_consent_at = now
         client.phone_placement = placement
         client.save(update_fields=['phone', 'phone_source', 'phone_consent_at', 'phone_placement', 'updated_at'])
+
+        # Награда — отдельно от сохранения номера: её сбой номер не теряет.
+        reward = 0
+        try:
+            reward = _grant_phone_reward(client, s.validated_data.get('branch_id'))
+        except Exception as e:  # noqa: BLE001 — любой сбой начисления только в лог
+            log.warning('guest phone: награда vk_id=%s branch_id=%s не начислена: %s',
+                        claimed, s.validated_data.get('branch_id'), e)
+        if reward:
+            log.info('guest phone: vk_id=%s награда %s баллов, placement=%s', claimed, reward, placement or '-')
+
         return Response({
             'phone': phone,
             'verified': verified,
             'proven': bool(proven),
             'consent_at': now.isoformat(),
             'placement': placement,
+            'reward_coins': reward,
         })
 
     @extend_schema(

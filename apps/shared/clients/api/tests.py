@@ -277,7 +277,7 @@ class TenantDomainViewTest(TestCase):
 class TenantDomainResponseSerializerTest(TestCase):
 
     # guest_phone_enabled — №78, флаг платформы (settings.GUEST_PHONE_ENABLED), default=False
-    FIELDS = {'domain', 'name', 'web_entry_enabled', 'degrade_enabled', 'guest_phone_enabled'}
+    FIELDS = {'domain', 'name', 'web_entry_enabled', 'degrade_enabled', 'guest_phone_enabled', 'guest_phone_reward_coins'}
 
     def _make(self, domain='rest.localhost', name='Ресторан', **flags):
         return TenantDomainResponseSerializer({'domain': domain, 'name': name, **flags})

@@ -182,6 +182,7 @@ def send_vk_message(
     vk_user_id: int,
     message: str,
     attachment: str | None = None,
+    keyboard: dict | None = None,
 ) -> tuple[bool, str, int | None]:
     """
     Sends a message from the VK community to a user via messages.send.
@@ -214,6 +215,10 @@ def send_vk_message(
     }
     if attachment:
         payload['attachment'] = attachment
+    if keyboard:
+        # Inline-клавиатура (кнопки под сообщением), формат VK Bots API.
+        import json as _json
+        payload['keyboard'] = _json.dumps(keyboard, ensure_ascii=False)
 
     try:
         resp = requests.post(

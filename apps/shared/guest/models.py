@@ -64,6 +64,12 @@ class Client(TimeStampedModel):
         default='',
         help_text="Место в мини-аппе: 'profile', 'review', … — чтобы сравнивать, где гости соглашаются.",
     )
+    phone_reward_at = models.DateTimeField(
+        'Баллы за номер начислены',
+        null=True,
+        blank=True,
+        help_text='Награда за первый номер выдаётся один раз на гостя; при отзыве согласия не отбирается.',
+    )
 
     is_active = models.BooleanField(
         default=True,

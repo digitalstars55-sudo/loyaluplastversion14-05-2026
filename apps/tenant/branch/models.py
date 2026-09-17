@@ -796,6 +796,7 @@ class TransactionSource(models.TextChoices):
     DELIVERY = 'delivery', 'Доставка'
     MANUAL   = 'manual',   'Вручную'
     RFM      = 'rfm',      'RFM-кампания'
+    PHONE    = 'phone',    'Номер телефона'   # №78: спасибо за номер, данный через ВК
 
 
 class CoinTransactionManager(models.Manager):

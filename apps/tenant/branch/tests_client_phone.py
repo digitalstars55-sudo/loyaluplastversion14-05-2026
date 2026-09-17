@@ -80,6 +80,45 @@ class ClientPhoneViewTest(TestCase):
         self.assertTrue(r.data['proven'])
         self.assertEqual(self._guest().phone_source, 'vk')
 
+    # ── награда за номер (№78) ───────────────────────────────────────────
+    def test_reward_returned_and_failure_does_not_lose_phone(self):
+        with patch('apps.tenant.branch.api.client_phone._grant_phone_reward', return_value=50) as grant:
+            r = self._post({'vk_id': VK_ID, 'phone_number': PHONE, 'sign': _sign(), 'branch_id': 777})
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data['reward_coins'], 50)
+        grant.assert_called_once()
+        self.assertEqual(grant.call_args[0][1], 777)
+        # сбой начисления → номер сохранён, reward_coins=0
+        self.guest.phone = ''
+        self.guest.save(update_fields=['phone'])
+        with patch('apps.tenant.branch.api.client_phone._grant_phone_reward', side_effect=RuntimeError('db')):
+            r = self._post({'vk_id': VK_ID, 'phone_number': PHONE, 'sign': _sign(), 'branch_id': 777})
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data['reward_coins'], 0)
+        self.assertEqual(self._guest().phone, E164)
+
+    def test_grant_reward_once_per_guest(self):
+        from types import SimpleNamespace
+        from apps.tenant.branch.api.client_phone import _grant_phone_reward
+        cb = SimpleNamespace(pk=1)
+        tenant = SimpleNamespace(config=SimpleNamespace(guest_phone_reward_coins=30))
+        with patch('apps.tenant.branch.api.client_phone.connection', create=True), \
+                patch('django.db.connection') as conn, \
+                patch('apps.tenant.branch.models.ClientBranch.objects') as cb_objects, \
+                patch('apps.tenant.branch.models.CoinTransaction.objects') as tx_objects:
+            conn.tenant = tenant
+            cb_objects.filter.return_value.first.return_value = cb
+            self.assertEqual(_grant_phone_reward(self.guest, 990002), 30)
+            tx_objects.create_transfer.assert_called_once()
+            self.assertEqual(tx_objects.create_transfer.call_args[0][1], 30)
+            self.assertIsNotNone(self._guest().phone_reward_at)
+            # второй раз — ноль, транзакции нет
+            self.assertEqual(_grant_phone_reward(self._guest(), 990002), 0)
+            tx_objects.create_transfer.assert_called_once()
+            # без branch_id — ноль
+            fresh = Client.objects.create(vk_id=VK_ID + 1)
+            self.assertEqual(_grant_phone_reward(fresh, None), 0)
+
     def test_placement_saved_and_sanitized(self):
         r = self._post({'vk_id': VK_ID, 'phone_number': PHONE, 'sign': _sign(), 'placement': 'review'})
         self.assertEqual(r.status_code, 200, r.data)

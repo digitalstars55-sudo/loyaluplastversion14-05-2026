@@ -212,6 +212,51 @@ def _subscribed_resolver(rule, now):
     return out
 
 
+def _phone_request_resolver(rule, now):
+    """
+    №78: «Через N дней после визита» — гостю, который ещё не дал номер телефона.
+
+    Берём гостей, чей ПОСЛЕДНИЙ визит был ровно N дней назад (как в реактивации,
+    поэтому правило срабатывает один раз в день порога), без телефона в профиле
+    (guest.Client.phone пуст) и с разрешёнными сообщениями от сообщества (иначе
+    messages.send всё равно не уйдёт, а лог засорится). N = rule.delay_days,
+    пусто → 1 (следующий день). Дедуп по entity_key 'phone:<vk_id>' — одно
+    сообщение на гостя за всё время: после «Не сейчас» повторов нет.
+    Один гость с профилями в нескольких точках → один кандидат.
+    """
+    from django.db.models import Max
+    from apps.tenant.branch.models import ClientBranch
+
+    n = rule.delay_days if rule.delay_days is not None else 1
+    if n < 0:
+        return []
+
+    target = now.astimezone(_MSK).date() - timedelta(days=n)
+    qs = (
+        ClientBranch.objects
+        .filter(
+            is_employee=False,
+            client__is_active=True,
+            client__vk_id__isnull=False,
+            client__phone='',
+            vk_status__is_newsletter_subscriber=True,
+        )
+        .annotate(last_visit=Max('visits__visited_at'))
+        .filter(last_visit__date=target)
+        .select_related('client', 'branch')
+        .order_by('-last_visit', 'pk')
+    )
+    qs = _apply_audience(qs, rule)
+    out, seen = [], set()
+    for cb in qs:
+        vk_id = cb.client.vk_id
+        if vk_id in seen:
+            continue
+        seen.add(vk_id)
+        out.append(Candidate(client_branch=cb, vk_id=vk_id, entity_key=f'phone:{vk_id}'))
+    return out
+
+
 def _gift_not_claimed_resolver(rule, now):
     """
     Подарок из сториз/сайта получен, но не активирован в кафе.
@@ -449,7 +494,64 @@ def get_events() -> dict:
             placeholders=('{имя}', '{подарок}', '{дней_осталось}', '{адреса}', '{баланс}'),
             default_delay_days=2,
         ),
+        # ── №78: телефон гостя (17.09.2026) ───────────────────────────────────
+        T.PHONE_REQUEST: EventSpec(
+            label='Просьба поделиться номером (через N дней после визита)', dedup=DEDUP_ENTITY,
+            resolver=_phone_request_resolver,
+            placeholders=('{имя}', '{адреса}', '{баланс}', '{награда}'),
+            default_delay_days=1,
+        ),
     }
+
+
+PHONE_REQUEST_EVENT = 'phone_request'   # == AutoBroadcastType.PHONE_REQUEST, без импорта модели
+
+
+def _phone_reward_coins() -> int:
+    """Баллы за номер телефона (№78) — настройка сети ClientConfig.guest_phone_reward_coins."""
+    try:
+        cfg = _tenant_client_config()
+        return int(getattr(cfg, 'guest_phone_reward_coins', 0) or 0)
+    except Exception:
+        return 0
+
+
+def _tenant_client_id():
+    """Публичный client_id компании текущего тенанта (для ссылки на мини-апп) или None."""
+    from django.db import connection
+    from django_tenants.utils import get_tenant_model
+
+    company = getattr(connection, 'tenant', None)
+    if company is not None and getattr(company, 'pk', None):
+        return getattr(company, 'client_id', None)
+    schema = getattr(company, 'schema_name', None) or getattr(connection, 'schema_name', '')
+    if not schema or schema == 'public':
+        return None
+    real = get_tenant_model().objects.filter(schema_name=schema).first()
+    return getattr(real, 'client_id', None) if real else None
+
+
+def phone_request_keyboard(c: Candidate) -> dict | None:
+    """
+    Кнопка под сообщением №78: открывает мини-апп той же сети и точки с
+    `phone=true` — апа сразу ведёт в профиль и раскрывает панель согласия.
+    Ссылка того же вида, что QR точки в админке. Нативной кнопки «поделиться
+    телефоном» у сообщений ВК нет, поэтому open_link.
+    """
+    from django.conf import settings
+
+    app_id = getattr(settings, 'VK_MINI_APP_ID', '')
+    client_id = _tenant_client_id()
+    if not app_id or not client_id:
+        return None
+    branch = getattr(c.client_branch, 'branch', None)
+    branch_id = getattr(branch, 'branch_id', None)
+    link = f'https://vk.com/app{app_id}/#/?company={client_id}'
+    if branch_id:
+        link += f'&branch={branch_id}'
+    link += '&phone=true'
+    label = 'Поделиться номером и получить баллы' if _phone_reward_coins() > 0 else 'Поделиться номером'
+    return {'inline': True, 'buttons': [[{'action': {'type': 'open_link', 'link': link, 'label': label}}]]}
 
 
 # ── A/B-варианты ─────────────────────────────────────────────────────────────
@@ -914,6 +1016,9 @@ def render_text(rule, c: Candidate, variant=None, template_override=None) -> str
     if '{баланс}' in template:
         # Лениво: баланс считается только когда переменная реально в тексте.
         template = template.replace('{баланс}', str(_coin_balance(c.client_branch)))
+    if '{награда}' in template:
+        # №78: баллы за номер телефона из настроек сети.
+        template = template.replace('{награда}', str(_phone_reward_coins()))
     return (
         template
         .replace('{имя}', getattr(c.client_branch.client, 'first_name', '') or '')
@@ -1110,11 +1215,14 @@ def run_rule(rule, now=None, dry_run: bool = False) -> dict:
                     continue
                 template_override = fallback
 
+        # №78: под просьбой о номере — кнопка, открывающая мини-апп на панели согласия.
+        keyboard = phone_request_keyboard(c) if rule.event == PHONE_REQUEST_EVENT else None
         try:
             ok, err, vk_msg_id = send_vk_message(
                 senler_cfg, c.vk_id,
                 render_text(rule, c, variant, template_override=template_override),
                 attachment,
+                keyboard=keyboard,
             )
         except SoftTimeLimitExceeded:
             # Таймаут между выдачей и отправкой: подарок без сообщения

@@ -60,6 +60,7 @@ def get_tenant_domain(client_id: int) -> dict:
         # №78: кнопка «Поделиться номером» в мини-аппе = общий выключатель платформы
         # (settings.GUEST_PHONE_ENABLED) И флаг сети (ClientConfig). Выкл — как раньше.
         'guest_phone_enabled': _guest_phone_enabled(config),
+        'guest_phone_reward_coins': int(getattr(config, 'guest_phone_reward_coins', 0) or 0) if _guest_phone_enabled(config) else 0,
     }
 
 

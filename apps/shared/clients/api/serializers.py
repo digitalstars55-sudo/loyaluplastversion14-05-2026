@@ -14,3 +14,5 @@ class TenantDomainResponseSerializer(serializers.Serializer):
     # №78: показывать ли гостю кнопку «Поделиться номером» (settings.GUEST_PHONE_ENABLED,
     # общий на платформу). default=False: старый ответ сериализуется как раньше.
     guest_phone_enabled = serializers.BooleanField(default=False)
+    # №78: баллы за номер (0 — без награды); мини-апп показывает «+N баллов» в панели согласия.
+    guest_phone_reward_coins = serializers.IntegerField(default=0)
