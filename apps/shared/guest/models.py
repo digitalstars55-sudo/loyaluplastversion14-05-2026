@@ -37,11 +37,16 @@ class Client(TimeStampedModel):
     # (apps/tenant/branch/api/client_phone.py). Пусто = гость номер не давал;
     # старый код этих полей не читает, так что с выключенным флагом
     # GUEST_PHONE_ENABLED всё ведёт себя как раньше.
+    # ⚠️ db_default обязателен: guest_client пишут и web, и celery; после
+    # миграции до перезапуска старый код вставляет строки без новых колонок —
+    # без дефолта на уровне БД это IntegrityError (17.09: поллинг ВК 25 минут
+    # не мог завести новых гостей из-за phone_placement).
     phone = models.CharField(
         'Телефон',
         max_length=20,
         blank=True,
         default='',
+        db_default='',
         help_text='E.164 (+7…), с согласия гостя через ВКонтакте.',
     )
     phone_source = models.CharField(
@@ -49,6 +54,7 @@ class Client(TimeStampedModel):
         max_length=16,
         blank=True,
         default='',
+        db_default='',
         help_text="'vk' — подпись ВК сошлась; 'vk_unverified' — сохранён в режиме наблюдения без проверки подписи.",
     )
     phone_consent_at = models.DateTimeField(
@@ -62,6 +68,7 @@ class Client(TimeStampedModel):
         max_length=32,
         blank=True,
         default='',
+        db_default='',
         help_text="Место в мини-аппе: 'profile', 'review', … — чтобы сравнивать, где гости соглашаются.",
     )
     phone_reward_at = models.DateTimeField(
