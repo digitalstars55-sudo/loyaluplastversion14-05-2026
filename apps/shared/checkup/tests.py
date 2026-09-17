@@ -19,8 +19,8 @@ from apps.shared.users.models import User
 
 from .models import CheckUpIdentity
 from .services import (
-    ExchangeError, allowed_tenants, issue_exchange_token, perform_exchange,
-    username_for, validate_payload,
+    ExchangeError, allowed_tenants, branches_payload, issue_exchange_token,
+    perform_exchange, username_for, validate_payload,
 )
 from .views import TokenExchangeView
 
@@ -232,6 +232,17 @@ class PerformExchangeTest(TestCase):
         self.assertEqual(second['user'].first_name, 'Алина П.')
 
     @mock.patch('apps.shared.checkup.services.resolve_branch_pks', return_value=[11, 12])
+    def test_client_exchange_returns_branch_pairs(self, _resolve):
+        # Ответ обмена несёт мэппинг, иначе BFF CheckUp не знает внутренних id.
+        result = perform_exchange(_good(role='client', branch_ids=[101, 102]))
+        self.assertEqual(result['branches'],
+                         [{'branch_id': 101, 'id': 11}, {'branch_id': 102, 'id': 12}])
+
+    def test_network_admin_exchange_returns_none_branches(self):
+        self.assertIsNone(perform_exchange(_good())['branches'],
+                          'у админа сети точки не перечисляем — их берут из analytics/branches')
+
+    @mock.patch('apps.shared.checkup.services.resolve_branch_pks', return_value=[11, 12])
     def test_client_gets_branch_pks_not_public_ids(self, resolve):
         result = perform_exchange(_good(role='client', branch_ids=[101, 102]))
         resolve.assert_called_once_with('sandbox_t', [101, 102])
@@ -312,3 +323,23 @@ class PerformExchangeTest(TestCase):
         self.assertTrue(3500 <= body['expires_in'] <= 3600)
         expires = datetime.datetime.fromisoformat(body['expires_at'])
         self.assertIsNotNone(expires.tzinfo)
+
+
+# ── branches_payload: пары «публичный branch_id → внутренний id» ─────────────
+
+class BranchesPayloadTest(SimpleTestCase):
+    """CheckUp знает точку по публичному branch_id, фильтры наших ручек — по id."""
+
+    def test_pairs_keep_the_order_of_requested_ids(self):
+        self.assertEqual(
+            branches_payload([101, 102], [11, 12]),
+            [{'branch_id': 101, 'id': 11}, {'branch_id': 102, 'id': 12}],
+        )
+
+    def test_network_admin_gets_none_not_empty_list(self):
+        # None = «все точки сети», пустой список значил бы «точек нет».
+        self.assertIsNone(branches_payload([], None))
+
+    def test_no_query_to_the_tenant(self):
+        # Чистая функция: если она полезет в базу, тест упадёт на SimpleTestCase.
+        self.assertEqual(branches_payload([7], [70]), [{'branch_id': 7, 'id': 70}])

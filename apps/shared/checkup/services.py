@@ -196,6 +196,26 @@ def resolve_branch_pks(schema: str, public_ids: list[int]) -> list[int]:
     return [found[b] for b in public_ids]
 
 
+def branches_payload(public_ids: list[int], branch_pks: list[int] | None) -> list[dict] | None:
+    """Пары «публичный branch_id → внутренний id» для точек сотрудника.
+
+    CheckUp знает точку только по публичному `branch_id` (он в `LoyalupBranchMap`,
+    в QR и в жалобах), а фильтры ручек раздела 3 принимают внутренний `id`. Без
+    этой пары BFF пришлось бы держать свой словарь и угадывать соответствие.
+
+    Запроса в базу тут нет: `resolve_branch_pks` уже вернул внутренние id РОВНО
+    в порядке присланных публичных, остаётся сложить их вместе.
+
+    `None` (а не пустой список) — это `network_admin`: у него доступны ВСЕ точки
+    сети, их список CheckUp берёт из `GET /api/v1/analytics/branches/`, где с
+    18.09.2026 рядом с `id` лежит `branch_id`. Пустой список означал бы «точек
+    нет», это другое.
+    """
+    if branch_pks is None:
+        return None
+    return [{'branch_id': public_id, 'id': pk} for public_id, pk in zip(public_ids, branch_pks)]
+
+
 def username_for(checkup_user_id: str, schema: str) -> str:
     return f'{USERNAME_PREFIX}{checkup_user_id}-{schema}'[:150]
 
@@ -287,4 +307,5 @@ def perform_exchange(data) -> dict:
     log.info('exchange: %s checkup=%s tenant=%s role=%s branches=%s',
              'создан' if created else 'обновлён', p['checkup_user_id'], schema, p['role'], p['branch_ids'])
     return {'user': user, 'identity': identity, 'tenant': tenant,
-            'token': token, 'expires_at': expires_at, 'created': created}
+            'token': token, 'expires_at': expires_at, 'created': created,
+            'branches': branches_payload(p['branch_ids'], branch_pks)}

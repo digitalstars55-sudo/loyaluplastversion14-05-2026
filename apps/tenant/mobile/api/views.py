@@ -55,6 +55,55 @@ class MobileBranchListAPIView(generics.ListAPIView):
 # ════════════════════════════════════════════════════════════════════
 # Reviews
 # ════════════════════════════════════════════════════════════════════
+# Карточка отзыва собирается из этих двух кусков и в списке, и в ручке одного
+# отзыва (18.09.2026, контракт платформы): форма ответа обязана совпадать, иначе
+# CheckUp увидит в детали не то, что в ленте.
+def review_card_context(ctx: dict) -> dict:
+    """Контекст сериализатора карточки: фолбэк-ссылки точки + подпись автоответа."""
+    # Фолбэк-ссылки основной точки — для отзывов без привязки к кафе.
+    from apps.tenant.branch.api.services import get_fallback_review_links
+    fb_ya, fb_gis = get_fallback_review_links()
+    ctx['fb_yandex'] = fb_ya
+    ctx['fb_2gis'] = fb_gis
+    # Автоответ уйдёт с кнопками Яндекс/2ГИС? (подпись в баннере «ИИ ответит…»)
+    try:
+        from apps.tenant.branch.models import ReviewAutoReplyConfig
+        ctx['auto_send_attach_links'] = bool(
+            ReviewAutoReplyConfig.get_singleton().auto_send_attach_links
+        )
+    except Exception:
+        ctx['auto_send_attach_links'] = False
+    return ctx
+
+
+def review_card_queryset(request):
+    """Треды, видимые этому сотруднику: база + RBAC по точкам, без UI-фильтров."""
+    from apps.shared.users.access import user_allowed_branches, current_schema_name
+    # Треды без единого сообщения (last_message_at=NULL — остатки старых
+    # чисток VK) исключаем: показывать в них нечего, а Postgres при
+    # ORDER BY DESC ставит NULL ПЕРВЫМИ — они забивали верх списка
+    # пустыми карточками и прятали настоящие отзывы.
+    qs = TestimonialConversation.objects.select_related(
+        'branch', 'client__client', 'vk_guest', 'inferred_branch',
+    ).prefetch_related(
+        Prefetch('messages', queryset=TestimonialMessage.objects.select_related('branch')),
+    ).exclude(
+        last_message_at__isnull=True,
+    ).order_by('-last_message_at', '-id')
+
+    # RBAC: ограничиваем выдачу по точкам, к которым у user'а доступ.
+    # NULL branch (VK-conv без точки) — показываем только если есть ХОТЯ БЫ
+    # одна разрешённая точка (RBAC-юзер с branch=None conv видит всех гостей,
+    # т.к. VK-сообщения общие по сети, а не по точке).
+    allowed = user_allowed_branches(request.user, current_schema_name())
+    if allowed is not None:
+        if not allowed:
+            return qs.none()
+        from django.db.models import Q
+        qs = qs.filter(Q(branch_id__in=allowed) | Q(branch__isnull=True))
+    return qs
+
+
 class MobileReviewListAPIView(generics.ListAPIView):
     """
     GET /api/v1/mobile/reviews/?branch_ids=1,2&period=30
@@ -69,47 +118,10 @@ class MobileReviewListAPIView(generics.ListAPIView):
     serializer_class = ReviewListSerializer
 
     def get_serializer_context(self):
-        ctx = super().get_serializer_context()
-        # Фолбэк-ссылки основной точки — для отзывов без привязки к кафе.
-        from apps.tenant.branch.api.services import get_fallback_review_links
-        fb_ya, fb_gis = get_fallback_review_links()
-        ctx['fb_yandex'] = fb_ya
-        ctx['fb_2gis'] = fb_gis
-        # Автоответ уйдёт с кнопками Яндекс/2ГИС? (подпись в баннере «ИИ ответит…»)
-        try:
-            from apps.tenant.branch.models import ReviewAutoReplyConfig
-            ctx['auto_send_attach_links'] = bool(
-                ReviewAutoReplyConfig.get_singleton().auto_send_attach_links
-            )
-        except Exception:
-            ctx['auto_send_attach_links'] = False
-        return ctx
+        return review_card_context(super().get_serializer_context())
 
     def get_queryset(self):
-        from apps.shared.users.access import user_allowed_branches, current_schema_name
-        # Треды без единого сообщения (last_message_at=NULL — остатки старых
-        # чисток VK) исключаем: показывать в них нечего, а Postgres при
-        # ORDER BY DESC ставит NULL ПЕРВЫМИ — они забивали верх списка
-        # пустыми карточками и прятали настоящие отзывы.
-        qs = TestimonialConversation.objects.select_related(
-            'branch', 'client__client', 'vk_guest', 'inferred_branch',
-        ).prefetch_related(
-            Prefetch('messages', queryset=TestimonialMessage.objects.select_related('branch')),
-        ).exclude(
-            last_message_at__isnull=True,
-        ).order_by('-last_message_at', '-id')
-
-        # RBAC: ограничиваем выдачу по точкам, к которым у user'а доступ.
-        # NULL branch (VK-conv без точки) — показываем только если есть ХОТЯ БЫ
-        # одна разрешённая точка (RBAC-юзер с branch=None conv видит всех гостей,
-        # т.к. VK-сообщения общие по сети, а не по точке).
-        allowed = user_allowed_branches(self.request.user, current_schema_name())
-        if allowed is not None:
-            if not allowed:
-                qs = qs.none()
-            else:
-                from django.db.models import Q
-                qs = qs.filter(Q(branch_id__in=allowed) | Q(branch__isnull=True))
+        qs = review_card_queryset(self.request)
 
         # Фильтр по точкам (выбор пользователем в UI). Пересекаем с RBAC.
         branch_ids_raw = self.request.query_params.get('branch_ids')
@@ -164,6 +176,29 @@ class MobileReviewListAPIView(generics.ListAPIView):
             qs = qs[offset:]
         ser = self.get_serializer(qs, many=True)
         return Response({'reviews': ser.data, 'total': total, 'limit': limit, 'offset': offset})
+
+
+class MobileReviewDetailAPIView(generics.RetrieveAPIView):
+    """
+    GET /api/v1/mobile/reviews/{review_id}/
+
+    Одна карточка отзыва — РОВНО той же формы, что элемент `reviews` в списке
+    (18.09.2026, просьба стороны CheckUp: открыть отзыв по ссылке из карточки
+    жалобы, не выкачивая ленту целиком). Новых данных не показывает: и база, и
+    RBAC те же, что у списка — `review_card_queryset`.
+
+    Чужой или несуществующий тред — `404`, а не `403`: по разнице кодов можно
+    было бы пересчитать треды соседней точки.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = ReviewListSerializer
+    lookup_url_kwarg = 'review_id'
+
+    def get_serializer_context(self):
+        return review_card_context(super().get_serializer_context())
+
+    def get_queryset(self):
+        return review_card_queryset(self.request)
 
 
 def _check_conv_access(request, conv) -> bool:

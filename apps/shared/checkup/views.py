@@ -79,5 +79,8 @@ class TokenExchangeView(View):
             'tenant_schema': result['tenant'].schema_name,
             'tenant_domain': profile.get('tenant_domain'),
             'created': result['created'],
+            # Пары «публичный branch_id → внутренний id» точек сотрудника;
+            # null у network_admin = все точки сети (см. branches_payload).
+            'branches': result['branches'],
             'profile': profile,
         })

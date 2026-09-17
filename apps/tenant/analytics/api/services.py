@@ -2736,8 +2736,10 @@ def get_branches_list() -> list[dict]:
     """All branches for the filter UI."""
     from apps.tenant.branch.models import Branch
 
+    # branch_id (публичный, тот же что в QR и жалобах) — рядом с внутренним id:
+    # по нему CheckUp сводит свой LoyalupBranchMap с фильтрами наших ручек.
     return list(
-        Branch.objects.filter(is_active=True).values('id', 'name').order_by('name')
+        Branch.objects.filter(is_active=True).values('id', 'branch_id', 'name').order_by('name')
     )
 
 

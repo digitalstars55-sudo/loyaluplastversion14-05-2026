@@ -94,3 +94,54 @@ class ApplyReviewFiltersTest(TestCase):
         w = _where(apply_review_filters(self.base, {'q': '  12345 '}))
         self.assertIn('vk_sender_id', w)
         self.assertIn('first_name', w)
+
+
+# ──────────────────────────────────────────────────────────────────
+# Ручка одного отзыва (18.09.2026): форма карточки та же, что в ленте
+# ──────────────────────────────────────────────────────────────────
+from types import SimpleNamespace  # noqa: E402
+from unittest import mock  # noqa: E402
+
+from django.urls import reverse  # noqa: E402
+
+from apps.shared.users.models import User  # noqa: E402
+
+from .api.views import (  # noqa: E402
+    MobileReviewDetailAPIView, MobileReviewListAPIView, review_card_queryset,
+)
+
+
+def _su_request():
+    """Запрос суперадмина без БД: RBAC для него не ограничивает выдачу."""
+    return SimpleNamespace(user=User(username='su', is_superuser=True), query_params={})
+
+
+class ReviewDetailEndpointTest(TestCase):
+    """Деталь отзыва не должна показывать ни больше данных, ни другую форму."""
+
+    def test_route_registered(self):
+        self.assertEqual(reverse('mobile-review-detail', args=[7]), '/api/v1/mobile/reviews/7/')
+
+    def test_same_serializer_as_the_list(self):
+        # Карточка обязана совпадать с элементом reviews из списка (контракт).
+        self.assertIs(MobileReviewDetailAPIView.serializer_class,
+                      MobileReviewListAPIView.serializer_class)
+
+    def test_queryset_is_the_list_queryset_without_ui_filters(self):
+        req = _su_request()
+        detail = MobileReviewDetailAPIView()
+        detail.request = req
+        listing = MobileReviewListAPIView()
+        listing.request = req
+        self.assertEqual(str(detail.get_queryset().query), str(listing.get_queryset().query))
+
+    def test_lookup_is_review_id_from_the_url(self):
+        self.assertEqual(MobileReviewDetailAPIView.lookup_url_kwarg, 'review_id')
+
+    def test_rbac_without_points_returns_nothing(self):
+        # Сотрудник без разрешённых точек не видит ни одного треда — ни в
+        # списке, ни по прямой ссылке (иначе деталь стала бы обходом прав).
+        # .none() вычисляется без обращения к базе, поэтому list() тут безопасен.
+        with mock.patch('apps.shared.users.access.user_allowed_branches', return_value=set()):
+            qs = review_card_queryset(SimpleNamespace(user=User(username='nobody'), query_params={}))
+        self.assertEqual(list(qs), [])

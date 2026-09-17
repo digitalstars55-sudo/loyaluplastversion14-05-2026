@@ -10,6 +10,7 @@ from .views import (
     AutoBroadcastRuleDetailAPIView,
     AutoBroadcastRulePreviewAPIView,
     MobileBranchListAPIView,
+    MobileReviewDetailAPIView,
     MobileReviewListAPIView,
     MobileReviewMessagesAPIView,
     MobileReviewReplyAPIView,
@@ -181,6 +182,11 @@ urlpatterns = [
         'mobile/reviews/',
         MobileReviewListAPIView.as_view(),
         name='mobile-review-list',
+    ),
+    path(
+        'mobile/reviews/<int:review_id>/',
+        MobileReviewDetailAPIView.as_view(),
+        name='mobile-review-detail',
     ),
     path(
         'mobile/reviews/<int:review_id>/messages/',
