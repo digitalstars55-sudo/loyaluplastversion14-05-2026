@@ -6,10 +6,11 @@ from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase
 
-from apps.tenant.branch.api.vk_message_event import build_payload, handle_message_event
+from apps.tenant.branch.api.vk_message_event import build_payload, event_data_for_link, handle_message_event
 
 LINK = 'https://vk.com/app53418653/#/?company=1&branch=2&source=rfm&phone=true'
-CFG = SimpleNamespace(vk_community_token='tok')
+CFG = SimpleNamespace(vk_community_token='tok', vk_group_id=211202938)
+OPEN_APP = {'type': 'open_app', 'app_id': 53418653, 'hash': '/?company=1&branch=2&source=rfm&phone=true', 'owner_id': -211202938}
 
 
 def _event(payload, **kw):
@@ -27,8 +28,13 @@ class MessageEventTest(SimpleTestCase):
             self.assertTrue(handle_message_event(CFG, _event(json.loads(build_payload(LINK)))))
         data = post.call_args[1]['data']
         self.assertEqual((data['event_id'], data['user_id'], data['peer_id']), ('e1', 123, 123))
-        self.assertEqual(json.loads(data['event_data']), {'type': 'open_link', 'link': LINK})
+        self.assertEqual(json.loads(data['event_data']), OPEN_APP)
         self.assertEqual(data['access_token'], 'tok')
+
+    def test_event_data_open_app_vs_open_link(self):
+        self.assertEqual(event_data_for_link(LINK, 211202938), OPEN_APP)
+        self.assertEqual(event_data_for_link(LINK, None), {'type': 'open_app', 'app_id': 53418653, 'hash': '/?company=1&branch=2&source=rfm&phone=true'})
+        self.assertEqual(event_data_for_link('https://vk.com/apparel', 1), {'type': 'open_link', 'link': 'https://vk.com/apparel'})
 
     def test_payload_as_string_is_accepted(self):
         resp = MagicMock()

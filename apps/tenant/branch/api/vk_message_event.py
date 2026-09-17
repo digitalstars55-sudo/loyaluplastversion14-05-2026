@@ -20,6 +20,7 @@ Callback API нашего сервера (`groups.setCallbackSettings … messag
 
 import json
 import logging
+import re
 
 import requests
 
@@ -29,6 +30,26 @@ PAYLOAD_KEY = 'lu'                    # маркер наших кнопок
 PAYLOAD_PHONE_REQUEST = 'phone_request'
 VK_API_VERSION = '5.131'
 _ALLOWED_LINK_PREFIX = 'https://vk.com/app'
+_APP_LINK_RE = re.compile(r'^https://vk\.com/app(\d+)/?#(.*)$')
+
+
+def event_data_for_link(link: str, group_id=None) -> dict:
+    """
+    Что ответить ВК, чтобы клиент открыл мини-апп. Для ссылки вида
+    https://vk.com/app<id>/#<hash> — `open_app` (нативное открытие мини-аппа,
+    hash уходит в адрес апы как есть), иначе — `open_link`.
+    """
+    m = _APP_LINK_RE.match(link)
+    if not m:
+        return {'type': 'open_link', 'link': link}
+    data = {'type': 'open_app', 'app_id': int(m.group(1)), 'hash': m.group(2)}
+    try:
+        gid = int(group_id) if group_id else 0
+    except (TypeError, ValueError):
+        gid = 0
+    if gid:
+        data['owner_id'] = -abs(gid)
+    return data
 
 
 def build_payload(url: str) -> str:
@@ -47,6 +68,10 @@ def handle_message_event(config, obj: dict) -> bool:
             payload = json.loads(payload)
         except ValueError:
             payload = None
+    # Приём события — на WARNING: корень логов прода стоит на WARNING, а событий
+    # единицы в день; по этой строке видно, что нажатие вообще дошло.
+    log.warning('vk message_event: received user=%s payload_keys=%s',
+                obj.get('user_id'), sorted(payload.keys()) if isinstance(payload, dict) else type(payload).__name__)
     if not isinstance(payload, dict) or payload.get(PAYLOAD_KEY) != PAYLOAD_PHONE_REQUEST:
         return False
 
@@ -61,6 +86,7 @@ def handle_message_event(config, obj: dict) -> bool:
         log.warning('vk message_event: нет токена сообщества, user=%s', user_id)
         return False
 
+    event_data = event_data_for_link(link, getattr(config, 'vk_group_id', None))
     try:
         resp = requests.post(
             'https://api.vk.com/method/messages.sendMessageEventAnswer',
@@ -68,7 +94,7 @@ def handle_message_event(config, obj: dict) -> bool:
                 'event_id': event_id,
                 'user_id': user_id,
                 'peer_id': peer_id,
-                'event_data': json.dumps({'type': 'open_link', 'link': link}, ensure_ascii=False),
+                'event_data': json.dumps(event_data, ensure_ascii=False),
                 'access_token': token,
                 'v': VK_API_VERSION,
             },
@@ -82,5 +108,5 @@ def handle_message_event(config, obj: dict) -> bool:
     if 'error' in data:
         log.warning('vk message_event: VK API error user=%s: %s', user_id, data['error'].get('error_msg'))
         return False
-    log.info('vk message_event: phone_request → open_link user=%s', user_id)
+    log.warning('vk message_event: phone_request → %s user=%s response=%s', event_data['type'], user_id, data.get('response'))
     return True
