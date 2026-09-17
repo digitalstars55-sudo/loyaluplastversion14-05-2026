@@ -536,9 +536,13 @@ def phone_request_keyboard(c: Candidate) -> dict | None:
     Кнопка под сообщением №78: открывает мини-апп той же сети и точки с
     `phone=true` — апа сразу ведёт в профиль и раскрывает панель согласия.
     Ссылка того же вида, что QR точки в админке. Нативной кнопки «поделиться
-    телефоном» у сообщений ВК нет, поэтому open_link.
+    телефоном» у сообщений ВК нет; у ссылочных кнопок нет цвета — поэтому
+    ЦВЕТНАЯ callback-кнопка: по нажатию ВК шлёт message_event на наш callback,
+    и мы отвечаем «открыть ссылку» (branch/api/vk_message_event.py).
+    Текст короткий, чтобы влезал целиком на телефоне.
     """
     from django.conf import settings
+    from apps.tenant.branch.api.vk_message_event import build_payload
 
     app_id = getattr(settings, 'VK_MINI_APP_ID', '')
     client_id = _tenant_client_id()
@@ -552,8 +556,15 @@ def phone_request_keyboard(c: Candidate) -> dict | None:
     # source=rfm — как у ссылок RFM-рассылок: гость пришёл из сообщения, а не
     # сканировал QR в кафе → визит в точку НЕ пишется, игра в этом сеансе закрыта.
     link += '&source=rfm&phone=true'
-    label = 'Поделиться номером и получить баллы' if _phone_reward_coins() > 0 else 'Поделиться номером'
-    return {'inline': True, 'buttons': [[{'action': {'type': 'open_link', 'link': link, 'label': label}}]]}
+    reward = _phone_reward_coins()
+    label = f'Оставить номер · +{reward} баллов' if reward > 0 else 'Поделиться номером'
+    return {
+        'inline': True,
+        'buttons': [[{
+            'action': {'type': 'callback', 'label': label, 'payload': build_payload(link)},
+            'color': 'primary',
+        }]],
+    }
 
 
 # ── A/B-варианты ─────────────────────────────────────────────────────────────

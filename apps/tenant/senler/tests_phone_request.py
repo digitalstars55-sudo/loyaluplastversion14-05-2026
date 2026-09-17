@@ -1,5 +1,6 @@
 """Авторассылка «Просьба поделиться номером» (№78): кнопка и плейсхолдер {награда}. Без БД."""
 
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -22,17 +23,22 @@ class PhoneRequestKeyboardTest(SimpleTestCase):
                 patch.object(engine, '_phone_reward_coins', return_value=50):
             kb = phone_request_keyboard(_cand())
         self.assertTrue(kb['inline'])
-        btn = kb['buttons'][0][0]['action']
-        self.assertEqual(btn['type'], 'open_link')
-        self.assertEqual(btn['link'], 'https://vk.com/app53418653/#/?company=100&branch=239014483&source=rfm&phone=true')
-        self.assertEqual(btn['label'], 'Поделиться номером и получить баллы')
+        button = kb['buttons'][0][0]
+        self.assertEqual(button['color'], 'primary')
+        btn = button['action']
+        self.assertEqual(btn['type'], 'callback')
+        payload = json.loads(btn['payload'])
+        self.assertEqual(payload['lu'], 'phone_request')
+        self.assertEqual(payload['url'], 'https://vk.com/app53418653/#/?company=100&branch=239014483&source=rfm&phone=true')
+        self.assertLessEqual(len(btn['payload']), 255)
+        self.assertEqual(btn['label'], 'Оставить номер · +50 баллов')
 
     def test_label_without_reward(self):
         with patch.object(engine, '_tenant_client_id', return_value=100), \
                 patch.object(engine, '_phone_reward_coins', return_value=0):
             kb = phone_request_keyboard(_cand(branch_id=None))
         btn = kb['buttons'][0][0]['action']
-        self.assertEqual(btn['link'], 'https://vk.com/app53418653/#/?company=100&source=rfm&phone=true')
+        self.assertEqual(json.loads(btn['payload'])['url'], 'https://vk.com/app53418653/#/?company=100&source=rfm&phone=true')
         self.assertEqual(btn['label'], 'Поделиться номером')
 
     def test_no_company_no_keyboard(self):

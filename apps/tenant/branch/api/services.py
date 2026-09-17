@@ -354,6 +354,13 @@ def handle_vk_callback(data: dict) -> None:
         or configs[0]
     )
 
+    if event == 'message_event':
+        # №78: нажатие цветной callback-кнопки под сообщением («поделиться
+        # номером») → ответом открываем мини-апп. Чужие кнопки игнорируются.
+        from apps.tenant.branch.api.vk_message_event import handle_message_event
+        handle_message_event(config, data.get('object') or {})
+        return
+
     if event == 'message_new':
         msg_obj     = data.get('object', {})
         message     = msg_obj.get('message', msg_obj)
