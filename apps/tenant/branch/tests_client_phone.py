@@ -80,6 +80,16 @@ class ClientPhoneViewTest(TestCase):
         self.assertTrue(r.data['proven'])
         self.assertEqual(self._guest().phone_source, 'vk')
 
+    def test_placement_saved_and_sanitized(self):
+        r = self._post({'vk_id': VK_ID, 'phone_number': PHONE, 'sign': _sign(), 'placement': 'review'})
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data['placement'], 'review')
+        self.assertEqual(self._guest().phone_placement, 'review')
+        # мусор в placement не ломает запрос и не сохраняется
+        r = self._post({'vk_id': VK_ID, 'phone_number': PHONE, 'sign': _sign(), 'placement': 'Bad Place!'})
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(self._guest().phone_placement, '')
+
     def test_raw_phone_is_normalized_but_signed_as_is(self):
         raw = '+7 (999) 123-45-67'
         r = self._post({'vk_id': VK_ID, 'phone_number': raw, 'sign': _sign(phone=raw)})
@@ -150,7 +160,7 @@ class ClientPhoneViewTest(TestCase):
         self.assertEqual(r.status_code, 200, r.data)
         self.assertTrue(r.data['revoked'])
         g = self._guest()
-        self.assertEqual((g.phone, g.phone_source, g.phone_consent_at), ('', '', None))
+        self.assertEqual((g.phone, g.phone_source, g.phone_consent_at, g.phone_placement), ('', '', None, ''))
 
     def test_delete_unproven_is_403(self):
         self._post({'vk_id': VK_ID, 'phone_number': PHONE, 'sign': _sign()})

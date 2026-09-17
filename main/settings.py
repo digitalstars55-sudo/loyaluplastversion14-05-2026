@@ -476,5 +476,8 @@ LOGGING = {
     'root': {'handlers': ['console'], 'level': 'WARNING'},
     'loggers': {
         'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
+        # №78: строка наблюдения за согласиями на телефон (`guest phone: …`) —
+        # несколько событий в день, нужны в логе, а корень стоит на WARNING.
+        'apps.tenant.branch.api.client_phone': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
     },
 }

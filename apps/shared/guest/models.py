@@ -57,6 +57,13 @@ class Client(TimeStampedModel):
         blank=True,
         help_text='Когда гость поделился номером (окно согласия ВК).',
     )
+    phone_placement = models.CharField(
+        'Где дал номер',
+        max_length=32,
+        blank=True,
+        default='',
+        help_text="Место в мини-аппе: 'profile', 'review', … — чтобы сравнивать, где гости соглашаются.",
+    )
 
     is_active = models.BooleanField(
         default=True,
