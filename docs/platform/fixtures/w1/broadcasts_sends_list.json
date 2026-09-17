@@ -1,0 +1,46 @@
+{
+ "name": "broadcasts_sends_list",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/broadcasts/sends/?limit=5&offset=0",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "total": 1,
+   "limit": 5,
+   "offset": 0,
+   "results": [
+    {
+     "id": 3,
+     "status": "done",
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "name": "Fixture broadcast (renamed)",
+     "message_text": "Привет! Это тестовая рассылка песочницы CheckUp (запись фикстур, в ВК не уходит).",
+     "trigger_type": "manual",
+     "triggered_by": "checkup-fx-admin-dev",
+     "started_at": "2026-09-17T21:26:31.814587+00:00",
+     "finished_at": "2026-09-17T21:26:31.814590+00:00",
+     "recipients_count": 0,
+     "sent_count": 0,
+     "failed_count": 0,
+     "skipped_count": 0,
+     "read_count": 0,
+     "created_at": "2026-09-17T21:26:31.808615+00:00",
+     "can_cancel": false,
+     "can_edit_in_vk": false,
+     "can_delete_in_vk": false
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

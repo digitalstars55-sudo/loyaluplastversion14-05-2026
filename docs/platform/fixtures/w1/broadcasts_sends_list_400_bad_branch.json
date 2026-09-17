@@ -1,0 +1,22 @@
+{
+ "name": "broadcasts_sends_list_400_bad_branch",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/broadcasts/sends/?branch_id=abc",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "branch_id: ожидается число"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

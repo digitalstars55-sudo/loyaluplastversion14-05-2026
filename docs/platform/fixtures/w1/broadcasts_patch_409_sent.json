@@ -1,0 +1,24 @@
+{
+ "name": "broadcasts_patch_409_sent",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/broadcasts/2/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "Fixture broadcast (renamed)"
+  }
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "not_a_draft",
+   "detail": "Изменять можно только черновик"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

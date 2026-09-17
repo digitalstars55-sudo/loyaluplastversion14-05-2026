@@ -1,0 +1,24 @@
+{
+ "name": "broadcasts_send_400_confirm_required",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/broadcasts/2/send/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "expected_count": 4
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "confirm_required",
+   "detail": "Нужно подтверждение: confirm=true"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

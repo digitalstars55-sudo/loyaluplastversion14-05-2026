@@ -1,0 +1,27 @@
+{
+ "name": "broadcasts_create_403_branch_forbidden",
+ "note": "client of point 990002 cannot target another point",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/broadcasts/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "message_text": "Привет! Это тестовая рассылка песочницы CheckUp (запись фикстур, в ВК не уходит).",
+   "branch_ids": [
+    2
+   ]
+  }
+ },
+ "response": {
+  "status": 403,
+  "body": {
+   "code": "branch_forbidden",
+   "detail": "Нет доступа к выбранным точкам"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

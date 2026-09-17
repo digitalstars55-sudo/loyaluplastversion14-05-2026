@@ -1,0 +1,22 @@
+{
+ "name": "broadcasts_detail_404_foreign",
+ "note": "draft targeting another point is invisible to client",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/broadcasts/2/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 404,
+  "body": {
+   "code": "not_found",
+   "detail": "Черновик не найден"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

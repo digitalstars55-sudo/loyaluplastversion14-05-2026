@@ -1,0 +1,39 @@
+{
+ "name": "broadcasts_send_200",
+ "note": "VK delivery stubbed while recording: sent/failed counts synthetic",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/broadcasts/2/send/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "expected_count": 4,
+   "confirm": true
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "ok": true,
+   "queued": false,
+   "sends": [
+    {
+     "id": 3,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "recipients": 4,
+     "status": "done",
+     "sent": 0,
+     "failed": 0,
+     "skipped": 0,
+     "error": ""
+    }
+   ],
+   "total_recipients": 4
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

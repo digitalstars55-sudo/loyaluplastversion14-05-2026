@@ -17,3 +17,17 @@
 
 Перезаписать: `scratchpad/record_fixtures.py` на проде через `manage.py shell` (всё в
 транзакции с откатом) + обезличивание перед коммитом.
+
+## Дополнение 18.09.2026 — рассылки (возможности 11, 13) и телефон гостя (№78)
+
+- `broadcasts_*.json` — 25 записей на `dev` под теми же токенами обмена (`fx-admin` = `network_admin`, `fx-client` = `client` точки `990002`):
+  черновик (`create_201`, `create_400_invalid_payload`, `create_403_branch_forbidden`, `create_201_client_own_point`, `list`, `list_client_scoped`,
+  `detail`, `detail_404_foreign`, `patch_200`, `patch_400_invalid_status`, `delete_200`, `detail_404_deleted`), предпросмотр (`preview` — `count` возвращается
+  как `expected_count`), отправка (`send_400_expected_count_required`, `send_400_confirm_required`, `send_409_audience_changed`, `send_200`,
+  `send_409_already_sent`, `detail_after_send`, `patch_409_sent`, `delete_409_sent`), история и аварийные действия (`sends_list`, `sends_list_client_scoped`,
+  `sends_list_400_bad_branch`, `send_cancel_404`). В `branch_ids` черновика — **внутренние** `id` точек (не публичные `branch_id`).
+  Отправка в ВК при записи была **заглушена** (в песочнице настоящий токен сообщества): `sent/failed/skipped` в `send_200` и `sends_list` синтетические,
+  очередь Celery не трогалась. Записи `cancel_200`, `edit-in-vk`/`delete-in-vk` (409 на незавершённой) не получились: в песочнице аудитория второй
+  точки пуста, а без запуска в статусе pending/done их не снять — форма ответов этих трёх ручек описана в контракте (3.1, п. 13).
+- `guest_card.json` — к записи 16.09 дописаны `phone`, `phone_source`, `phone_consent_at` по форме сериализатора (значения синтетические).
+- Скрипт записи: `record_fixtures_w1b.py` (та же схема: транзакция с откатом, JWT → `<jwt>`, `unittest.mock.patch` на `run_broadcast` и `run_broadcast_task`).

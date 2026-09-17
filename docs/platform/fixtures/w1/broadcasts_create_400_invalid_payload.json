@@ -1,0 +1,27 @@
+{
+ "name": "broadcasts_create_400_invalid_payload",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/broadcasts/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "message_text": "   ",
+   "branch_ids": [
+    2
+   ]
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "Текст сообщения не может быть пустым"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

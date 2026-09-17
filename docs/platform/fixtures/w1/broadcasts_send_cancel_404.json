@@ -1,0 +1,24 @@
+{
+ "name": "broadcasts_send_cancel_404",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/broadcasts/sends/999999/cancel/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "confirm": true
+  }
+ },
+ "response": {
+  "status": 404,
+  "body": {
+   "code": "not_found",
+   "detail": "Запуск не найден"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,6 +1,6 @@
 {
  "name": "guest_card",
- "note": "",
+ "note": "Запись 16.09 (обезличена); 18.09 дописаны поля №78 по форме сериализатора карточки (apps/tenant/mobile/api/views.py, порядок ключей как в ответе): phone — E.164 или \"\", phone_source — \"vk\" (подпись ВК сошлась) | \"vk_unverified\" (режим наблюдения) | \"review\" (номер из последнего отзыва) | \"\" (нет), phone_consent_at — ISO-8601 или null. Значения синтетические.",
  "request": {
   "method": "GET",
   "path": "/api/v1/guests/100000001/",
@@ -13,10 +13,12 @@
  "response": {
   "status": 200,
   "body": {
-   "vk_id": "100000002",
+   "vk_id": "100000001",
    "first_name": "Гость",
    "last_name": "Тестовый",
-   "phone": "",
+   "phone": "+79000000000",
+   "phone_source": "vk",
+   "phone_consent_at": "2026-09-17T21:27:52.906140+00:00",
    "birthday": "2000-07-19",
    "registered_at": "2026-09-14T20:46:26.434012+00:00",
    "recency_days": 2,
@@ -48,6 +50,6 @@
    "reviews_count": 0
   }
  },
- "recorded_at": "2026-09-16",
+ "recorded_at": "2026-09-16 (поля телефона 2026-09-18)",
  "tenant": "dev (песочница)"
 }

@@ -1,0 +1,21 @@
+{
+ "name": "broadcasts_delete_200",
+ "note": "",
+ "request": {
+  "method": "DELETE",
+  "path": "/api/v1/broadcasts/3/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "ok": true
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

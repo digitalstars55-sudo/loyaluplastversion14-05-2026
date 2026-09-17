@@ -1,0 +1,24 @@
+{
+ "name": "broadcasts_sends_list_client_scoped",
+ "note": "client sees only sends of its points",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/broadcasts/sends/?limit=5&offset=0",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "total": 0,
+   "limit": 5,
+   "offset": 0,
+   "results": []
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

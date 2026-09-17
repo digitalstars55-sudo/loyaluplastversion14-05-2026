@@ -1,0 +1,44 @@
+{
+ "name": "broadcasts_detail_after_send",
+ "note": "status=sent, last_send_id filled",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/broadcasts/2/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "id": 2,
+   "name": "Fixture broadcast (renamed)",
+   "message_text": "Привет! Это тестовая рассылка песочницы CheckUp (запись фикстур, в ВК не уходит).",
+   "image": null,
+   "mode": "restaurant",
+   "segment": null,
+   "r_score": null,
+   "f_score": null,
+   "period": {
+    "start": null,
+    "end": null
+   },
+   "branch_ids": [
+    2,
+    3
+   ],
+   "gender_filter": "all",
+   "variants": [],
+   "status": "sent",
+   "created_by": "checkup-fx-admin-dev",
+   "sent_at": "2026-09-17T21:26:31.812999+00:00",
+   "last_send_id": 3,
+   "created_at": "2026-09-17T21:26:31.658904+00:00",
+   "updated_at": "2026-09-17T21:26:31.813166+00:00"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

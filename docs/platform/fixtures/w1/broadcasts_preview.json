@@ -1,0 +1,39 @@
+{
+ "name": "broadcasts_preview",
+ "note": "count goes back as expected_count on send",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/broadcasts/2/preview/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "count": 4,
+   "by_branch": [
+    {
+     "branch_id": 2,
+     "name": "Конференция \"Автосуши Автопицца\"",
+     "count": 4
+    },
+    {
+     "branch_id": 3,
+     "name": "Песочница CheckUp · Точка 2",
+     "count": 0
+    }
+   ],
+   "mode": "restaurant",
+   "segment": null,
+   "period": {
+    "start": null,
+    "end": null
+   }
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

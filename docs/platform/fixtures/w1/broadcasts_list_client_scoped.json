@@ -1,0 +1,50 @@
+{
+ "name": "broadcasts_list_client_scoped",
+ "note": "client sees only drafts whose branch_ids are within its points",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/broadcasts/?limit=5&offset=0",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "total": 1,
+   "limit": 5,
+   "offset": 0,
+   "results": [
+    {
+     "id": 3,
+     "name": "Fixture client draft",
+     "message_text": "Привет! Это тестовая рассылка песочницы CheckUp (запись фикстур, в ВК не уходит).",
+     "image": null,
+     "mode": "restaurant",
+     "segment": null,
+     "r_score": null,
+     "f_score": null,
+     "period": {
+      "start": null,
+      "end": null
+     },
+     "branch_ids": [
+      3
+     ],
+     "gender_filter": "all",
+     "variants": [],
+     "status": "draft",
+     "created_by": "checkup-fx-client-dev",
+     "sent_at": null,
+     "last_send_id": null,
+     "created_at": "2026-09-17T21:26:31.686897+00:00",
+     "updated_at": "2026-09-17T21:26:31.686910+00:00"
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,24 @@
+{
+ "name": "broadcasts_patch_400_invalid_status",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/broadcasts/2/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "status": "sent"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "status: допустимы только draft и archived"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

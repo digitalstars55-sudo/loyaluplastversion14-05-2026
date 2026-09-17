@@ -1,0 +1,27 @@
+{
+ "name": "broadcasts_send_409_audience_changed",
+ "note": "tolerance max(5, 10%) either way",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/broadcasts/2/send/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "expected_count": 104,
+   "confirm": true
+  }
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "audience_changed",
+   "detail": "Аудитория изменилась: показано 104, сейчас 4 — подтвердите заново",
+   "expected": 104,
+   "actual": 4
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

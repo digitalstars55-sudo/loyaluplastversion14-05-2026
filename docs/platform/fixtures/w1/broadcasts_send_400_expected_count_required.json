@@ -1,0 +1,24 @@
+{
+ "name": "broadcasts_send_400_expected_count_required",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/broadcasts/2/send/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "confirm": true
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "expected_count_required",
+   "detail": "Нужно передать expected_count — число получателей из предпросмотра"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}
