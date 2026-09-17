@@ -24,7 +24,7 @@ class PhoneRequestKeyboardTest(SimpleTestCase):
         self.assertTrue(kb['inline'])
         btn = kb['buttons'][0][0]['action']
         self.assertEqual(btn['type'], 'open_link')
-        self.assertEqual(btn['link'], 'https://vk.com/app53418653/#/?company=100&branch=239014483&phone=true')
+        self.assertEqual(btn['link'], 'https://vk.com/app53418653/#/?company=100&branch=239014483&source=rfm&phone=true')
         self.assertEqual(btn['label'], 'Поделиться номером и получить баллы')
 
     def test_label_without_reward(self):
@@ -32,7 +32,7 @@ class PhoneRequestKeyboardTest(SimpleTestCase):
                 patch.object(engine, '_phone_reward_coins', return_value=0):
             kb = phone_request_keyboard(_cand(branch_id=None))
         btn = kb['buttons'][0][0]['action']
-        self.assertEqual(btn['link'], 'https://vk.com/app53418653/#/?company=100&phone=true')
+        self.assertEqual(btn['link'], 'https://vk.com/app53418653/#/?company=100&source=rfm&phone=true')
         self.assertEqual(btn['label'], 'Поделиться номером')
 
     def test_no_company_no_keyboard(self):

@@ -549,7 +549,9 @@ def phone_request_keyboard(c: Candidate) -> dict | None:
     link = f'https://vk.com/app{app_id}/#/?company={client_id}'
     if branch_id:
         link += f'&branch={branch_id}'
-    link += '&phone=true'
+    # source=rfm — как у ссылок RFM-рассылок: гость пришёл из сообщения, а не
+    # сканировал QR в кафе → визит в точку НЕ пишется, игра в этом сеансе закрыта.
+    link += '&source=rfm&phone=true'
     label = 'Поделиться номером и получить баллы' if _phone_reward_coins() > 0 else 'Поделиться номером'
     return {'inline': True, 'buttons': [[{'action': {'type': 'open_link', 'link': link, 'label': label}}]]}
 
