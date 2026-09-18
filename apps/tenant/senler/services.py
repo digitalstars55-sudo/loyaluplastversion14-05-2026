@@ -172,7 +172,12 @@ def _is_messages_allowed(config: SenlerConfig, vk_user_id: int) -> tuple[bool, s
         return False, 'Пропущено: не удалось проверить доступ (VK %s)' % (
             data['error'].get('error_msg') or data['error'].get('error_code')
         )
-    if (data.get('response') or {}).get('is_allowed') == 1:
+    # Форму ответа проверяем явно: у VK `response` бывает не словарём
+    # (например числом), и `.get` на нём роняет гард AttributeError — то есть
+    # fail-closed превращается в падение задачи. Всё, что не «словарь с
+    # is_allowed == 1», считаем «не разрешено».
+    resp = data.get('response')
+    if isinstance(resp, dict) and resp.get('is_allowed') == 1:
         return True, ''
     return False, 'Пропущено: пользователь не разрешил сообщения сообществу (opt-in)'
 

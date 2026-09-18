@@ -105,13 +105,25 @@ class TestSendVkMessage(TestCase):
         c.vk_community_token = 'tok123'
         return c
 
+    def _allowed(self):
+        """
+        Подмена opt-in гарда (Fix B).
+
+        `_is_messages_allowed` вызывается ДО messages.send и делает СВОЙ запрос
+        к VK, поэтому единственный мок `requests.post` съедался им, а не
+        отправкой: тесты ниже проверяют messages.send, гард проверяется отдельно
+        в TestMessagesAllowedGuard.
+        """
+        return patch('apps.tenant.senler.services._is_messages_allowed',
+                     return_value=(True, ''))
+
     def test_success_returns_true(self):
         from apps.tenant.senler.services import send_vk_message
 
         mock_resp = MagicMock()
         mock_resp.json.return_value = {'response': 12345}
 
-        with patch('requests.post', return_value=mock_resp):
+        with self._allowed(), patch('requests.post', return_value=mock_resp):
             ok, err, _msg_id = send_vk_message(self._cfg(), 99999, 'Hello')
 
         self.assertTrue(ok)
@@ -126,7 +138,7 @@ class TestSendVkMessage(TestCase):
             'error': {'error_code': 7, 'error_msg': 'Permission denied'}
         }
 
-        with patch('requests.post', return_value=mock_resp):
+        with self._allowed(), patch('requests.post', return_value=mock_resp):
             ok, err, _msg_id = send_vk_message(self._cfg(), 99999, 'Hello')
 
         self.assertFalse(ok)
@@ -135,7 +147,7 @@ class TestSendVkMessage(TestCase):
     def test_network_exception_returns_false(self):
         from apps.tenant.senler.services import send_vk_message
 
-        with patch('requests.post', side_effect=ConnectionError('timeout')):
+        with self._allowed(), patch('requests.post', side_effect=ConnectionError('timeout')):
             ok, err, _msg_id = send_vk_message(self._cfg(), 99999, 'Hello')
 
         self.assertFalse(ok)
@@ -147,7 +159,7 @@ class TestSendVkMessage(TestCase):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {'response': 1}
 
-        with patch('requests.post', return_value=mock_resp) as mock_post:
+        with self._allowed(), patch('requests.post', return_value=mock_resp) as mock_post:
             send_vk_message(self._cfg(), 99999, 'Hi', attachment='photo-1_2')
 
         payload = mock_post.call_args.kwargs['data']
@@ -159,11 +171,70 @@ class TestSendVkMessage(TestCase):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {'response': 1}
 
-        with patch('requests.post', return_value=mock_resp) as mock_post:
+        with self._allowed(), patch('requests.post', return_value=mock_resp) as mock_post:
             send_vk_message(self._cfg(), 99999, 'Hi', attachment=None)
 
         payload = mock_post.call_args.kwargs['data']
         self.assertNotIn('attachment', payload)
+
+
+class TestMessagesAllowedGuard(TestCase):
+    """
+    Гард opt-in перед messages.send (Fix B): без него рассылка дёргает send
+    всем подряд, VK массово отвечает 901 и помечает сообщество спамом — рвутся
+    и рассылки, и ответы на отзывы (токен общий). Гард fail-closed: при любой
+    неоднозначности НЕ отправляем.
+    """
+
+    def _cfg(self):
+        c = MagicMock()
+        c.vk_community_token = 'tok123'
+        c.vk_group_id = 42
+        return c
+
+    def _guard(self, vk_payload):
+        from apps.tenant.senler.services import _is_messages_allowed
+        with patch('apps.tenant.senler.services._vk_call', return_value=vk_payload):
+            return _is_messages_allowed(self._cfg(), 99999)
+
+    def test_allowed(self):
+        self.assertEqual(self._guard({'response': {'is_allowed': 1}}), (True, ''))
+
+    def test_not_allowed_is_named_opt_in(self):
+        ok, reason = self._guard({'response': {'is_allowed': 0}})
+        self.assertFalse(ok)
+        self.assertIn('opt-in', reason)
+
+    def test_vk_error_closes_the_gate(self):
+        ok, reason = self._guard({'error': {'error_code': 7, 'error_msg': 'Permission denied'}})
+        self.assertFalse(ok)
+        self.assertIn('Permission denied', reason)
+
+    def test_unexpected_response_shape_closes_the_gate(self):
+        """`response` числом (а не словарём) — не отправляем, и НЕ падаем."""
+        for payload in ({'response': 12345}, {'response': None}, {}, {'response': []}):
+            with self.subTest(payload=payload):
+                ok, _ = self._guard(payload)
+                self.assertFalse(ok)
+
+    def test_vk_call_failure_closes_the_gate(self):
+        from apps.tenant.senler.services import _is_messages_allowed
+        with patch('apps.tenant.senler.services._vk_call',
+                   side_effect=RuntimeError('нет сети')):
+            ok, reason = _is_messages_allowed(self._cfg(), 99999)
+        self.assertFalse(ok)
+        self.assertIn('нет сети', reason)
+
+    def test_send_is_not_called_when_gate_is_closed(self):
+        """Главное: messages.send не дёргается вообще, а не «дёргается и падает»."""
+        from apps.tenant.senler.services import send_vk_message
+        with patch('apps.tenant.senler.services._is_messages_allowed',
+                   return_value=(False, 'Пропущено: opt-in')), \
+             patch('requests.post') as mock_post:
+            ok, reason, msg_id = send_vk_message(self._cfg(), 99999, 'Hi')
+        self.assertEqual((ok, msg_id), (False, None))
+        self.assertIn('opt-in', reason)
+        mock_post.assert_not_called()
 
 
 class TestUploadVkPhoto(TestCase):
@@ -246,6 +317,11 @@ class SendBirthdayBroadcastsTaskTest(TestCase):
     _CB     = 'apps.tenant.branch.models.ClientBranch'
     _LOG    = 'apps.tenant.senler.models.AutoBroadcastLog'
     _BS     = 'apps.tenant.senler.models.BroadcastSend'
+    # Получателей обязательно подменять вместе с рассылкой: FK строгий, и
+    # `BroadcastRecipient(send=<мок BroadcastSend>)` роняет ValueError внутри
+    # задачи — она проглатывает его как «ошибку получателя», отправка тихо не
+    # происходит, а тесты падают на цифрах в самом конце.
+    _BR     = 'apps.tenant.senler.models.BroadcastRecipient'
     _SEND   = 'apps.tenant.senler.services.send_vk_message'
     _UPLOAD = 'apps.tenant.senler.services.upload_vk_photo'
     _TIME   = 'apps.tenant.senler.tasks.time'
@@ -265,6 +341,7 @@ class SendBirthdayBroadcastsTaskTest(TestCase):
              patch(self._CB) as MockCB, \
              patch(self._LOG) as MockLog, \
              patch(self._BS) as MockBS, \
+             patch(self._BR), \
              patch(self._SEND, return_value=send_result) as mock_send, \
              patch(self._UPLOAD, return_value=upload_result) as mock_upload, \
              patch(self._TIME) as mock_time:
@@ -480,6 +557,7 @@ class SendBirthdayBroadcastsTaskTest(TestCase):
              patch(self._CB) as MockCB, \
              patch(self._LOG) as MockLog, \
              patch(self._BS), \
+             patch(self._BR), \
              patch(self._SEND, return_value=(True, '', 12345)) as mock_send, \
              patch(self._TIME):
 
@@ -505,6 +583,7 @@ class SendAfterGameBroadcastTaskTest(TestCase):
     _ATTEMPT = 'apps.tenant.game.models.ClientAttempt'
     _LOG     = 'apps.tenant.senler.models.AutoBroadcastLog'
     _BS      = 'apps.tenant.senler.models.BroadcastSend'
+    _BR      = 'apps.tenant.senler.models.BroadcastRecipient'   # см. комментарий выше
     _SEND    = 'apps.tenant.senler.services.send_vk_message'
     _UPLOAD  = 'apps.tenant.senler.services.upload_vk_photo'
     _TZ      = 'apps.tenant.senler.tasks.timezone'
@@ -534,6 +613,7 @@ class SendAfterGameBroadcastTaskTest(TestCase):
              patch(self._ATTEMPT) as MockAttempt, \
              patch(self._LOG) as MockLog, \
              patch(self._BS) as MockBS, \
+             patch(self._BR), \
              patch(self._SEND, return_value=send_result) as mock_send, \
              patch(self._UPLOAD, return_value=upload_result) as mock_upload, \
              patch(self._TIME) as mock_time:
@@ -650,6 +730,17 @@ class SendAfterGameBroadcastTaskTest(TestCase):
         self.assertEqual(result['sent'], 0)
 
     def test_no_template_skips_tenant(self):
+        """
+        Нет шаблона — тенант пропускается СРАЗУ, до запроса дедупа.
+
+        Тест был ложно-зелёным: `MockTpl.DoesNotExist` у мока — не класс
+        исключения, поэтому `side_effect` вызывался как функция и возвращал
+        очередной мок. Задача считала, что шаблон есть, шла дальше, падала на
+        живом запросе к AutoBroadcastLog (таблицы тенанта в public нет),
+        падение проглатывалось общим `except` — и «пропуск тенанта»
+        получался из-за аварии, а не из-за отсутствия шаблона.
+        """
+        from apps.tenant.senler.models import AutoBroadcastTemplate as RealTpl
         from apps.tenant.senler.tasks import send_after_game_broadcast_task
 
         with patch(self._GTM) as mock_gtm, \
@@ -657,13 +748,21 @@ class SendAfterGameBroadcastTaskTest(TestCase):
              patch(self._TZ, self._mock_tz(14)), \
              patch(self._TPL) as MockTpl, \
              patch(self._ATTEMPT) as MockAttempt, \
+             patch(self._LOG) as MockLog, \
              patch(self._TIME):
 
             mock_gtm.return_value.objects.exclude.return_value = [_tenant()]
-            MockTpl.objects.get.side_effect = MockTpl.DoesNotExist
+            # Настоящий класс исключения: задача ловит его как
+            # `except AutoBroadcastTemplate.DoesNotExist`, то есть через этот же
+            # атрибут мока — подменять надо оба конца.
+            MockTpl.DoesNotExist = RealTpl.DoesNotExist
+            MockTpl.objects.get.side_effect = RealTpl.DoesNotExist
 
             result = send_after_game_broadcast_task(process_evening=False)
 
+        # Дедуп идёт РАНЬШЕ выборки попыток: если пропуск сломается, первым
+        # сработает именно он — на него и проверяем.
+        MockLog.objects.filter.assert_not_called()
         MockAttempt.objects.filter.assert_not_called()
         self.assertEqual(result['sent'], 0)
 
