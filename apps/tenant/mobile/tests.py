@@ -156,3 +156,46 @@ class ReviewDetailEndpointTest(TestCase):
             with self.assertRaises(NotFound) as ctx:
                 MobileReviewDetailAPIView().get_object()
         self.assertEqual(str(ctx.exception.detail), 'Отзыв не найден')
+
+
+# ── контракт №16: сотрудников из обмена CheckUp здесь не правят и не удаляют ──
+
+from rest_framework.test import APIRequestFactory as _APIRequestFactory, force_authenticate as _force_auth  # noqa: E402
+
+
+class StaffCheckupGuardTest(TestCase):
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username='owner-net', password='x', role='network_admin', is_superuser=True, is_staff=True)
+        self.managed = User.objects.create_user(username='checkup-9-dev', password='x', role='client')
+
+    def _call(self, view_cls, method, path, data=None, **kwargs):
+        from .api.views import StaffDetailAPIView, StaffLinkExistingAPIView  # noqa: F401
+        factory = _APIRequestFactory()
+        request = getattr(factory, method)(path, data or {}, format='json')
+        _force_auth(request, user=self.admin)
+        return view_cls.as_view()(request, **kwargs)
+
+    def test_patch_managed_user_is_409(self):
+        from .api.views import StaffDetailAPIView
+        resp = self._call(StaffDetailAPIView, 'patch', f'/api/v1/staff/{self.managed.pk}/', {'role': 'network_admin'}, staff_id=self.managed.pk)
+        self.assertEqual((resp.status_code, resp.data['code']), (409, 'managed_by_checkup'))
+        self.managed.refresh_from_db()
+        self.assertEqual(self.managed.role, 'client')
+
+    def test_delete_managed_user_is_409(self):
+        from .api.views import StaffDetailAPIView
+        resp = self._call(StaffDetailAPIView, 'delete', f'/api/v1/staff/{self.managed.pk}/', staff_id=self.managed.pk)
+        self.assertEqual((resp.status_code, resp.data['code']), (409, 'managed_by_checkup'))
+        self.managed.refresh_from_db()
+        self.assertTrue(self.managed.is_active)
+
+    def test_link_existing_managed_username_is_409(self):
+        from .api.views import StaffLinkExistingAPIView
+        resp = self._call(StaffLinkExistingAPIView, 'post', '/api/v1/staff/link-existing/', {'username': 'checkup-9-dev'})
+        self.assertEqual((resp.status_code, resp.data['code']), (409, 'managed_by_checkup'))
+
+    def test_helper_recognises_identity_and_name(self):
+        from .api.views import _managed_by_checkup
+        self.assertTrue(_managed_by_checkup(self.managed))
+        self.assertFalse(_managed_by_checkup(self.admin))

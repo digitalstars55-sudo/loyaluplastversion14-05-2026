@@ -1813,6 +1813,25 @@ def _serialize_staff(user) -> dict:
     }
 
 
+def _managed_by_checkup(user) -> bool:
+    """
+    Личность из обмена токена CheckUp (контракт №16 / 4.16): её роль и точки
+    задаёт CheckUp при каждом обмене, поэтому править или удалять такого
+    сотрудника здесь нельзя — разъедется с CheckUp. Признак — связь
+    CheckUpIdentity (запасной — имя `checkup-<id>-<schema>`, которое выдаёт обмен).
+    """
+    identity = getattr(user, 'checkup_identity', None) if hasattr(user, 'checkup_identity') else None
+    if identity is not None:
+        return True
+    return str(getattr(user, 'username', '') or '').startswith('checkup-')
+
+
+def _checkup_managed_response():
+    return Response({'code': 'managed_by_checkup',
+                     'detail': 'сотрудник создан обменом CheckUp — его права и доступ правятся в CheckUp'},
+                    status=status.HTTP_409_CONFLICT)
+
+
 class StaffListAPIView(APIView):
     """
     GET /api/v1/staff/
@@ -1865,6 +1884,8 @@ class StaffDetailAPIView(APIView):
             user = User.objects.get(pk=staff_id)
         except User.DoesNotExist:
             return Response({'error': 'Сотрудник не найден'}, status=status.HTTP_404_NOT_FOUND)
+        if _managed_by_checkup(user):
+            return _checkup_managed_response()
 
         # СТРОГО по сети: редактировать можно только сотрудника ТЕКУЩЕЙ сети
         # (или суперадмина). Чужую сеть не трогаем — переключись на её сеть.
@@ -2011,6 +2032,8 @@ class StaffDetailAPIView(APIView):
             user = User.objects.get(pk=staff_id)
         except User.DoesNotExist:
             return Response({'error': 'Сотрудник не найден'}, status=status.HTTP_404_NOT_FOUND)
+        if _managed_by_checkup(user):
+            return _checkup_managed_response()
 
         if user.pk == request.user.pk:
             return Response({'error': 'Нельзя удалить самого себя.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -2199,6 +2222,8 @@ class StaffLinkExistingAPIView(APIView):
         username = (d.get('username') or '').strip()
         if not username:
             return Response({'error': 'username обязателен'}, status=status.HTTP_400_BAD_REQUEST)
+        if username.startswith('checkup-'):
+            return _checkup_managed_response()
 
         try:
             user = User.objects.get(username=username)
