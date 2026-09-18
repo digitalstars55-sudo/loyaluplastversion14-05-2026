@@ -2315,6 +2315,9 @@ def _serialize_product(p) -> dict:
         'price':             p.price,
         'is_super_prize':    p.is_super_prize,
         'is_birthday_prize': p.is_birthday_prize,
+        # Пул призов «игры через сториз» — им управляют из кабинета CheckUp
+        # (★18 ревью, №19 + №23 контракта платформы).
+        'is_story_prize':    p.is_story_prize,
         'assignments':       [_serialize_assignment(pb) for pb in p.branch_assignments.all()],
         'created_at':        p.created_at.isoformat(),
         'updated_at':        p.updated_at.isoformat(),
@@ -2387,6 +2390,7 @@ class ProductListCreateAPIView(APIView):
             price=max(0, price),
             is_super_prize=str(d.get('is_super_prize', '')).lower() in ('1', 'true', 'yes'),
             is_birthday_prize=str(d.get('is_birthday_prize', '')).lower() in ('1', 'true', 'yes'),
+            is_story_prize=str(d.get('is_story_prize', '')).lower() in ('1', 'true', 'yes'),
         )
         if 'image' in request.FILES:
             p.image = request.FILES['image']
@@ -2422,6 +2426,8 @@ class ProductDetailAPIView(APIView):
             p.is_super_prize = str(d['is_super_prize']).lower() in ('1', 'true', 'yes')
         if 'is_birthday_prize' in d:
             p.is_birthday_prize = str(d['is_birthday_prize']).lower() in ('1', 'true', 'yes')
+        if 'is_story_prize' in d:
+            p.is_story_prize = str(d['is_story_prize']).lower() in ('1', 'true', 'yes')
         if 'image' in request.FILES:
             p.image = request.FILES['image']
         p.save()

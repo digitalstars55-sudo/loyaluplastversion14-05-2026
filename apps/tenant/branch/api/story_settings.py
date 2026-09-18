@@ -240,13 +240,24 @@ def _overrides_dict(branch_cfg) -> dict:
     return out
 
 
-def _prizes(branch, request):
-    """Призы точки: сколько их, первый (им подставлен текст) и картинка сториса.
+def _network_domain() -> str:
+    """Primary-домен сети, например `levone.levelupapp.ru`.
 
-    Ссылка на картинку — АБСОЛЮТНАЯ: кабинет CheckUp показывает её на своём
-    домене, относительный /media/... там не откроется. Запрос приходит с
-    `Host: <сеть>.levelupapp.ru`, поэтому домен получается правильный.
+    Из НЕГО собирается ссылка на картинку, а не из запроса: CheckUp ходит к нам
+    через loopback по http с подменённым `Host`, поэтому
+    `request.build_absolute_uri` дал бы `http://127.0.0.1:7000/media/...` —
+    такую ссылку кабинет не покажет никому (★5 ревью CheckUp).
     """
+    from django.db import connection
+    from apps.shared.clients.models import Domain
+    company = getattr(connection, 'tenant', None)
+    domain = (Domain.objects.filter(tenant=company, is_primary=True).first()
+              or Domain.objects.filter(tenant=company).first())
+    return domain.domain if domain else ''
+
+
+def _prizes(branch):
+    """Призы точки: сколько их, первый (им подставлен текст) и картинка сториса."""
     qs = story_gifts_for_branch(branch)
     gifts = list(qs[:1])
     first = gifts[0] if gifts else None
@@ -254,7 +265,8 @@ def _prizes(branch, request):
     url = None
     if image:
         try:
-            url = request.build_absolute_uri(image.url)
+            domain = _network_domain()
+            url = f'https://{domain}{image.url}' if domain else image.url
         except Exception:  # картинка не повод отдать 500
             url = None
     return {
@@ -367,6 +379,13 @@ class BranchStorySettingsAPIView(APIView):
           действующие значения, источник каждого значения, призы и превью.
     PATCH /api/v1/mobile/branches/{id}/story/ — переопределения; `null`, `""`
           и `0` означают «как в сети» (только network_admin/суперадмин).
+
+    ⚠️ Порог «0 ₽» задать НЕЛЬЗЯ ни у точки, ни у сети: резолв трактует ноль
+    как «не задано», поэтому `story_min_order_amount: 0` вернётся со
+    `source: network` (или `default` = 600 ₽, если у сети тоже ноль). Ответ на
+    такой PATCH — `200`, а не ошибка: поле принято, просто означает
+    «наследовать». Настоящее «без порога» — правка резолва и миграция, вне
+    v1.5 (★15/м16 ревью CheckUp).
     """
     permission_classes = [IsAuthenticated]
 
@@ -375,7 +394,7 @@ class BranchStorySettingsAPIView(APIView):
         branch = _branch_or_none(pk, request)
         if branch is None:
             return _error('not_found', 'Точка не найдена', http_status.HTTP_404_NOT_FOUND)
-        return Response(self._payload(branch, request))
+        return Response(self._payload(branch))
 
     @extend_schema(request=_BRANCH_OUT, responses={200: _BRANCH_OUT, 400: _ERR, 403: _ERR,
                                                    404: _ERR}, tags=['v1'])
@@ -401,15 +420,15 @@ class BranchStorySettingsAPIView(APIView):
         log.info('story branch settings patched: %s branch=%s fields=%s by=%s',
                  current_schema_name(), branch.pk, sorted(values), request.user)
         branch = _branch_or_none(pk, request)  # перечитываем: config уже свежий
-        return Response(self._payload(branch, request))
+        return Response(self._payload(branch))
 
     @staticmethod
-    def _payload(branch, request) -> dict:
+    def _payload(branch) -> dict:
         branch_cfg = getattr(branch, 'config', None)
         net_cfg = _network_config()
         branch_address = getattr(branch_cfg, 'address', '') or ''
         effective = _effective(branch)
-        prizes, first_gift = _prizes(branch, request)
+        prizes, first_gift = _prizes(branch)
         return {
             'branch': {'id': branch.pk, 'branch_id': branch.branch_id, 'name': branch.name},
             'overrides': _overrides_dict(branch_cfg),

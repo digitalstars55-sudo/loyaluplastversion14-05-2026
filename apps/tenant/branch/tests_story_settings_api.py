@@ -374,3 +374,95 @@ class RenderedTest(SimpleTestCase):
         self.assertEqual(out['activation_text'],
                          'Закажи от 600 ₽ в Институтская и получи Кофе')
         self.assertEqual(out['saved_text'], 'Подарок Кофе ждёт 40 минут')
+
+
+# ── доделка по ревью CheckUp (3б.8) ──────────────────────────────────────────
+
+class StoryImageUrlTest(SimpleTestCase):
+    """
+    ★5: ссылка на картинку сториса — от primary-домена СЕТИ, не от запроса.
+
+    CheckUp ходит через loopback по http с подменённым Host, поэтому
+    `build_absolute_uri` вернул бы `http://127.0.0.1:7000/media/...`.
+    """
+
+    def test_url_is_built_from_network_domain(self):
+        image = SimpleNamespace(url='/media/branch/stories/x.png')
+        branch = _branch(_branch_cfg(story_image=image))
+        with patch(STP + '_network_domain', return_value='levone.levelupapp.ru'), \
+             patch(STP + 'story_gifts_for_branch') as gifts:
+            qs = MagicMock()
+            qs.count.return_value = 0
+            qs.__getitem__ = lambda self_, item: []
+            gifts.return_value = qs
+            prizes, _ = ST._prizes(branch)
+        self.assertEqual(prizes['story_image_url'],
+                         'https://levone.levelupapp.ru/media/branch/stories/x.png')
+
+    def test_prizes_takes_no_request(self):
+        import inspect
+        self.assertNotIn('request', inspect.signature(ST._prizes).parameters)
+
+    def test_payload_has_no_request_host(self):
+        import json
+        image = SimpleNamespace(url='/media/branch/stories/x.png')
+        branch = _branch(_branch_cfg(story_image=image, address='Институтская 5'))
+        with patch(STP + '_network_config', return_value=_net()), \
+             patch(SSP + '_network_config', return_value=_net()), \
+             patch(STP + '_network_domain', return_value='levone.levelupapp.ru'), \
+             patch(STP + 'story_gifts_for_branch') as gifts:
+            qs = MagicMock()
+            qs.count.return_value = 0
+            qs.__getitem__ = lambda self_, item: []
+            gifts.return_value = qs
+            payload = ST.BranchStorySettingsAPIView._payload(branch)
+        body = json.dumps(payload, ensure_ascii=False, default=str)
+        self.assertNotIn('127.0.0.1', body)
+        self.assertNotIn('testserver', body)
+        self.assertIn('https://levone.levelupapp.ru/media/', body)
+
+
+class ZeroMeansInheritTest(SimpleTestCase):
+    """★15 и м16: ноль — это «как в сети», а не «без порога», и это не ошибка."""
+
+    def test_patch_zero_returns_200_with_null_override_and_network_source(self):
+        branch = _branch()
+        cfg = _branch_cfg(story_min_order_amount=900)
+        cfg.save = MagicMock()
+        net_cfg = _net(story_min_order_amount=700)
+        with patch(STP + '_branch_or_none', return_value=branch), \
+             patch(STP + 'BranchConfig') as branch_config, \
+             patch(STP + '_network_config', return_value=net_cfg), \
+             patch(SSP + '_network_config', return_value=net_cfg), \
+             patch(STP + '_network_domain', return_value='levone.levelupapp.ru'), \
+             patch(STP + 'story_gifts_for_branch') as gifts:
+            branch_config.objects.get_or_create.return_value = (cfg, False)
+            qs = MagicMock()
+            qs.count.return_value = 0
+            qs.__getitem__ = lambda self_, item: []
+            gifts.return_value = qs
+            branch.config = cfg
+            resp = _call(ST.BranchStorySettingsAPIView, 'patch',
+                         '/api/v1/mobile/branches/3/story/',
+                         data={'story_min_order_amount': 0}, pk=3)
+
+        self.assertEqual(resp.status_code, 200, 'ноль — принятое значение, не 400')
+        self.assertIsNone(cfg.story_min_order_amount, 'в БД легло «не задано»')
+        self.assertIsNone(resp.data['overrides']['story_min_order_amount'])
+        self.assertEqual(resp.data['source']['story_min_order_amount'], 'network')
+        self.assertEqual(resp.data['effective']['story_min_order_amount'], 700)
+
+    def test_network_zero_falls_back_to_hardcoded_default(self):
+        """м16: у сети ноль тоже «не задано» → 600 ₽ из кода и source=default."""
+        branch_cfg = _branch_cfg()
+        net_cfg = _net(story_min_order_amount=0)
+        with patch(SSP + '_network_config', return_value=net_cfg):
+            resolved = SS.resolve_story_settings_for_branch(_branch(branch_cfg))
+        self.assertEqual(resolved['min_order_amount'], SS._DEFAULT_MIN_ORDER)
+        self.assertEqual(ST._source_for('story_min_order_amount', branch_cfg, net_cfg, ''),
+                         'default')
+
+    def test_limitation_is_documented(self):
+        """Ограничение должно быть видно в докстринге ручки, а не только в контракте."""
+        doc = ST.BranchStorySettingsAPIView.__doc__ or ''
+        self.assertIn('0 ₽', doc)
