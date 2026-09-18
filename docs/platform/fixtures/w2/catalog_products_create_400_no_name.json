@@ -1,0 +1,24 @@
+{
+ "name": "catalog_products_create_400_no_name",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/catalog/products/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "",
+   "price": 10
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "error": "name обязателен"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

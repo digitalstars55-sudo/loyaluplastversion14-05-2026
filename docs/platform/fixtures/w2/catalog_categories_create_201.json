@@ -1,0 +1,29 @@
+{
+ "name": "catalog_categories_create_201",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/catalog/categories/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "branch_id": 3,
+   "name": "Фикстура: десерты",
+   "ordering": 5
+  }
+ },
+ "response": {
+  "status": 201,
+  "body": {
+   "id": 1,
+   "branch_id": 3,
+   "name": "Фикстура: десерты",
+   "ordering": 5,
+   "products_count": 0
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

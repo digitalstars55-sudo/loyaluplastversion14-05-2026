@@ -1,0 +1,24 @@
+{
+ "name": "daily_codes_generate_400_bad_purpose",
+ "note": "code values replaced by synthetic ones (live daily codes grant gifts)",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/branch/daily-codes/generate/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "branch_id": 3,
+   "purpose": "NOPE"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "error": "purpose: допустимы ['BIRTHDAY', 'SUPERPRIZE', 'OTHER']"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

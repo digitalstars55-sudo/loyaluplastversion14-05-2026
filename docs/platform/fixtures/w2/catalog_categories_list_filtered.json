@@ -1,0 +1,21 @@
+{
+ "name": "catalog_categories_list_filtered",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/catalog/categories/?branch_ids=3",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "categories": []
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,102 @@
+{
+ "name": "catalog_products_list",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/catalog/products/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "products": [
+    {
+     "id": 4,
+     "name": "Месяц ведения ВК для новых клиентов",
+     "description": "Месяц ведения группы ВК для новых клиентов при заключении договора с ЛоялАп от трех месяцев",
+     "emoji": "",
+     "image_url": "/media/catalog/products/IMG_9077.PNG",
+     "price": 0,
+     "is_super_prize": true,
+     "is_birthday_prize": false,
+     "assignments": [
+      {
+       "branch_id": 2,
+       "category_id": null,
+       "ordering": 0,
+       "is_visible": false
+      }
+     ],
+     "created_at": "2026-09-10T11:32:58.326352+00:00",
+     "updated_at": "2026-09-14T14:44:24.689039+00:00"
+    },
+    {
+     "id": 5,
+     "name": "Месяц ведения Я.Директ для новых клиентов",
+     "description": "Месяц бесплатного ведения рекламы в Яндекс.Директ для для новых клиентов при заключении договора с ЛоялАп от двух месяцев",
+     "emoji": "",
+     "image_url": "/media/catalog/products/IMG_9078.PNG",
+     "price": 0,
+     "is_super_prize": true,
+     "is_birthday_prize": false,
+     "assignments": [
+      {
+       "branch_id": 2,
+       "category_id": null,
+       "ordering": 0,
+       "is_visible": false
+      }
+     ],
+     "created_at": "2026-09-10T11:35:11.768900+00:00",
+     "updated_at": "2026-09-14T14:44:00.496875+00:00"
+    },
+    {
+     "id": 3,
+     "name": "Один месяц бесплатно для новых клиентов",
+     "description": "Один месяц бесплатно для новых при покупке от трех месяцев (оплачивать можно помесячно)",
+     "emoji": "",
+     "image_url": "/media/catalog/products/11111111111111111111111.png",
+     "price": 0,
+     "is_super_prize": true,
+     "is_birthday_prize": false,
+     "assignments": [
+      {
+       "branch_id": 2,
+       "category_id": null,
+       "ordering": 0,
+       "is_visible": false
+      }
+     ],
+     "created_at": "2026-08-27T10:57:11.377710+00:00",
+     "updated_at": "2026-09-03T12:57:28.710676+00:00"
+    },
+    {
+     "id": 2,
+     "name": "Скидка 5% для действующих клиентов!",
+     "description": "Скидка 5% для действующих клиентов на один месяц",
+     "emoji": "",
+     "image_url": "/media/catalog/products/1111111111111111111.png",
+     "price": 0,
+     "is_super_prize": true,
+     "is_birthday_prize": false,
+     "assignments": [
+      {
+       "branch_id": 2,
+       "category_id": null,
+       "ordering": 0,
+       "is_visible": false
+      }
+     ],
+     "created_at": "2026-08-27T10:49:45.703991+00:00",
+     "updated_at": "2026-09-03T12:57:52.198011+00:00"
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

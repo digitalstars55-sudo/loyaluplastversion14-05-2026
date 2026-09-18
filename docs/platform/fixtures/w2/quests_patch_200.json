@@ -1,0 +1,36 @@
+{
+ "name": "quests_patch_200",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/quests/2/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "reward": 25,
+   "is_active": false
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "id": 2,
+   "branch_id": 3,
+   "branch_ids": [
+    3
+   ],
+   "name": "Фикстура: подпишись на сообщество",
+   "description": "Запись фикстур",
+   "reward": 25,
+   "is_active": false,
+   "ordering": 1,
+   "submits_count": 0,
+   "created_at": "2026-09-18T13:27:55.776754+00:00",
+   "updated_at": "2026-09-18T13:27:55.813019+00:00"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

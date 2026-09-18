@@ -1,0 +1,46 @@
+{
+ "name": "analytics_engagement",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/engagement/?period_days=30",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "summary": {
+    "period_label": "За 30 дней",
+    "gifts_redeemed_total": 2,
+    "gifts_activated_total": 0,
+    "gifts_avg_conversion": 0.0,
+    "gifts_total_coins_spent": 0,
+    "quests_started_total": 0,
+    "quests_completed_total": 0,
+    "quests_avg_completion": 0.0,
+    "quests_avg_completion_hours": 0.0
+   },
+   "gifts": [
+    {
+     "product_id": 3,
+     "product_name": "Один месяц бесплатно для новых клиентов",
+     "product_emoji": "",
+     "category_name": "",
+     "price_coins": 0,
+     "redeemed_count": 2,
+     "activated_count": 0,
+     "expired_count": 0,
+     "conversion_rate": 0.0,
+     "trend_pct": 0.0
+    }
+   ],
+   "quests": []
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

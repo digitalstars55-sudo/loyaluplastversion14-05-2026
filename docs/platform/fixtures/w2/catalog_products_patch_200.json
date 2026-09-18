@@ -1,0 +1,41 @@
+{
+ "name": "catalog_products_patch_200",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/catalog/products/6/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "Фикстура: чизкейк (150)",
+   "price": 160
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "id": 6,
+   "name": "Фикстура: чизкейк (150)",
+   "description": "Подарок за баллы (запись фикстур)",
+   "emoji": "🍰",
+   "image_url": null,
+   "price": 160,
+   "is_super_prize": false,
+   "is_birthday_prize": false,
+   "assignments": [
+    {
+     "branch_id": 3,
+     "category_id": 1,
+     "ordering": 1,
+     "is_visible": true
+    }
+   ],
+   "created_at": "2026-09-18T13:27:55.673685+00:00",
+   "updated_at": "2026-09-18T13:27:55.703490+00:00"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

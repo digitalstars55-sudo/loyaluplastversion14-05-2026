@@ -1,0 +1,54 @@
+{
+ "name": "guests_birthdays",
+ "note": "guests anonymized (vk_id -> 10000NNNN, names -> test guest)",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/guests/birthdays/?days_ahead=365&include_past=1",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "birthdays": [
+    {
+     "vk_id": "100000001",
+     "first_name": "Гость",
+     "last_name": "Тестовый",
+     "phone": "",
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "coins": 2000,
+     "segment_emoji": "",
+     "segment_name": "",
+     "birthday": "1994-09-01",
+     "birthday_this_year": "2026-09-01",
+     "days_until": -17,
+     "age_turning": 32,
+     "is_loyal": false,
+     "greeting_status": "none"
+    },
+    {
+     "vk_id": "100000002",
+     "first_name": "Гость",
+     "last_name": "Тестовый",
+     "phone": "",
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "coins": 0,
+     "segment_emoji": "",
+     "segment_name": "",
+     "birthday": "1910-09-05",
+     "birthday_this_year": "2026-09-05",
+     "days_until": -13,
+     "age_turning": 116,
+     "is_loyal": false,
+     "greeting_status": "none"
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

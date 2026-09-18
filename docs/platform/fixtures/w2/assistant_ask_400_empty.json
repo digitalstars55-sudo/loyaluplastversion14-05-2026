@@ -1,0 +1,23 @@
+{
+ "name": "assistant_ask_400_empty",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/assistant/ask/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "question": ""
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "error": "Пустой вопрос"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

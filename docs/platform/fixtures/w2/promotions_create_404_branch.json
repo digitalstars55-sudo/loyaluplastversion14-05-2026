@@ -1,0 +1,26 @@
+{
+ "name": "promotions_create_404_branch",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/branch/promotions/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "branch_id": 999999,
+   "title": "x",
+   "discount": "y",
+   "dates": "z"
+  }
+ },
+ "response": {
+  "status": 404,
+  "body": {
+   "error": "Точка не найдена"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,21 @@
+{
+ "name": "quests_list",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/quests/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "quests": []
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,33 @@
+{
+ "name": "analytics_engagement_branch",
+ "note": "branch_id internal",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/engagement/?period_days=90&branch_id=3",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "summary": {
+    "period_label": "За 90 дней",
+    "gifts_redeemed_total": 0,
+    "gifts_activated_total": 0,
+    "gifts_avg_conversion": 0.0,
+    "gifts_total_coins_spent": 0,
+    "quests_started_total": 0,
+    "quests_completed_total": 0,
+    "quests_avg_completion": 0.0,
+    "quests_avg_completion_hours": 0.0
+   },
+   "gifts": [],
+   "quests": []
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

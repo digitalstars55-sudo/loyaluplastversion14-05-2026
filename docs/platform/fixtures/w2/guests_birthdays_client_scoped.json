@@ -1,0 +1,21 @@
+{
+ "name": "guests_birthdays_client_scoped",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/guests/birthdays/?days_ahead=365&include_past=1",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "birthdays": []
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

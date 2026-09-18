@@ -1,0 +1,23 @@
+{
+ "name": "catalog_products_patch_404",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/catalog/products/99999999/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "x"
+  }
+ },
+ "response": {
+  "status": 404,
+  "body": {
+   "detail": "No Product matches the given query."
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

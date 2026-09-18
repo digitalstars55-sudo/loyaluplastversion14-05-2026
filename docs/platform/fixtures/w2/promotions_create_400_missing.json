@@ -1,0 +1,24 @@
+{
+ "name": "promotions_create_400_missing",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/branch/promotions/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "branch_id": 3,
+   "title": "x"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "error": "title, discount, dates обязательны"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

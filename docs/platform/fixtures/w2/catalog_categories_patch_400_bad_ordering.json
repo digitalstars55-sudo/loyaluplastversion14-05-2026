@@ -1,0 +1,23 @@
+{
+ "name": "catalog_categories_patch_400_bad_ordering",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/catalog/categories/1/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "ordering": "abc"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "error": "ordering должен быть числом"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

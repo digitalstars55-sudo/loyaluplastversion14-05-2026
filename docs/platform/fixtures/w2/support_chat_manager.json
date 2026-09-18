@@ -1,0 +1,33 @@
+{
+ "name": "support_chat_manager",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/support/chat/manager/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "id": 1,
+   "name": "Менеджер LoyalUP",
+   "role": "Ваш менеджер",
+   "avatar_url": "",
+   "online": true,
+   "last_seen": "2026-09-18T13:27:56.474420+00:00",
+   "phone": "",
+   "work_hours": "Пн–Пт 10:00–19:00",
+   "messages": [],
+   "unread_count": 0,
+   "last_message_at": null,
+   "last_message_text": "",
+   "last_message_sender": null
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

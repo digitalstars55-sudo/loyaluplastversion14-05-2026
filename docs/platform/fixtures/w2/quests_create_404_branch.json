@@ -1,0 +1,27 @@
+{
+ "name": "quests_create_404_branch",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/quests/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "x",
+   "reward": 1,
+   "branch_ids": [
+    999999
+   ]
+  }
+ },
+ "response": {
+  "status": 404,
+  "body": {
+   "error": "Точки не найдены: [999999]"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

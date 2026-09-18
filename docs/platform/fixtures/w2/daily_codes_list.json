@@ -1,0 +1,322 @@
+{
+ "name": "daily_codes_list",
+ "note": "code values replaced by synthetic ones (live daily codes grant gifts)",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/branch/daily-codes/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "codes": [
+    {
+     "id": 73,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "BIRTHDAY",
+     "code": "10002",
+     "valid_date": "2026-09-18",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-18T00:00:00.195586+00:00"
+    },
+    {
+     "id": 71,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "SUPERPRIZE",
+     "code": "10003",
+     "valid_date": "2026-09-18",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-18T00:00:00.184136+00:00"
+    },
+    {
+     "id": 72,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "OTHER",
+     "code": "10004",
+     "valid_date": "2026-09-18",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-18T00:00:00.192432+00:00"
+    },
+    {
+     "id": 76,
+     "branch_id": 3,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "purpose": "BIRTHDAY",
+     "code": "10005",
+     "valid_date": "2026-09-18",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-18T00:00:00.204034+00:00"
+    },
+    {
+     "id": 74,
+     "branch_id": 3,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "purpose": "SUPERPRIZE",
+     "code": "10006",
+     "valid_date": "2026-09-18",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-18T00:00:00.198548+00:00"
+    },
+    {
+     "id": 75,
+     "branch_id": 3,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "purpose": "OTHER",
+     "code": "10007",
+     "valid_date": "2026-09-18",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-18T00:00:00.201074+00:00"
+    },
+    {
+     "id": 67,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "BIRTHDAY",
+     "code": "10008",
+     "valid_date": "2026-09-17",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-17T00:00:00.334556+00:00"
+    },
+    {
+     "id": 65,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "SUPERPRIZE",
+     "code": "10009",
+     "valid_date": "2026-09-17",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-17T00:00:00.326806+00:00"
+    },
+    {
+     "id": 66,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "OTHER",
+     "code": "10010",
+     "valid_date": "2026-09-17",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-17T00:00:00.331123+00:00"
+    },
+    {
+     "id": 70,
+     "branch_id": 3,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "purpose": "BIRTHDAY",
+     "code": "10011",
+     "valid_date": "2026-09-17",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-17T00:00:00.342740+00:00"
+    },
+    {
+     "id": 68,
+     "branch_id": 3,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "purpose": "SUPERPRIZE",
+     "code": "10012",
+     "valid_date": "2026-09-17",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-17T00:00:00.336945+00:00"
+    },
+    {
+     "id": 69,
+     "branch_id": 3,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "purpose": "OTHER",
+     "code": "10013",
+     "valid_date": "2026-09-17",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-17T00:00:00.339741+00:00"
+    },
+    {
+     "id": 61,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "BIRTHDAY",
+     "code": "10014",
+     "valid_date": "2026-09-16",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-16T00:00:30.805158+00:00"
+    },
+    {
+     "id": 59,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "SUPERPRIZE",
+     "code": "10015",
+     "valid_date": "2026-09-16",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-16T00:00:30.797050+00:00"
+    },
+    {
+     "id": 60,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "OTHER",
+     "code": "10016",
+     "valid_date": "2026-09-16",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-16T00:00:30.801946+00:00"
+    },
+    {
+     "id": 58,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "BIRTHDAY",
+     "code": "10017",
+     "valid_date": "2026-09-15",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-15T00:00:00.434340+00:00"
+    },
+    {
+     "id": 56,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "SUPERPRIZE",
+     "code": "10018",
+     "valid_date": "2026-09-15",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-15T00:00:00.426921+00:00"
+    },
+    {
+     "id": 57,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "OTHER",
+     "code": "10019",
+     "valid_date": "2026-09-15",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-15T00:00:00.430518+00:00"
+    },
+    {
+     "id": 55,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "BIRTHDAY",
+     "code": "10020",
+     "valid_date": "2026-09-14",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-14T00:00:05.608391+00:00"
+    },
+    {
+     "id": 53,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "SUPERPRIZE",
+     "code": "10021",
+     "valid_date": "2026-09-14",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-14T00:00:05.597714+00:00"
+    },
+    {
+     "id": 54,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "OTHER",
+     "code": "10022",
+     "valid_date": "2026-09-14",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-14T00:00:05.603695+00:00"
+    },
+    {
+     "id": 52,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "BIRTHDAY",
+     "code": "10023",
+     "valid_date": "2026-09-13",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-13T00:00:06.100440+00:00"
+    },
+    {
+     "id": 50,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "SUPERPRIZE",
+     "code": "10024",
+     "valid_date": "2026-09-13",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-13T00:00:06.086923+00:00"
+    },
+    {
+     "id": 51,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "OTHER",
+     "code": "10025",
+     "valid_date": "2026-09-13",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-13T00:00:06.095071+00:00"
+    },
+    {
+     "id": 49,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "BIRTHDAY",
+     "code": "10026",
+     "valid_date": "2026-09-12",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-12T00:00:25.848314+00:00"
+    },
+    {
+     "id": 47,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "SUPERPRIZE",
+     "code": "10027",
+     "valid_date": "2026-09-12",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-12T00:00:25.840857+00:00"
+    },
+    {
+     "id": 48,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "OTHER",
+     "code": "10028",
+     "valid_date": "2026-09-12",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-12T00:00:25.845202+00:00"
+    },
+    {
+     "id": 46,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "BIRTHDAY",
+     "code": "10029",
+     "valid_date": "2026-09-11",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-11T00:00:00.452570+00:00"
+    },
+    {
+     "id": 44,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "SUPERPRIZE",
+     "code": "10030",
+     "valid_date": "2026-09-11",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-11T00:00:00.445115+00:00"
+    },
+    {
+     "id": 45,
+     "branch_id": 2,
+     "branch_name": "Конференция \"Автосуши Автопицца\"",
+     "purpose": "OTHER",
+     "code": "10031",
+     "valid_date": "2026-09-11",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-11T00:00:00.449415+00:00"
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

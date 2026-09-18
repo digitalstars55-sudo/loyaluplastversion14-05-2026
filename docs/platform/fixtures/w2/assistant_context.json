@@ -1,0 +1,32 @@
+{
+ "name": "assistant_context",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/assistant/context/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "greeting": "Привет! Я Лояльчик 🚀 Вижу 2 неотвеченных негативных отзывов — стоит ответить, пока гости не остыли. Спроси, если нужна помощь!",
+   "suggestions": [
+    "Как ответить на отзыв?",
+    "Что такое RF-сегменты?",
+    "Как запустить рассылку?",
+    "Как настроить коды дня?"
+   ],
+   "stats": {
+    "unanswered_negatives": 2,
+    "drafts_ready": 0,
+    "birthdays_today": 0
+   }
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

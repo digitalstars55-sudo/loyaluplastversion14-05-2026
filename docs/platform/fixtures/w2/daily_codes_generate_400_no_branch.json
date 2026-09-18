@@ -1,0 +1,21 @@
+{
+ "name": "daily_codes_generate_400_no_branch",
+ "note": "code values replaced by synthetic ones (live daily codes grant gifts)",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/branch/daily-codes/generate/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {}
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "error": "branch_id обязателен и должен быть числом"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,19 @@
+{
+ "name": "catalog_products_delete_204",
+ "note": "",
+ "request": {
+  "method": "DELETE",
+  "path": "/api/v1/catalog/products/6/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 204,
+  "body": null
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

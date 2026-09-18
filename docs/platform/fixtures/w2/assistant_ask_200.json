@@ -1,0 +1,30 @@
+{
+ "name": "assistant_ask_200",
+ "note": "Claude call stubbed while recording: answer text synthetic, shape real; live calls cost API credits",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/assistant/ask/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "question": "Сколько отзывов пришло за неделю и есть ли негатив?",
+   "history": []
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "answer": "За последние 7 дней пришло 3 отзыва, из них 1 негативный — стоит ответить в течение дня. Хотите, покажу его?",
+   "actions": [
+    {
+     "label": "Открыть отзывы",
+     "screen": "reviews"
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

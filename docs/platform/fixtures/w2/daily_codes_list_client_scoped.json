@@ -1,0 +1,82 @@
+{
+ "name": "daily_codes_list_client_scoped",
+ "note": "client sees only its points | code values replaced by synthetic ones (live daily codes grant gifts)",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/branch/daily-codes/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "codes": [
+    {
+     "id": 76,
+     "branch_id": 3,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "purpose": "BIRTHDAY",
+     "code": "10032",
+     "valid_date": "2026-09-18",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-18T00:00:00.204034+00:00"
+    },
+    {
+     "id": 74,
+     "branch_id": 3,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "purpose": "SUPERPRIZE",
+     "code": "10033",
+     "valid_date": "2026-09-18",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-18T00:00:00.198548+00:00"
+    },
+    {
+     "id": 75,
+     "branch_id": 3,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "purpose": "OTHER",
+     "code": "10034",
+     "valid_date": "2026-09-18",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-18T00:00:00.201074+00:00"
+    },
+    {
+     "id": 70,
+     "branch_id": 3,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "purpose": "BIRTHDAY",
+     "code": "10035",
+     "valid_date": "2026-09-17",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-17T00:00:00.342740+00:00"
+    },
+    {
+     "id": 68,
+     "branch_id": 3,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "purpose": "SUPERPRIZE",
+     "code": "10036",
+     "valid_date": "2026-09-17",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-17T00:00:00.336945+00:00"
+    },
+    {
+     "id": 69,
+     "branch_id": 3,
+     "branch_name": "Песочница CheckUp · Точка 2",
+     "purpose": "OTHER",
+     "code": "10037",
+     "valid_date": "2026-09-17",
+     "generated_by": "AUTO",
+     "created_at": "2026-09-17T00:00:00.339741+00:00"
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

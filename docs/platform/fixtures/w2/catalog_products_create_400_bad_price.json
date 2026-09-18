@@ -1,0 +1,24 @@
+{
+ "name": "catalog_products_create_400_bad_price",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/catalog/products/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "x",
+   "price": "abc"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "error": "price должен быть числом"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

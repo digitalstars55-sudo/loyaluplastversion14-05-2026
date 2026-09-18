@@ -1,0 +1,28 @@
+{
+ "name": "catalog_categories_patch_200",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/catalog/categories/1/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "Фикстура: десерты (переименовано)",
+   "ordering": 6
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "id": 1,
+   "branch_id": 3,
+   "name": "Фикстура: десерты (переименовано)",
+   "ordering": 6,
+   "products_count": 0
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

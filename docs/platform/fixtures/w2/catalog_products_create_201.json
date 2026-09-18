@@ -1,0 +1,51 @@
+{
+ "name": "catalog_products_create_201",
+ "note": "JSON without image; multipart with image also accepted. assignments: [{branch_id (internal), category_id, ordering, is_visible}]",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/catalog/products/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "Фикстура: чизкейк",
+   "price": 150,
+   "description": "Подарок за баллы (запись фикстур)",
+   "emoji": "🍰",
+   "assignments": [
+    {
+     "branch_id": 3,
+     "category_id": 1,
+     "ordering": 1,
+     "is_visible": true
+    }
+   ]
+  }
+ },
+ "response": {
+  "status": 201,
+  "body": {
+   "id": 6,
+   "name": "Фикстура: чизкейк",
+   "description": "Подарок за баллы (запись фикстур)",
+   "emoji": "🍰",
+   "image_url": null,
+   "price": 150,
+   "is_super_prize": false,
+   "is_birthday_prize": false,
+   "assignments": [
+    {
+     "branch_id": 3,
+     "category_id": 1,
+     "ordering": 1,
+     "is_visible": true
+    }
+   ],
+   "created_at": "2026-09-18T13:27:55.673685+00:00",
+   "updated_at": "2026-09-18T13:27:55.673710+00:00"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,23 @@
+{
+ "name": "catalog_categories_create_400_no_branch",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/catalog/categories/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "x"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "error": "branch_id обязателен"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

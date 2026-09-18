@@ -1,0 +1,21 @@
+{
+ "name": "promotions_list",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/branch/promotions/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "promotions": []
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

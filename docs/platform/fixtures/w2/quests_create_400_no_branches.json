@@ -1,0 +1,24 @@
+{
+ "name": "quests_create_400_no_branches",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/quests/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "x",
+   "reward": 1
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "error": "нужны branch_ids / all_branches / branch_id"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

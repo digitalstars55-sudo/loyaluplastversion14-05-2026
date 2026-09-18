@@ -1,0 +1,42 @@
+{
+ "name": "quests_create_201",
+ "note": "branch_ids internal; all_branches: true instead of list",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/quests/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "Фикстура: подпишись на сообщество",
+   "description": "Запись фикстур",
+   "reward": 20,
+   "branch_ids": [
+    3
+   ],
+   "is_active": true,
+   "ordering": 1
+  }
+ },
+ "response": {
+  "status": 201,
+  "body": {
+   "id": 2,
+   "branch_id": 3,
+   "branch_ids": [
+    3
+   ],
+   "name": "Фикстура: подпишись на сообщество",
+   "description": "Запись фикстур",
+   "reward": 20,
+   "is_active": true,
+   "ordering": 1,
+   "submits_count": 0,
+   "created_at": "2026-09-18T13:27:55.776754+00:00",
+   "updated_at": "2026-09-18T13:27:55.776777+00:00"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}
