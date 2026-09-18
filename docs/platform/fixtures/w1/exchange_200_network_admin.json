@@ -1,6 +1,6 @@
 {
  "name": "exchange_200_network_admin",
- "note": "",
+ "note": "branches = null for network_admin (all points of the network); pairs come from GET /api/v1/analytics/branches/",
  "request": {
   "method": "POST",
   "path": "/api/v1/internal/auth/exchange/",
@@ -19,13 +19,14 @@
   "status": 200,
   "body": {
    "token": "<jwt>",
-   "expires_at": "2026-09-16T18:02:40.659383+00:00",
+   "expires_at": "2026-09-18T13:44:14.603692+00:00",
    "expires_in": 3599,
    "tenant_schema": "dev",
    "tenant_domain": "dev.levelupapp.ru",
    "created": true,
+   "branches": null,
    "profile": {
-    "id": 54,
+    "id": 66,
     "username": "checkup-fx-admin-dev",
     "full_name": "Fixture Admin",
     "role": "network_admin",
@@ -52,6 +53,6 @@
    }
   }
  },
- "recorded_at": "2026-09-16",
- "tenant": "dev (песочница)"
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
 }

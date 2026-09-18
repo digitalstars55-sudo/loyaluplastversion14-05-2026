@@ -1,0 +1,21 @@
+{
+ "name": "review_detail_404_foreign",
+ "note": "thread of another point is invisible to client -> 404, same body as unknown id",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/mobile/reviews/3/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 404,
+  "body": {
+   "detail": "Отзыв не найден"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

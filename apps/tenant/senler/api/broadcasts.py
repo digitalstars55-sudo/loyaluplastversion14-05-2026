@@ -54,6 +54,7 @@ from apps.tenant.senler.services import (
 )
 
 from .guard import audience_changed
+from . import schema as api_schema  # только OpenAPI-описание, на поведение не влияет
 from .serializers import draft_to_dict, iso, segment_to_dict, send_to_dict
 
 # Лимит VK на длину сообщения.
@@ -334,6 +335,7 @@ class BroadcastDraftListCreateAPIView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @api_schema.draft_list
     def get(self, request):
         allowed = _allowed_branches(request)
         limit, offset = _page_params(request)
@@ -358,6 +360,7 @@ class BroadcastDraftListCreateAPIView(APIView):
             'results': [draft_to_dict(d) for d in rows],
         })
 
+    @api_schema.draft_create
     def post(self, request):
         data = request.data or {}
         try:
@@ -422,12 +425,14 @@ class BroadcastDraftDetailAPIView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @api_schema.draft_get
     def get(self, request, pk):
         draft = _load_draft(request, pk)
         if draft is None:
             return _error('not_found', 'Черновик не найден', http_status.HTTP_404_NOT_FOUND)
         return Response(draft_to_dict(draft))
 
+    @api_schema.draft_patch
     def patch(self, request, pk):
         draft = _load_draft(request, pk)
         if draft is None:
@@ -469,6 +474,7 @@ class BroadcastDraftDetailAPIView(APIView):
         draft.save()
         return Response(draft_to_dict(draft))
 
+    @api_schema.draft_delete
     def delete(self, request, pk):
         draft = _load_draft(request, pk)
         if draft is None:
@@ -489,6 +495,7 @@ class BroadcastDraftPreviewAPIView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @api_schema.preview
     def get(self, request, pk):
         draft = _load_draft(request, pk)
         if draft is None:
@@ -524,6 +531,7 @@ class BroadcastDraftSendAPIView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @api_schema.send
     def post(self, request, pk):
         draft = _load_draft(request, pk)
         if draft is None:
@@ -714,6 +722,7 @@ class BroadcastSendListAPIView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @api_schema.sends_list
     def get(self, request):
         allowed = _allowed_branches(request)
         limit, offset = _page_params(request)
@@ -754,6 +763,7 @@ class BroadcastSendCancelAPIView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @api_schema.send_cancel
     def post(self, request, pk):
         send = _load_send(request, pk)
         if send is None:
@@ -790,6 +800,7 @@ class BroadcastSendEditInVKAPIView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @api_schema.send_edit_in_vk
     def post(self, request, pk):
         send = _load_send(request, pk)
         if send is None:
@@ -824,6 +835,7 @@ class BroadcastSendDeleteInVKAPIView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @api_schema.send_delete_in_vk
     def post(self, request, pk):
         send = _load_send(request, pk)
         if send is None:

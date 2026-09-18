@@ -1,6 +1,6 @@
 {
  "name": "exchange_200_client",
- "note": "",
+ "note": "branches = [{branch_id: public id from request, id: internal Branch.id used by mobile/reviews/*, broadcasts/*}]",
  "request": {
   "method": "POST",
   "path": "/api/v1/internal/auth/exchange/",
@@ -22,13 +22,19 @@
   "status": 200,
   "body": {
    "token": "<jwt>",
-   "expires_at": "2026-09-16T18:02:40.686168+00:00",
+   "expires_at": "2026-09-18T13:44:14.627047+00:00",
    "expires_in": 3599,
    "tenant_schema": "dev",
    "tenant_domain": "dev.levelupapp.ru",
    "created": true,
+   "branches": [
+    {
+     "branch_id": 990002,
+     "id": 3
+    }
+   ],
    "profile": {
-    "id": 55,
+    "id": 67,
     "username": "checkup-fx-client-dev",
     "full_name": "Fixture Client",
     "role": "client",
@@ -55,6 +61,6 @@
    }
   }
  },
- "recorded_at": "2026-09-16",
- "tenant": "dev (песочница)"
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
 }

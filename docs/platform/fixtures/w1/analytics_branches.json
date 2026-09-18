@@ -1,6 +1,6 @@
 {
  "name": "analytics_branches",
- "note": "",
+ "note": "id = internal Branch.id, branch_id = public id (as in LoyalupBranchMap / QR / complaints)",
  "request": {
   "method": "GET",
   "path": "/api/v1/analytics/branches/",
@@ -15,14 +15,16 @@
   "body": [
    {
     "id": 2,
+    "branch_id": 239014483,
     "name": "Конференция \"Автосуши Автопицца\""
    },
    {
     "id": 3,
+    "branch_id": 990002,
     "name": "Песочница CheckUp · Точка 2"
    }
   ]
  },
- "recorded_at": "2026-09-16",
- "tenant": "dev (песочница)"
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
 }

@@ -16,7 +16,10 @@ from rest_framework import generics, status
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from drf_spectacular.utils import OpenApiParameter, extend_schema
+from drf_spectacular.utils import (
+    OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view, inline_serializer,
+)
+from rest_framework import serializers as drf_ser
 from rest_framework.views import APIView
 
 from apps.tenant.branch.models import (
@@ -104,6 +107,36 @@ def review_card_queryset(request):
     return qs
 
 
+# ── Схема OpenAPI (drf-spectacular) — только для среза CheckUp ────────────────
+# Декоратор должен висеть на HTTP-методе (get), а не на list/retrieve: у
+# generic-вьюх (не ViewSet) спектакуляр читает переопределение только с
+# get/post/... — декоратор на list молча игнорировался, и в срезе 16.09 лента
+# шла без query-параметров и массивом вместо {reviews, total, limit, offset}.
+# На поведение ручек ничего из этого не влияет.
+_REVIEW_LIST_PARAMS = [
+    OpenApiParameter('branch_ids', str, description='id точек через запятую (пересекается с правами)'),
+    OpenApiParameter('period', int, description='дней назад по last_message_at'),
+    OpenApiParameter('sentiment', str, description='POSITIVE,NEGATIVE,PARTIALLY_NEGATIVE,NEUTRAL,SPAM,WAITING или bad (= весь негатив)'),
+    OpenApiParameter('status', str, enum=['unread', 'replied', 'unanswered', 'all'], description='ждёт ответа / отвечен / без ответа'),
+    OpenApiParameter('source', str, description='app | vk — есть ли в треде сообщение такого источника'),
+    OpenApiParameter('checkup_status', str, enum=['in_progress', 'resolved', 'rejected', 'none', 'any'], description='статус жалобы в CheckUp'),
+    OpenApiParameter('q', str, description='поиск по VK ID отправителя или имени гостя'),
+    OpenApiParameter('limit', int, description='1..200; без limit — весь список'),
+    OpenApiParameter('offset', int),
+]
+_NOT_FOUND = inline_serializer('NotFoundDetail', fields={'detail': drf_ser.CharField()})
+
+
+@extend_schema_view(get=extend_schema(
+    summary='Лента отзывов',
+    parameters=_REVIEW_LIST_PARAMS,
+    responses={200: inline_serializer('MobileReviewList', fields={
+        'reviews': ReviewListSerializer(many=True),
+        'total':   drf_ser.IntegerField(),
+        'limit':   drf_ser.IntegerField(allow_null=True, help_text='null — без пагинации, список полный'),
+        'offset':  drf_ser.IntegerField(),
+    })},
+))
 class MobileReviewListAPIView(generics.ListAPIView):
     """
     GET /api/v1/mobile/reviews/?branch_ids=1,2&period=30
@@ -152,17 +185,6 @@ class MobileReviewListAPIView(generics.ListAPIView):
 
         return qs
 
-    @extend_schema(parameters=[
-        OpenApiParameter('branch_ids', str, description='id точек через запятую (пересекается с правами)'),
-        OpenApiParameter('period', int, description='дней назад по last_message_at'),
-        OpenApiParameter('sentiment', str, description='POSITIVE,NEGATIVE,PARTIALLY_NEGATIVE,NEUTRAL,SPAM,WAITING или bad (= весь негатив)'),
-        OpenApiParameter('status', str, enum=['unread', 'replied', 'unanswered', 'all'], description='ждёт ответа / отвечен / без ответа'),
-        OpenApiParameter('source', str, description='app | vk — есть ли в треде сообщение такого источника'),
-        OpenApiParameter('checkup_status', str, enum=['in_progress', 'resolved', 'rejected', 'none', 'any'], description='статус жалобы в CheckUp'),
-        OpenApiParameter('q', str, description='поиск по VK ID отправителя или имени гостя'),
-        OpenApiParameter('limit', int, description='1..200; без limit — весь список'),
-        OpenApiParameter('offset', int),
-    ])
     def list(self, request, *args, **kwargs):
         # Мобайл ожидает {reviews: [...]} а не голый массив. С 16.09 рядом
         # total/limit/offset: без ?limit= список полный, как раньше.
@@ -178,6 +200,14 @@ class MobileReviewListAPIView(generics.ListAPIView):
         return Response({'reviews': ser.data, 'total': total, 'limit': limit, 'offset': offset})
 
 
+@extend_schema_view(get=extend_schema(
+    summary='Карточка одного отзыва (та же форма, что элемент reviews[] в ленте)',
+    responses={
+        200: ReviewListSerializer,
+        404: OpenApiResponse(response=_NOT_FOUND,
+                             description='Нет такого треда или он вне точек пользователя: {"detail": "Отзыв не найден"}'),
+    },
+))
 class MobileReviewDetailAPIView(generics.RetrieveAPIView):
     """
     GET /api/v1/mobile/reviews/{review_id}/
@@ -227,6 +257,12 @@ def _check_conv_access(request, conv) -> bool:
     return conv.branch_id in allowed
 
 
+@extend_schema_view(get=extend_schema(
+    summary='Сообщения треда',
+    responses={200: inline_serializer('MobileReviewMessages', fields={
+        'messages': ReviewMessageSerializer(many=True),
+    })},
+))
 class MobileReviewMessagesAPIView(generics.ListAPIView):
     """GET /api/v1/mobile/reviews/{id}/messages/"""
     permission_classes = [IsAuthenticated]
@@ -531,6 +567,11 @@ class GuestListAPIView(APIView):
 
     _MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 
+    @extend_schema(parameters=[
+        OpenApiParameter('search', str, description='подстрока имени, фамилии или VK ID'),
+        OpenApiParameter('limit', int, description='1..10000, по умолчанию 10000'),
+        OpenApiParameter('offset', int),
+    ])
     def get(self, request):
         from datetime import date, timedelta, timezone as dt_tz
         from django.db.models import Q, Sum, Count, Max

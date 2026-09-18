@@ -7,7 +7,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from drf_spectacular.types import OpenApiTypes
 
 from .serializers import StatsQuerySerializer, RFQuerySerializer
@@ -874,6 +874,7 @@ class CampaignsHistoryAPIView(APIView):
     GENDER_TO_FILTER = {'all': 'all', 'm': 'male', 'f': 'female'}
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @extend_schema(parameters=[OpenApiParameter('limit', int, description='1..2000, по умолчанию 2000')])
     def get(self, request):
         from apps.tenant.senler.models import BroadcastSend
 
@@ -2049,6 +2050,10 @@ class RFMCampaignKPIAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @extend_schema(parameters=[
+        OpenApiParameter('start', str, description='YYYY-MM-DD; по умолчанию end − 29 дней'),
+        OpenApiParameter('end', str, description='YYYY-MM-DD; по умолчанию сегодня'),
+    ])
     def get(self, request):
         from datetime import date as _date, timedelta as _td
         from django.utils import timezone as tz

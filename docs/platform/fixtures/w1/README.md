@@ -11,7 +11,7 @@
 (`exchange_*`, `verdict_*`, `branch_patch_*`, `reviews_401_no_token`). Форма ответа меняется
 только аддитивно; удаление поля — новая версия контракта.
 
-Схема OpenAPI тех же ручек: `../../openapi_w1_2026-09-16.json` (внутренние ручки обмена и
+Схема OpenAPI тех же ручек: `../../openapi_w1_2026-09-18.json` (внутренние ручки обмена и
 вердикта — обычные Django-вьюхи, в схеме их нет, описаны в контракте 2.1 и 5.2).
 Полная живая схема: `GET https://levelupapp.ru/api/schema/`.
 
@@ -31,3 +31,16 @@
   точки пуста, а без запуска в статусе pending/done их не снять — форма ответов этих трёх ручек описана в контракте (3.1, п. 13).
 - `guest_card.json` — к записи 16.09 дописаны `phone`, `phone_source`, `phone_consent_at` по форме сериализатора (значения синтетические).
 - Скрипт записи: `record_fixtures_w1b.py` (та же схема: транзакция с откатом, JWT → `<jwt>`, `unittest.mock.patch` на `run_broadcast` и `run_broadcast_task`).
+
+## Дополнение 18.09.2026 (вечер) — пары «публичный branch_id → внутренний id» и карточка отзыва (461689d, 95a91a7)
+
+- `exchange_200_client.json`, `exchange_200_network_admin.json` — перезаписаны: в ответе обмена поле `branches` —
+  `[{branch_id, id}]` у `client` (публичный id из запроса → внутренний `Branch.id`, которым ходят `mobile/reviews/*`, `broadcasts/*`)
+  и `null` у `network_admin` (= все точки сети; пустой список читался бы как «точек нет»).
+- `analytics_branches.json` — перезаписан: `[{id, branch_id, name}]` (`id` внутренний, `branch_id` публичный — как в LoyalupBranchMap/QR/жалобах).
+- `review_detail_200.json`, `review_detail_200_client_own_point.json` — `GET /api/v1/mobile/reviews/{id}/`: та же карточка, что элемент
+  `reviews[]` ленты (34 поля); `review_detail_404.json` (нет такого id) и `review_detail_404_foreign.json` (тред чужой точки под `client`) —
+  оба `404 {"detail": "Отзыв не найден"}`, тела одинаковы намеренно.
+- Скрипт записи: `record_fixtures_w1c.py` (та же схема: транзакция с откатом, JWT → `<jwt>`; только песочница dev, гости не трогались).
+- Срез схемы перегенерирован тем же днём: `../../openapi_w1_2026-09-18.json` + `loyalup_w1_2026-09-18.d.ts` — теперь с `broadcasts/*`,
+  карточкой отзыва, объектными ответами ленты/сообщений и query-параметрами (декораторы схемы перенесены на HTTP-методы вьюх).
