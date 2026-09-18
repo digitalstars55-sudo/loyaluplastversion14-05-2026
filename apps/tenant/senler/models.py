@@ -622,6 +622,20 @@ class AutoBroadcastRule(TimeStampedModel):
         help_text='Пока выключено — сообщения не уходят. Перед включением посмотрите '
                   'предпросмотр «кому уйдёт».',
     )
+    # DELETE в API кабинета (контракт №31) не удаляет правило физически: на нём
+    # висит история отправок (BroadcastSend/BroadcastRecipient) и общий дедуп-лог.
+    # Архив = «скрыто из списка и выключено»; движку отдельная проверка не нужна —
+    # архивируем всегда вместе с is_active=False, а он смотрит только на is_active.
+    # db_default — чтобы воркер на старом коде в окне «миграция прошла, рестарта
+    # ещё не было» не падал на INSERT без этой колонки (урок 17.09).
+    is_archived = models.BooleanField(
+        default=False,
+        db_default=False,
+        db_index=True,
+        verbose_name='В архиве',
+        help_text='Архивное правило скрыто из списков и не отправляет сообщения. '
+                  'История отправок сохраняется.',
+    )
     priority = models.PositiveSmallIntegerField(
         default=0,
         verbose_name='Приоритет',
