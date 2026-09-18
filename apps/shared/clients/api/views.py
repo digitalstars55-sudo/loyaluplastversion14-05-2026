@@ -1,3 +1,6 @@
+import re
+
+from django.utils import timezone
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -46,7 +49,8 @@ class CrossTenantOverviewView(APIView):
         start, end, active_period = parse_overview_period(request)
         # Расчёт идёт по всем схемам — кэш 5 минут на период (контракт 3в.3).
         from django.core.cache import cache
-        cache_key = f'overview:stats:{start.isoformat()}:{end.isoformat()}'
+        from apps.shared.clients.cross_stats import overview_cache_key
+        cache_key = overview_cache_key(start, end)
         data = cache.get(cache_key)
         if data is None:
             data = get_cross_tenant_overview(start, end)
@@ -193,7 +197,8 @@ class CrossTenantOverviewExportView(APIView):
         from django.http import HttpResponse
         from apps.shared.clients.cross_stats import get_cross_tenant_overview, parse_overview_period
         start, end, _period = parse_overview_period(request)
-        cache_key = f'overview:stats:{start.isoformat()}:{end.isoformat()}'
+        from apps.shared.clients.cross_stats import overview_cache_key
+        cache_key = overview_cache_key(start, end)
         data = cache.get(cache_key)
         if data is None:
             data = get_cross_tenant_overview(start, end)
@@ -202,3 +207,67 @@ class CrossTenantOverviewExportView(APIView):
         resp = HttpResponse(body, content_type='text/csv; charset=utf-8')
         resp['Content-Disposition'] = f'attachment; filename="loyalup-overview-{start.isoformat()}-{end.isoformat()}.csv"'
         return resp
+
+
+# ── №34: синхронизация себестоимости подарков (контракт v1.8) ─────────────────
+
+def _platform_denied():
+    return Response({'code': 'role_not_allowed', 'detail': 'Только для платформенного доступа.'},
+                    status=status.HTTP_403_FORBIDDEN)
+
+
+class SyncGiftCostsView(APIView):
+    """
+    POST /api/v1/overview/sync-gift-costs/  {confirm: true, schema?: "levone", dry_run?: false}
+
+    Полный обход активированных подарков (все сети или одна) и дозапись снимков
+    себестоимости — то же, что кнопка «Синхронизировать затраты» суперадминки,
+    но в celery, с блокировкой (второй запуск → 409 already_running) и без
+    удержания HTTP-запроса. dry_run — синхронный подсчёт без записи.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request):
+        if not _may_see_platform(request):
+            return _platform_denied()
+        from django.core.cache import cache
+        from apps.tenant.inventory import tasks as gift_tasks
+        data = request.data or {}
+        if not isinstance(data, dict):
+            return Response({'code': 'invalid_payload', 'detail': 'тело должно быть JSON-объектом'}, status=400)
+        schema = (data.get('schema') or '').strip().lower() or None
+        if schema and not re.match(r'^[a-z0-9_]{1,63}$', schema):
+            return Response({'code': 'invalid_payload', 'detail': 'schema: имя сети LoyalUP'}, status=400)
+        dry_run = data.get('dry_run') is True
+        if dry_run:
+            try:
+                result = gift_tasks.run_gift_costs_sync(schema, commit=False)
+            except Exception as exc:                  # noqa: BLE001
+                return Response({'code': 'sync_failed', 'detail': str(exc)[:300]}, status=500)
+            return Response({'dry_run': True, **result})
+        if data.get('confirm') is not True:
+            return Response({'code': 'confirm_required', 'detail': 'Нужно подтверждение: confirm=true'}, status=400)
+        started_at = timezone.now()
+        if not cache.add(gift_tasks.LOCK_KEY, started_at.isoformat(), gift_tasks.LOCK_TTL):
+            return Response({'code': 'already_running', 'detail': 'синхронизация уже идёт',
+                             'started_at': cache.get(gift_tasks.LOCK_KEY)}, status=status.HTTP_409_CONFLICT)
+        try:
+            job = gift_tasks.sync_gift_costs_task.delay(schema, getattr(request.user, 'username', ''))
+        except Exception as exc:                      # noqa: BLE001 — брокер лежит
+            cache.delete(gift_tasks.LOCK_KEY)
+            return Response({'code': 'queue_unavailable', 'detail': f'не удалось поставить задачу: {exc}'[:300]},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({'queued': True, 'task_id': getattr(job, 'id', None), 'scope': schema or 'all',
+                         'started_at': started_at.isoformat(), 'lock_seconds': gift_tasks.LOCK_TTL},
+                        status=status.HTTP_202_ACCEPTED)
+
+
+class SyncGiftCostsStatusView(APIView):
+    """GET /api/v1/overview/sync-gift-costs/status/ → {running, last_run}."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request):
+        if not _may_see_platform(request):
+            return _platform_denied()
+        from apps.tenant.inventory import tasks as gift_tasks
+        return Response(gift_tasks.sync_status())

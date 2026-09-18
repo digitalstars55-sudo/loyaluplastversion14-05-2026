@@ -425,3 +425,24 @@ def get_cross_tenant_reviews(start: date, end: date, sentiment_filter: str = 'al
             logger.exception('cross_stats reviews: tenant %s failed', c.schema_name)
     out.sort(key=lambda r: r['created_at'], reverse=True)
     return out
+
+
+# ── кэш сводной (контракт 3в.3 / v1.8) ───────────────────────────────────────
+# Ключ несёт «поколение»: синхронизация себестоимости поднимает его, и все
+# закэшированные периоды сразу устаревают (перебирать ключи в Redis нельзя).
+OVERVIEW_CACHE_GEN_KEY = 'overview:stats:gen'
+
+
+def overview_cache_key(start, end) -> str:
+    from django.core.cache import cache
+    gen = cache.get(OVERVIEW_CACHE_GEN_KEY, 0) or 0
+    return f'overview:stats:{gen}:{start.isoformat()}:{end.isoformat()}'
+
+
+def invalidate_overview_cache() -> None:
+    from django.core.cache import cache
+    try:
+        cache.add(OVERVIEW_CACHE_GEN_KEY, 0, None)
+        cache.incr(OVERVIEW_CACHE_GEN_KEY)
+    except Exception:                                  # noqa: BLE001 — бэкенд без incr
+        cache.set(OVERVIEW_CACHE_GEN_KEY, int(cache.get(OVERVIEW_CACHE_GEN_KEY, 0) or 0) + 1, None)

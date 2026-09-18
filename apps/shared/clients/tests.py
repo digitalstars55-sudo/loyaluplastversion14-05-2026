@@ -644,3 +644,89 @@ class OverviewExportTest(_SimpleTestCase):
         force_authenticate(request, user=user, token='not-a-jwt')
         resp = CrossTenantOverviewExportView.as_view()(request)
         self.assertEqual((resp.status_code, resp.data['code']), (403, 'role_not_allowed'))
+
+
+
+class SyncGiftCostsTest(_SimpleTestCase):
+
+    def _platform_user(self):
+        return _NS(pk=5, username='checkup-1-dev', role='network_admin', is_superuser=True, is_authenticated=True, is_active=True)
+
+    def _post(self, data, user=None):
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from apps.shared.clients.api.views import SyncGiftCostsView
+        request = APIRequestFactory().post('/api/v1/overview/sync-gift-costs/', data, format='json')
+        force_authenticate(request, user=user or self._platform_user(), token='t')
+        return SyncGiftCostsView.as_view()(request)
+
+    def test_parse_command_output(self):
+        from apps.tenant.inventory import tasks as gift_tasks
+        def fake_call(name, **kw):
+            kw['stdout'].write('  levone: inventory +3, story +1, refill-zeros ~2\nЗАПИСАНО: всего inventory +3, story +1, обновлено нулевых 2\n')
+        with _mock.patch('django.core.management.call_command', side_effect=fake_call):
+            result = gift_tasks.run_gift_costs_sync('levone', commit=True)
+        self.assertEqual((result['inventory'], result['story'], result['refilled_zeros'], result['schema']), (3, 1, 2, 'levone'))
+
+    def test_plain_user_403(self):
+        user = _NS(pk=6, username='u', role='client', is_superuser=False, is_authenticated=True, is_active=True)
+        resp = self._post({'confirm': True}, user=user)
+        self.assertEqual((resp.status_code, resp.data['code']), (403, 'role_not_allowed'))
+
+    def test_confirm_required(self):
+        resp = self._post({})
+        self.assertEqual((resp.status_code, resp.data['code']), (400, 'confirm_required'))
+
+    def test_queue_and_lock(self):
+        from apps.tenant.inventory import tasks as gift_tasks
+        store = {}
+        def add(key, value, ttl=None):
+            if key in store: return False
+            store[key] = value; return True
+        with _mock.patch('django.core.cache.cache.add', side_effect=add), \
+             _mock.patch('django.core.cache.cache.get', side_effect=lambda k, d=None: store.get(k, d)), \
+             _mock.patch('django.core.cache.cache.delete', side_effect=lambda k: store.pop(k, None)), \
+             _mock.patch.object(gift_tasks.sync_gift_costs_task, 'delay', return_value=_NS(id='task-1')) as delay:
+            resp = self._post({'confirm': True, 'schema': 'levone'})
+            self.assertEqual(resp.status_code, 202, resp.data)
+            self.assertEqual((resp.data['task_id'], resp.data['scope']), ('task-1', 'levone'))
+            delay.assert_called_once_with('levone', 'checkup-1-dev')
+            resp2 = self._post({'confirm': True})
+            self.assertEqual((resp2.status_code, resp2.data['code']), (409, 'already_running'))
+
+    def test_broker_down_releases_lock(self):
+        from apps.tenant.inventory import tasks as gift_tasks
+        with _mock.patch('django.core.cache.cache.add', return_value=True), \
+             _mock.patch('django.core.cache.cache.delete') as delete, \
+             _mock.patch.object(gift_tasks.sync_gift_costs_task, 'delay', side_effect=RuntimeError('broker down')):
+            resp = self._post({'confirm': True})
+        self.assertEqual((resp.status_code, resp.data['code']), (503, 'queue_unavailable'))
+        delete.assert_called_once_with(gift_tasks.LOCK_KEY)
+
+    def test_dry_run_is_sync(self):
+        from apps.tenant.inventory import tasks as gift_tasks
+        with _mock.patch.object(gift_tasks, 'run_gift_costs_sync', return_value={'inventory': 1, 'story': 0, 'refilled_zeros': 0, 'commit': False, 'schema': 'all', 'output_tail': ''}) as run:
+            resp = self._post({'dry_run': True})
+        self.assertEqual((resp.status_code, resp.data['dry_run'], resp.data['inventory']), (200, True, 1))
+        run.assert_called_once_with(None, commit=False)
+
+    def test_status_view(self):
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from apps.shared.clients.api.views import SyncGiftCostsStatusView
+        with _mock.patch('django.core.cache.cache.get', side_effect=lambda k, d=None: {'gift_costs:sync:lock': None, 'gift_costs:sync:last': {'ok': True}}.get(k, d)):
+            request = APIRequestFactory().get('/api/v1/overview/sync-gift-costs/status/')
+            force_authenticate(request, user=self._platform_user(), token='t')
+            resp = SyncGiftCostsStatusView.as_view()(request)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual((resp.data['running'], resp.data['last_run']), (False, {'ok': True}))
+
+    def test_task_records_result_and_releases_lock(self):
+        from apps.tenant.inventory import tasks as gift_tasks
+        store = {}
+        with _mock.patch.object(gift_tasks, 'run_gift_costs_sync', return_value={'inventory': 2, 'story': 0, 'refilled_zeros': 0}), \
+             _mock.patch('django.core.cache.cache.set', side_effect=lambda k, v, t=None: store.__setitem__(k, v)), \
+             _mock.patch('django.core.cache.cache.delete', side_effect=lambda k: store.pop(k, None)), \
+             _mock.patch('apps.shared.clients.cross_stats.invalidate_overview_cache') as inv:
+            record = gift_tasks.sync_gift_costs_task.run('levone', 'owner')
+        self.assertTrue(record['ok'])
+        self.assertEqual(store[gift_tasks.LAST_KEY]['result']['inventory'], 2)
+        inv.assert_called_once()
