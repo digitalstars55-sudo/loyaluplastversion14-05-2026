@@ -258,7 +258,15 @@ BFF CheckUp живёт в Django (мобилка CheckUp ходит только
 
 **Карточка `rule`:** `{id, name, event, event_label, is_active, is_archived, priority, delay_days, default_delay_days, send_hour_start, send_hour_end, active_from, active_to, audience: {branch_ids: [внутренние id; [] = все точки], gender_filter, rf_segments: [{id, code, name, emoji}]}, audience_summary, message_text, image: null, reward: {gift_tier, gift_lifetime_days, gift_fallback_text}, reward_summary, follow_up: {parent_rule_id, parent_rule_name, condition} \| null, variants: [{id, name, message_text, weight, is_active, sent, read, failed, open_rate}], stats: {sent, read, failed, open_rate, sent_30d, last_run_at}, created_at, updated_at}` + старые плоские поля мобилки (`branches_count`, `segments_count`, `sent_total`, `sent`, `read`, `failed`, `open_rate`, `parent_rule_name`). Картинка правила в v1.5 не поддержана (как у рассылок). Пожелания CheckUp, которых не будет: `dedup_note` (сколько отсеял дедуп — считается только внутри движка, наружу не выдаётся), `quiet_hours` сети (окно — свойство правила: `send_hour_*`).
 
-**Изменения в модели:** `AutoBroadcastRule.is_archived` (тенантная миграция senler, `db_default=False`, рестарт web и celery сразу после — урок 17.09). **Оценка: 4–5 дней** (карта считала 3: добавились активация с гейтом, лог, варианты, тест-отправка, справочник).
+**Изменения в модели:** `AutoBroadcastRule.is_archived` (тенантная миграция senler/0014, `db_default=False`, рестарт web и celery сразу после — урок 17.09).
+
+**Сделано 18.09 (код в main, ждёт выкладки вторым раундом с миграцией). Уточнения по коду:**
+- `delay_required` — ровно у `no_visit_days` и `subscribed_days` (движок читает `delay_days` без значения по умолчанию только там); у дней рождения и «через 3 ч после игры» задержка не читается вовсе, у остальных есть `default_delay_days`. На `PATCH` проверка задержки идёт только если в теле есть `event` или `delay_days` (мобилка шлёт один `message_text`).
+- Пути общие с мобильным приложением, поэтому **RBAC действует и на него**: сотрудник с ограничением по точкам больше не видит сетевые правила (без точек) — списка и карточки (`404`). Пользователи без ограничений не затронуты. Ошибки на старых путях — теперь `{code, detail}` (текст «Правило не найдено» сохранён).
+- `DELETE …/variants/{vid}/` с отправками → `409 has_sends` без побочных действий (выключать — `PATCH is_active=false`); при замене `variants` целиком через `PATCH` правила вариант с отправками не удаляется, а выключается (статистика сохраняется).
+- `test-send/`: отказ ВК с кодом 901 → `400 not_subscribed`, иной отказ → `502 vk_error {detail}`; троттл `409 rate_limited`; ничего не пишется в лог дедупа и статистику.
+- Разархивации нет: `is_archived` через `PATCH` не принимается. `preview/` считает аудиторию одним проходом (те же функции, что `engine.preview_rule`).
+- Гейт `use_activate` (★10) — по личности из обмена токена (`CheckUpIdentity`), запасной признак — имя пользователя `checkup-<id>-<schema>`.
 
 ### 3б.3. №23 — «Игра через сториз»: одна ручка сети + переопределение точки
 
