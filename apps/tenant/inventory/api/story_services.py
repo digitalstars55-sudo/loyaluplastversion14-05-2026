@@ -129,8 +129,19 @@ def _network_config():
 
 
 def _resolve_story_settings(cb: ClientBranch) -> dict:
-    """Резолв настроек сториз: точка (override) → сеть → хардкод-дефолт."""
-    b = getattr(cb.branch, 'config', None)
+    """Резолв настроек сториз для гостя. Вся логика — в резолве по точке."""
+    return resolve_story_settings_for_branch(cb.branch)
+
+
+def resolve_story_settings_for_branch(branch) -> dict:
+    """Резолв настроек сториз: точка (override) → сеть → хардкод-дефолт.
+
+    Публичная с 18.09.2026: ровно эти значения кабинет CheckUp показывает
+    сотруднику как `effective` (контракт платформы, 3б.3). Гость и кабинет
+    обязаны видеть одно и то же, поэтому вторая копия правил запрещена —
+    зовите эту функцию.
+    """
+    b = getattr(branch, 'config', None)
     net = _network_config()
 
     def _pick(branch_val, net_val, default, *, truthy=False):
@@ -228,6 +239,15 @@ def render_story_text(template: str, *, cafe_name: str, settings: dict, gift_nam
         .replace('[название кафе]', cafe_name or '')
         .replace('[название подарка]', gift_name or '')
     )
+
+
+def story_gifts_for_branch(branch):
+    """Публичное имя `_story_gifts_qs` для кабинета CheckUp (контракт 3б.3).
+
+    Порядок тот же, что видит гость: `prizes.first` в ответе ручки — это
+    ровно первый подарок из этого набора.
+    """
+    return _story_gifts_qs(branch)
 
 
 def _story_gifts_qs(branch):
