@@ -214,6 +214,7 @@ class LoyaltyReportAPIView(APIView):
     @extend_schema(parameters=[StatsQuerySerializer], responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
         from django.db.models import Count
+        from apps.tenant.analytics.api import report_comments
         from apps.tenant.branch.models import TestimonialConversation
 
         ser = StatsQuerySerializer(data=request.query_params)
@@ -298,6 +299,8 @@ class LoyaltyReportAPIView(APIView):
             'sources':        {'from_cafe': from_cafe, 'from_delivery': from_delivery},
             # Воронка по точкам контакта (отслеживаемые QR) — для паритета с вебом.
             'contact_points': services.get_contact_point_funnel(branch_ids, start_date, end_date),
+            # Комментарии к секциям — из базы (были в localStorage браузера), №28.
+            'comments':       report_comments.comments_for(start_date, end_date, branch_ids),
             'ai_summary':     '',
         })
 

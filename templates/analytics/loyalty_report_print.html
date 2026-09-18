@@ -1,0 +1,102 @@
+{% comment %}
+Печатная версия отчёта по лояльности (контракт 3б.4, №28).
+
+Самодостаточная страница: стили инлайн, внешних файлов и шрифтов нет, скриптов
+нет ни одного кроме onclick кнопки «Печать». Так её можно отдать через BFF
+CheckUp со своего домена — ничего не подтянется с нашего и не сломается за
+firewall'ом. Картинок нет вовсе, поэтому вопрос data:/https не стоит.
+
+Цифры приходят из `LoyaltyReportAPIView` (см. report_comments.report_payload),
+комментарии — из базы (`LoyaltyReportComment`), а НЕ из localStorage браузера,
+как было в старой PDF-версии. Палитра и порядок секций — как в
+loyalty_report_pdf.html: бренд #6a1b9a, акцент #a3e635, тёмно-синий #1a2744.
+{% endcomment %}<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Отчёт по системе лояльности · {{ company_name }} · {{ period_label }}</title>
+<style>
+  :root { --brand:#6a1b9a; --lime:#a3e635; --navy:#1a2744; --ink:#1f2937;
+          --tm:#6b7280; --line:#e5e7eb; --soft:#f5ecfb; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:#e5e7eb; color:var(--ink);
+               font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+               -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bar { position:sticky; top:0; background:var(--brand); color:#fff; padding:12px 20px;
+         display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .bar b { font-size:16px; font-weight:700; }
+  .bar button { background:var(--lime); color:var(--navy); border:0; border-radius:8px;
+                padding:9px 20px; font-size:14px; font-weight:700; cursor:pointer; }
+  .page { width:210mm; min-height:297mm; margin:14px auto; background:#fff;
+          padding:16mm 15mm; box-shadow:0 2px 12px rgba(0,0,0,.12); }
+  .cover { text-align:center; border-top:8px solid var(--brand); padding-top:60mm; }
+  .cover h1 { font-size:30px; margin:0 0 10px; color:var(--navy); }
+  .cover .who { font-size:19px; font-weight:600; color:var(--brand); margin-bottom:6px; }
+  .cover .when { color:var(--tm); font-size:15px; }
+  .cover .made { margin-top:40mm; color:var(--tm); font-size:12px; }
+  h2 { font-size:19px; color:var(--navy); margin:0 0 14px;
+       border-bottom:2px solid var(--brand); padding-bottom:8px; }
+  h2 .num { display:inline-block; min-width:28px; height:28px; line-height:28px;
+            text-align:center; background:var(--brand); color:#fff; border-radius:8px;
+            font-size:14px; margin-right:10px; }
+  table { width:100%; border-collapse:collapse; margin-bottom:14px; }
+  td { padding:9px 10px; border-bottom:1px solid var(--line); font-size:14px; }
+  td.v { text-align:right; font-weight:700; font-variant-numeric:tabular-nums; }
+  .comment { background:var(--soft); border-left:4px solid var(--brand);
+             padding:12px 14px; border-radius:0 8px 8px 0; font-size:14px;
+             line-height:1.55; white-space:pre-line; }
+  .comment .who { display:block; margin-top:8px; color:var(--tm); font-size:12px;
+                  font-weight:600; white-space:normal; }
+  .none { color:var(--tm); font-size:13px; font-style:italic; }
+  @media print {
+    .bar { display:none; }
+    body { background:#fff; }
+    .page { width:auto; min-height:0; margin:0; box-shadow:none; padding:10mm 12mm;
+            page-break-after:always; }
+    .page:last-child { page-break-after:auto; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <b>Отчёт по системе лояльности</b>
+  <button type="button" onclick="window.print()">Печать / Сохранить PDF</button>
+</div>
+
+<section class="page cover">
+  <h1>Отчёт по системе лояльности</h1>
+  <div class="who">{{ company_name }}</div>
+  <div class="when">Период: {{ period_label }}</div>
+  {% if branch_ids %}<div class="when">Точки: {{ branch_ids|join:", " }}</div>
+  {% else %}<div class="when">Все точки сети</div>{% endif %}
+  <div class="made">Сформирован {{ generated_at }}</div>
+</section>
+
+{% for section in sections %}
+<section class="page">
+  <h2><span class="num">{{ section.num }}</span>{{ section.title }}</h2>
+
+  {% if section.rows %}
+    <table>
+      {% for row in section.rows %}
+        <tr><td>{{ row.label }}</td><td class="v">{{ row.value }}</td></tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  {% if section.comment and section.comment.text %}
+    <div class="comment">{{ section.comment.text }}<span class="who">
+      {% if section.comment.is_ai %}Комментарий ИИ{% else %}Комментарий менеджера{% endif %}
+      {% if section.comment.author %} · {{ section.comment.author }}{% endif %}
+      {% if section.comment.updated_at %} · обновлён {{ section.comment.updated_at|slice:":16" }}{% endif %}
+    </span></div>
+  {% else %}
+    <p class="none">Комментарий к разделу не заполнен.</p>
+  {% endif %}
+</section>
+{% endfor %}
+
+</body>
+</html>

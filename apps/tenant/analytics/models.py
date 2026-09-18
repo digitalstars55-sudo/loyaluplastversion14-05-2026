@@ -1234,3 +1234,71 @@ def _sync_segment_bounds_on_settings_save(sender, instance, **kwargs):
         logging.getLogger(__name__).exception(
             'RFSegment auto-sync failed for RFSettings pk=%s', instance.pk,
         )
+
+
+# ── LoyaltyReportComment ──────────────────────────────────────────────────────
+
+class LoyaltyReportComment(models.Model):
+    """
+    Комментарий менеджера к секции отчёта по лояльности (контракт 3б.4, №28).
+
+    До 18.09.2026 комментарии жили в `localStorage` браузера
+    (`loyalty_report_comment_<N>`): на другом устройстве их не было, в JSON
+    отчёта они не попадали, и в PDF уезжало то, что успел набрать именно этот
+    браузер. Теперь они в базе тенанта — одни и те же в вебе, в мобилке, в
+    кабинете CheckUp и в печатной версии.
+
+    Ключ — период И набор точек: один и тот же раздел за сентябрь по всей сети
+    и по одной точке это РАЗНЫЕ комментарии. `branch_key` — строковая форма
+    набора для уникальности (`'1,3'` или `'all'`), `branch_ids` — он же
+    списком для читаемости в админке; в уникальность JSON не берём, чтобы
+    ключ не зависел от порядка и типа элементов.
+    """
+
+    ALL_BRANCHES_KEY = 'all'
+
+    period_start = models.DateField(verbose_name='Начало периода')
+    period_end = models.DateField(verbose_name='Конец периода')
+    branch_ids = models.JSONField(
+        default=list, blank=True,
+        verbose_name='Точки (внутренние id)',
+        help_text='Пустой список = отчёт по всей сети.',
+    )
+    branch_key = models.CharField(
+        max_length=255, db_index=True,
+        verbose_name='Ключ набора точек',
+        help_text="Строка для уникальности: «1,3» или «all».",
+    )
+    section_num = models.PositiveSmallIntegerField(verbose_name='Номер секции')
+    text = models.TextField(blank=True, verbose_name='Текст комментария')
+    is_ai = models.BooleanField(
+        default=False,
+        verbose_name='Сгенерирован ИИ',
+        help_text='Комментарий написан ИИ (менеджер мог его потом поправить).',
+    )
+    author = models.CharField(
+        max_length=150, blank=True,
+        verbose_name='Автор',
+        help_text='Кто сохранил последнюю версию (username).',
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создан')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновлён')
+
+    @staticmethod
+    def make_branch_key(branch_ids) -> str:
+        """Набор точек → строковый ключ. Порядок не важен, «все» = 'all'."""
+        ids = sorted({int(b) for b in (branch_ids or [])})
+        return ','.join(str(i) for i in ids) if ids else LoyaltyReportComment.ALL_BRANCHES_KEY
+
+    def __str__(self):
+        return f'Раздел {self.section_num} · {self.period_start}–{self.period_end} · {self.branch_key}'
+
+    class Meta:
+        verbose_name = 'Комментарий к отчёту'
+        verbose_name_plural = 'Комментарии к отчёту'
+        ordering = ['section_num']
+        unique_together = (('period_start', 'period_end', 'branch_key', 'section_num'),)
+        indexes = [
+            models.Index(fields=['period_start', 'period_end', 'branch_key'],
+                         name='report_comment_period_idx'),
+        ]
