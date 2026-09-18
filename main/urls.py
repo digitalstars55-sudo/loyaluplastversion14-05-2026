@@ -30,6 +30,7 @@ urlpatterns = [
     path('telegram/', include('apps.tenant.telegram.api.urls')),
     path('api/v1/', include('apps.tenant.analytics.api.urls')),
     path('api/v1/', include('apps.tenant.senler.api.urls')),  # рассылки JSON-CRUD для CheckUp (контракт №11/№13)
+    path('api/v1/', include('apps.tenant.branch.api.contact_points_urls')),  # точки контакта (QR) для CheckUp (контракт №26/№27)
     path('analytics/', include('apps.tenant.analytics.urls')),
 
     # Мобильное API: auth (JWT) + push register + tenant data. Аддитивно, веб не трогает.
