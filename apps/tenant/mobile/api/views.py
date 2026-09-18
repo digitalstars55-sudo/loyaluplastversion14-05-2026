@@ -17,7 +17,8 @@ from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import (
-    OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view, inline_serializer,
+    OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_serializer, extend_schema_view,
+    inline_serializer,
 )
 from rest_framework import serializers as drf_ser
 from rest_framework.views import APIView
@@ -125,17 +126,23 @@ _REVIEW_LIST_PARAMS = [
     OpenApiParameter('offset', int),
 ]
 _NOT_FOUND = inline_serializer('NotFoundDetail', fields={'detail': drf_ser.CharField()})
+# У ListAPIView спектакуляр оборачивает ответ в массив; many=False говорит ему,
+# что тело — один объект {reviews, ...} / {messages}.
+_REVIEW_LIST_OUT = extend_schema_serializer(many=False)(type(inline_serializer('MobileReviewList', fields={
+    'reviews': ReviewListSerializer(many=True),
+    'total':   drf_ser.IntegerField(),
+    'limit':   drf_ser.IntegerField(allow_null=True, help_text='null — без пагинации, список полный'),
+    'offset':  drf_ser.IntegerField(),
+})))
+_REVIEW_MESSAGES_OUT = extend_schema_serializer(many=False)(type(inline_serializer('MobileReviewMessages', fields={
+    'messages': ReviewMessageSerializer(many=True),
+})))
 
 
 @extend_schema_view(get=extend_schema(
     summary='Лента отзывов',
     parameters=_REVIEW_LIST_PARAMS,
-    responses={200: inline_serializer('MobileReviewList', fields={
-        'reviews': ReviewListSerializer(many=True),
-        'total':   drf_ser.IntegerField(),
-        'limit':   drf_ser.IntegerField(allow_null=True, help_text='null — без пагинации, список полный'),
-        'offset':  drf_ser.IntegerField(),
-    })},
+    responses={200: _REVIEW_LIST_OUT},
 ))
 class MobileReviewListAPIView(generics.ListAPIView):
     """
@@ -259,9 +266,7 @@ def _check_conv_access(request, conv) -> bool:
 
 @extend_schema_view(get=extend_schema(
     summary='Сообщения треда',
-    responses={200: inline_serializer('MobileReviewMessages', fields={
-        'messages': ReviewMessageSerializer(many=True),
-    })},
+    responses={200: _REVIEW_MESSAGES_OUT},
 ))
 class MobileReviewMessagesAPIView(generics.ListAPIView):
     """GET /api/v1/mobile/reviews/{id}/messages/"""

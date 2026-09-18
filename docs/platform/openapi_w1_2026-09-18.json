@@ -1,0 +1,4040 @@
+{
+ "openapi": "3.0.3",
+ "info": {
+  "title": "LoyalUP API — срез волны 1 для CheckUp",
+  "version": "2026-09-18",
+  "description": "Ручки контракта платформы (раздел 3) + рассылки (№11/№13) + карточка одного отзыва. Полная схема: GET https://levelupapp.ru/api/schema/. Внутренние ручки обмена токена и вердикта — обычные Django-вьюхи, в схеме их нет (форма — fixtures/w1/exchange_*.json, verdict_*.json). Все ручки: Authorization: Bearer <JWT из обмена>, Host: <schema>.levelupapp.ru. Источник истины по форме ответов — записанные эталоны fixtures/; срез описывает состав ручек и типы полей."
+ },
+ "servers": [
+  {
+   "url": "http://127.0.0.1:7000",
+   "description": "gunicorn с того же сервера (Host выбирает сеть)"
+  }
+ ],
+ "paths": {
+  "/api/v1/analytics/auto-reply/settings/": {
+   "get": {
+    "operationId": "v1_analytics_auto_reply_settings_retrieve",
+    "description": "GET   /api/v1/analytics/auto-reply/settings/\nPATCH /api/v1/analytics/auto-reply/settings/\n\nSingleton-настройки AI-автоответов на отзывы (одна запись на тенант).\n\nBody (PATCH, все поля опциональны):\n  enabled            — bool, общий рубильник\n  sentiment_enabled  — dict{POSITIVE,NEGATIVE,PARTIALLY_NEGATIVE,NEUTRAL,PENDING: bool}\n                      (SPAM всегда выключен — не принимаем в API)\n  branch_enabled     — dict{branch_id(str): bool}\n  reminder_minutes   — 30 | 60 | 180 | 720\n  ai_tone            — 'formal' | 'friendly' | 'neutral'\n\nАвтоотправка позитивных ответов (ИИ отвечает сам; дефолт — всё выключено):\n  auto_send_enabled        — bool, мастер-флаг автоотправки\n  auto_send_delay_minutes  — 5 | 15 | 30 | 60 (окно отмены)\n  auto_send_attach_links   — bool, кнопки «Яндекс Карты»/«2ГИС»\n  auto_send_links_text     — str ≤200, фраза перед кнопками\n  auto_send_daily_limit    — int 1..500\n  auto_send_branch_enabled — dict{branch_id(str): bool}\n\nАвтоподтверждение на негатив («спасибо, разберёмся»; дефолт выключено):\n  auto_ack_enabled         — bool\n  auto_ack_delay_minutes   — 5 | 15 | 30 | 60 | 120 (окно без ответа человека)\n  auto_ack_text            — str 1..300",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_analytics_auto_reply_settings_partial_update",
+    "description": "GET   /api/v1/analytics/auto-reply/settings/\nPATCH /api/v1/analytics/auto-reply/settings/\n\nSingleton-настройки AI-автоответов на отзывы (одна запись на тенант).\n\nBody (PATCH, все поля опциональны):\n  enabled            — bool, общий рубильник\n  sentiment_enabled  — dict{POSITIVE,NEGATIVE,PARTIALLY_NEGATIVE,NEUTRAL,PENDING: bool}\n                      (SPAM всегда выключен — не принимаем в API)\n  branch_enabled     — dict{branch_id(str): bool}\n  reminder_minutes   — 30 | 60 | 180 | 720\n  ai_tone            — 'formal' | 'friendly' | 'neutral'\n\nАвтоотправка позитивных ответов (ИИ отвечает сам; дефолт — всё выключено):\n  auto_send_enabled        — bool, мастер-флаг автоотправки\n  auto_send_delay_minutes  — 5 | 15 | 30 | 60 (окно отмены)\n  auto_send_attach_links   — bool, кнопки «Яндекс Карты»/«2ГИС»\n  auto_send_links_text     — str ≤200, фраза перед кнопками\n  auto_send_daily_limit    — int 1..500\n  auto_send_branch_enabled — dict{branch_id(str): bool}\n\nАвтоподтверждение на негатив («спасибо, разберёмся»; дефолт выключено):\n  auto_ack_enabled         — bool\n  auto_ack_delay_minutes   — 5 | 15 | 30 | 60 | 120 (окно без ответа человека)\n  auto_ack_text            — str 1..300",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/branches/": {
+   "get": {
+    "operationId": "v1_analytics_branches_retrieve",
+    "description": "GET /api/v1/analytics/branches/\n\nReturns all active branches for the branch-filter UI.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/campaigns/": {
+   "get": {
+    "operationId": "v1_analytics_campaigns_retrieve",
+    "description": "GET /api/v1/analytics/campaigns/?limit=100\n\nИстория запусков рассылок (BroadcastSend) в формате,\nожидаемом мобильным приложением.",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "1..2000, по умолчанию 2000"
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/campaigns/{id}/": {
+   "patch": {
+    "operationId": "v1_analytics_campaigns_partial_update",
+    "description": "PATCH /api/v1/analytics/campaigns/<pk>/  — изменить текст рассылки через VK API (24ч окно)\nDELETE /api/v1/analytics/campaigns/<pk>/ — удалить запись рассылки",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "v1_analytics_campaigns_destroy",
+    "description": "PATCH /api/v1/analytics/campaigns/<pk>/  — изменить текст рассылки через VK API (24ч окно)\nDELETE /api/v1/analytics/campaigns/<pk>/ — удалить запись рассылки",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/reviews/summary/": {
+   "get": {
+    "operationId": "v1_analytics_reviews_summary_retrieve",
+    "description": "GET /api/v1/analytics/reviews/summary/?period=30d&branch_ids=1,2",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string"
+      },
+      "description": "id точек через запятую (пересекается с правами)"
+     },
+     {
+      "in": "query",
+      "name": "end",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "period",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "30d",
+        "7d",
+        "90d",
+        "all",
+        "today",
+        "year"
+       ]
+      },
+      "description": "today|7d|30d|90d|year|all (по умолчанию 30d)"
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "schema": {
+       "type": "string"
+      },
+      "description": "YYYY-MM-DD (вместе с end перекрывает period)"
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/reviews/{review_id}/regenerate-draft/": {
+   "post": {
+    "operationId": "v1_analytics_reviews_regenerate_draft_create",
+    "description": "POST /api/v1/analytics/reviews/{review_id}/regenerate-draft/\n\nГенерирует новый AI-черновик ответа для отзыва. Сохраняет в\nTestimonialConversation.ai_draft и сбрасывает ai_draft_rejected=False.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "review_id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/reviews/{review_id}/reject-draft/": {
+   "post": {
+    "operationId": "v1_analytics_reviews_reject_draft_create",
+    "description": "POST /api/v1/analytics/reviews/{review_id}/reject-draft/\n\nПомечает текущий AI-черновик как отклонённый админом. Сам черновик\nостаётся в БД (для аудита), но мобайл больше не показывает его до\nрегенерации.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "review_id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/rf/": {
+   "get": {
+    "operationId": "v1_analytics_rf_retrieve",
+    "description": "GET /api/v1/analytics/rf/\n\nQuery params:\n  branch_ids — comma-separated Branch PKs (omit = all branches)\n  mode       — restaurant | delivery (default: restaurant)\n  trend_days — number of days for trend chart (7–365, default: 30)\n  r_score    — when combined with f_score, returns guest list for that cell\n  f_score    — see r_score",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string",
+       "default": ""
+      }
+     },
+     {
+      "in": "query",
+      "name": "end",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "in": "query",
+      "name": "f_score",
+      "schema": {
+       "type": "integer",
+       "maximum": 10,
+       "minimum": 1
+      }
+     },
+     {
+      "in": "query",
+      "name": "mode",
+      "schema": {
+       "enum": [
+        "restaurant",
+        "delivery"
+       ],
+       "type": "string",
+       "default": "restaurant",
+       "minLength": 1
+      },
+      "description": "* `restaurant` - restaurant\n* `delivery` - delivery"
+     },
+     {
+      "in": "query",
+      "name": "period",
+      "schema": {
+       "enum": [
+        "today",
+        "7d",
+        "30d",
+        "90d",
+        "year",
+        "all"
+       ],
+       "type": "string",
+       "default": "30d",
+       "minLength": 1
+      },
+      "description": "* `today` - today\n* `7d` - 7d\n* `30d` - 30d\n* `90d` - 90d\n* `year` - year\n* `all` - all"
+     },
+     {
+      "in": "query",
+      "name": "r_score",
+      "schema": {
+       "type": "integer",
+       "maximum": 10,
+       "minimum": 1
+      }
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "in": "query",
+      "name": "trend_days",
+      "schema": {
+       "type": "integer",
+       "maximum": 365,
+       "minimum": 7,
+       "default": 30
+      }
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/rf/campaigns/": {
+   "get": {
+    "operationId": "v1_analytics_rf_campaigns_retrieve",
+    "description": "GET  /api/v1/analytics/rf/campaigns/   — история кампаний (последние 100)\nPOST /api/v1/analytics/rf/campaigns/   — создать кампанию и запустить начисление\n\nPOST body (JSON):\n  segment_id     — RFSegment PK (обязателен: кампания всегда из ячейки)\n  mode           — restaurant | delivery\n  branch_ids     — CSV точек (как в send-broadcast)\n  r_score, f_score, expected_count, start, end — контекст ячейки матрицы\n  reward_type    — gift | points\n  catalog_item_id — позиция каталога наград (для gift)\n  points_amount  — целое > 0 (для points)\n  lifetime_days  — срок забора подарка; 0/пусто — срок позиции\n  holdout_percent — контрольная группа, % (по умолчанию 10)\n  name, comment  — опционально\n\nНачисление идёт асинхронно (celery); прогресс — GET detail.\nSnapshot аудитории фиксируется здесь и больше не меняется.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   },
+   "post": {
+    "operationId": "v1_analytics_rf_campaigns_create",
+    "description": "GET  /api/v1/analytics/rf/campaigns/   — история кампаний (последние 100)\nPOST /api/v1/analytics/rf/campaigns/   — создать кампанию и запустить начисление\n\nPOST body (JSON):\n  segment_id     — RFSegment PK (обязателен: кампания всегда из ячейки)\n  mode           — restaurant | delivery\n  branch_ids     — CSV точек (как в send-broadcast)\n  r_score, f_score, expected_count, start, end — контекст ячейки матрицы\n  reward_type    — gift | points\n  catalog_item_id — позиция каталога наград (для gift)\n  points_amount  — целое > 0 (для points)\n  lifetime_days  — срок забора подарка; 0/пусто — срок позиции\n  holdout_percent — контрольная группа, % (по умолчанию 10)\n  name, comment  — опционально\n\nНачисление идёт асинхронно (celery); прогресс — GET detail.\nSnapshot аудитории фиксируется здесь и больше не меняется.",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/rf/campaigns/kpi/": {
+   "get": {
+    "operationId": "v1_analytics_rf_campaigns_kpi_retrieve",
+    "description": "GET /api/v1/analytics/rf/campaigns/kpi/?start=YYYY-MM-DD&end=YYYY-MM-DD\n\nКомпактный блок «RFM-кампании» для общей панели (ТЗ RFM §7, 4 карточки):\n  assigned      — уникальные гости, которым успешно начислена награда;\n  activated     — активировали RFM-подарок (+% от получателей подарков);\n  returned      — вернулись после награды (+% и сравнение с контролем);\n  improved      — улучшили RF-позицию (+% от вернувшихся).\n\nПериод — по дате создания кампании; по умолчанию последние 30 дней.",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "end",
+      "schema": {
+       "type": "string"
+      },
+      "description": "YYYY-MM-DD; по умолчанию сегодня"
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "schema": {
+       "type": "string"
+      },
+      "description": "YYYY-MM-DD; по умолчанию end − 29 дней"
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/rf/campaigns/{id}/": {
+   "get": {
+    "operationId": "v1_analytics_rf_campaigns_retrieve_2",
+    "description": "GET /api/v1/analytics/rf/campaigns/<pk>/ — детали + живые метрики.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/rf/campaigns/{id}/cancel/": {
+   "post": {
+    "operationId": "v1_analytics_rf_campaigns_cancel_create",
+    "description": "POST /api/v1/analytics/rf/campaigns/<pk>/cancel/\n\nОтмена кампании (ТЗ §9): начисление останавливается, неактивированные\nподарки отзываются с возвратом лимита, баллы откатываются в пределах\nнеиспользованного остатка. Активированные подарки остаются у гостей.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/rf/generate-broadcast-text/": {
+   "post": {
+    "operationId": "v1_analytics_rf_generate_broadcast_text_create",
+    "description": "POST /api/v1/analytics/rf/generate-broadcast-text/\n\nUses Claude AI to generate a broadcast message.\n\nBody (JSON):\n  segment_id — RFSegment PK (опционально). Если передан — текст пишется\n               с подсказкой по сегменту. Без него — общий текст для всех\n               оцифрованных гостей.",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     },
+     "500": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/rf/migrations/": {
+   "get": {
+    "operationId": "v1_analytics_rf_migrations_retrieve",
+    "description": "GET /api/v1/analytics/rf/migrations/?mode=restaurant&trend_days=30\n\nПолный список миграций между RF-сегментами за период для отдельного\nэкрана мобильного приложения: [{from, to, count}]. count знаковый —\n«+» если гость перешёл в более сильный сегмент (рост по R+F),\n«−» если в более слабый (ослабление). Это позволяет мобайлу\nфильтровать поток «приток / отток».",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string",
+       "default": ""
+      }
+     },
+     {
+      "in": "query",
+      "name": "end",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "in": "query",
+      "name": "f_score",
+      "schema": {
+       "type": "integer",
+       "maximum": 10,
+       "minimum": 1
+      }
+     },
+     {
+      "in": "query",
+      "name": "mode",
+      "schema": {
+       "enum": [
+        "restaurant",
+        "delivery"
+       ],
+       "type": "string",
+       "default": "restaurant",
+       "minLength": 1
+      },
+      "description": "* `restaurant` - restaurant\n* `delivery` - delivery"
+     },
+     {
+      "in": "query",
+      "name": "period",
+      "schema": {
+       "enum": [
+        "today",
+        "7d",
+        "30d",
+        "90d",
+        "year",
+        "all"
+       ],
+       "type": "string",
+       "default": "30d",
+       "minLength": 1
+      },
+      "description": "* `today` - today\n* `7d` - 7d\n* `30d` - 30d\n* `90d` - 90d\n* `year` - year\n* `all` - all"
+     },
+     {
+      "in": "query",
+      "name": "r_score",
+      "schema": {
+       "type": "integer",
+       "maximum": 10,
+       "minimum": 1
+      }
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "in": "query",
+      "name": "trend_days",
+      "schema": {
+       "type": "integer",
+       "maximum": 365,
+       "minimum": 7,
+       "default": 30
+      }
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/rf/recalculate/": {
+   "post": {
+    "operationId": "v1_analytics_rf_recalculate_create",
+    "description": "POST /api/v1/analytics/rf/recalculate/\n\nSynchronously recalculates RF scores for the given branches and mode.\nIntended for manual runs from the admin dashboard.\n\nBody (JSON or form):\n  mode       — restaurant | delivery  (default: restaurant)\n  branch_ids — comma-separated Branch PKs (omit = all active branches)",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RFQuery"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/RFQuery"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/RFQuery"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/rf/reward-catalog/": {
+   "get": {
+    "operationId": "v1_analytics_rf_reward_catalog_retrieve",
+    "description": "GET /api/v1/analytics/rf/reward-catalog/\n\nПозиции «Каталога наград», доступные для назначения RFM-кампанией:\nактивные, не архивные, available_for_rfm, с привязанным подарком\n(без product гостю нечего показать в «Моих подарках»).",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/rf/send-broadcast/": {
+   "post": {
+    "operationId": "v1_analytics_rf_send_broadcast_create",
+    "description": "POST /api/v1/analytics/rf/send-broadcast/\n\nCreates a Broadcast + BroadcastSend per branch and sends VK messages.\n\nAccepts both JSON and multipart form data (for image upload).\n\nBody:\n  segment_id   — RFSegment PK (опционально; без него — рассылка всем оцифрованным)\n  message_text — broadcast text (required, max 4096 chars)\n  mode         — restaurant | delivery (default: restaurant)\n  branch_ids   — comma-separated Branch PKs (omit = все активные)\n  image        — image file (optional, multipart only)\n\nЕсли segment_id передан — Broadcast привязывается к указанному RFSegment\n(audience_type=ALL + rf_segments=[segment]). Если segment_id опущен —\nсоздаётся Broadcast БЕЗ rf_segments (audience_type=ALL → все оцифрованные\nв данной точке).",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      },
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/segments/": {
+   "get": {
+    "operationId": "v1_analytics_segments_retrieve",
+    "description": "GET /api/v1/analytics/segments/\n\nСписок RF-сегментов для выбора аудитории рассылки.\nВозвращает глобальные сегменты (branch=null) + число гостей в каждом.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/stats/": {
+   "get": {
+    "operationId": "v1_analytics_stats_retrieve",
+    "description": "GET /api/v1/analytics/stats/\n\nQuery params:\n  branch_ids — comma-separated Branch PKs (omit = all branches)\n  period     — today | 7d | 30d | 90d | year | all  (default: 30d)\n  start      — YYYY-MM-DD  (overrides period)\n  end        — YYYY-MM-DD  (overrides period)",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string",
+       "default": ""
+      }
+     },
+     {
+      "in": "query",
+      "name": "end",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "in": "query",
+      "name": "period",
+      "schema": {
+       "enum": [
+        "today",
+        "7d",
+        "30d",
+        "90d",
+        "year",
+        "all"
+       ],
+       "type": "string",
+       "default": "30d",
+       "minLength": 1
+      },
+      "description": "* `today` - today\n* `7d` - 7d\n* `30d` - 30d\n* `90d` - 90d\n* `year` - year\n* `all` - all"
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/stats/detail/": {
+   "get": {
+    "operationId": "v1_analytics_stats_detail_retrieve",
+    "description": "GET /api/v1/analytics/stats/detail/?metric=qr_scans&period=30d&limit=50&offset=0\n\nСписок гостей за метрикой общей статистики — те же гости, что на\nвеб-странице /analytics/stats/detail/ (services.get_stat_clients).",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string"
+      },
+      "description": "id точек через запятую (пересекается с правами)"
+     },
+     {
+      "in": "query",
+      "name": "end",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "1..200; без limit — до 200"
+     },
+     {
+      "in": "query",
+      "name": "metric",
+      "schema": {
+       "type": "string"
+      },
+      "description": "ключ метрики из GET /analytics/stats/ (см. metrics в ответе 400)",
+      "required": true
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "period",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "30d",
+        "7d",
+        "90d",
+        "all",
+        "today",
+        "year"
+       ]
+      },
+      "description": "today|7d|30d|90d|year|all (по умолчанию 30d)"
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "schema": {
+       "type": "string"
+      },
+      "description": "YYYY-MM-DD (вместе с end перекрывает period)"
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/stats/slow/": {
+   "get": {
+    "operationId": "v1_analytics_stats_slow_retrieve",
+    "description": "GET /api/v1/analytics/stats/slow/\n\nReturns only the slow-to-compute stats (POS guests + scan index).\nCalled asynchronously from the dashboard after the page has loaded.\n\nQuery params: same as GeneralStatsAPIView (branch_ids, period, start, end)",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string",
+       "default": ""
+      }
+     },
+     {
+      "in": "query",
+      "name": "end",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "in": "query",
+      "name": "period",
+      "schema": {
+       "enum": [
+        "today",
+        "7d",
+        "30d",
+        "90d",
+        "year",
+        "all"
+       ],
+       "type": "string",
+       "default": "30d",
+       "minLength": 1
+      },
+      "description": "* `today` - today\n* `7d` - 7d\n* `30d` - 30d\n* `90d` - 90d\n* `year` - year\n* `all` - all"
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/billing/status/": {
+   "get": {
+    "operationId": "v1_billing_status_retrieve",
+    "description": "GET /api/v1/billing/status/\n\nСтатус подписки текущего тенанта. Plan/price хардкод (в Company-модели\nих нет), paid_until берём из Company.paid_until.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/branch/daily-codes/": {
+   "get": {
+    "operationId": "v1_branch_daily_codes_retrieve",
+    "description": "GET /api/v1/branch/daily-codes/\n\nВозвращает коды дня за последние 7 дней по всем активным точкам.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/branch/daily-codes/generate/": {
+   "post": {
+    "operationId": "v1_branch_daily_codes_generate_create",
+    "description": "POST /api/v1/branch/daily-codes/generate/\n\nBody (JSON):\n  branch_id — int, обязательно\n  purpose   — 'BIRTHDAY' | 'SUPERPRIZE' | 'OTHER' (по умолчанию BIRTHDAY)\n\nРучной/экстренный триггер: создаёт или перегенерирует 5-значный код\nдля (branch, purpose, today). Возвращает обновлённую запись.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/broadcasts/": {
+   "get": {
+    "operationId": "v1_broadcasts_retrieve",
+    "description": "GET  /api/v1/broadcasts/ — список черновиков (limit/offset/total).\nPOST /api/v1/broadcasts/ — создать черновик.\n\nRBAC: пользователь без ограничений видит все черновики; ограниченный —\nтолько те, чьи branch_ids целиком внутри его точек.",
+    "summary": "Черновики рассылок (limit/offset/total)",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "1..200, по умолчанию 50"
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "с нуля"
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "archived",
+        "draft",
+        "sent"
+       ]
+      },
+      "description": "фильтр по статусу"
+     }
+    ],
+    "tags": [
+     "broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastDraftList"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   },
+   "post": {
+    "operationId": "v1_broadcasts_create",
+    "description": "GET  /api/v1/broadcasts/ — список черновиков (limit/offset/total).\nPOST /api/v1/broadcasts/ — создать черновик.\n\nRBAC: пользователь без ограничений видит все черновики; ограниченный —\nтолько те, чьи branch_ids целиком внутри его точек.",
+    "summary": "Создать черновик",
+    "tags": [
+     "broadcasts"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastDraftCreate"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastDraftCreate"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastDraftCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastDraft"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "invalid_payload"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "branch_forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "segment_not_found"
+     }
+    }
+   }
+  },
+  "/api/v1/broadcasts/sends/": {
+   "get": {
+    "operationId": "v1_broadcasts_sends_retrieve",
+    "description": "GET /api/v1/broadcasts/sends/ — история запусков.\n\nВ отличие от старой истории кампаний, здесь RBAC: ограниченный\nпользователь видит только запуски по своим точкам. Авторассылки (запуск\nбез Broadcast — по шаблону/правилу) в выдачу не попадают: у них нет\nточки, по которой можно проверить доступ.",
+    "summary": "История запусков (только по точкам пользователя)",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_id",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "внутренний Branch.id"
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "1..200, по умолчанию 50"
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "с нуля"
+     }
+    ],
+    "tags": [
+     "broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastSendList"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "invalid_payload — branch_id не число"
+     }
+    }
+   }
+  },
+  "/api/v1/broadcasts/sends/{id}/cancel/": {
+   "post": {
+    "operationId": "v1_broadcasts_sends_cancel_create",
+    "description": "POST /api/v1/broadcasts/sends/{id}/cancel/  {confirm: true}\n\nОтмена НЕ мгновенная: run_broadcast сверяется со статусом раз в 10\nсообщений (services.py:506-520) — поэтому в ответе честное примечание.",
+    "summary": "Отменить запуск (pending/running)",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "broadcasts"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastConfirmRequest"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastConfirmRequest"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastConfirmRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastCancelResult"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "confirm_required"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_cancellable"
+     }
+    }
+   }
+  },
+  "/api/v1/broadcasts/sends/{id}/delete-in-vk/": {
+   "post": {
+    "operationId": "v1_broadcasts_sends_delete_in_vk_create",
+    "description": "POST /api/v1/broadcasts/sends/{id}/delete-in-vk/  {confirm: true}\n\nУдаляет доставленные сообщения у гостей (окно ВК — 24 часа). Если\nудаление прошло без ошибок, запуск помечается отменённым — так же, как\nэто делает админка (admin.py:436-440).",
+    "summary": "Удалить доставленные сообщения в ВК (окно 24 ч)",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "broadcasts"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastConfirmRequest"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastConfirmRequest"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastConfirmRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastDeleteInVkResult"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "confirm_required"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_deletable"
+     }
+    }
+   }
+  },
+  "/api/v1/broadcasts/sends/{id}/edit-in-vk/": {
+   "post": {
+    "operationId": "v1_broadcasts_sends_edit_in_vk_create",
+    "description": "POST /api/v1/broadcasts/sends/{id}/edit-in-vk/  {confirm: true, message_text}\n\nМеняет текст уже доставленных сообщений. VK допускает правку 24 часа —\nболее старые получатели попадут в skipped (решает сам сервис).",
+    "summary": "Изменить текст доставленных сообщений в ВК (окно 24 ч)",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "broadcasts"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastEditInVkRequest"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastEditInVkRequest"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastEditInVkRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastEditInVkResult"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "confirm_required / invalid_payload"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_editable"
+     }
+    }
+   }
+  },
+  "/api/v1/broadcasts/{id}/": {
+   "get": {
+    "operationId": "v1_broadcasts_retrieve_2",
+    "description": "GET/PATCH/DELETE /api/v1/broadcasts/{id}/\n\nПравить и удалять можно только черновик в статусе draft: отправленный —\nэто уже история, её меняют аварийными ручками sends/*.",
+    "summary": "Карточка черновика",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastDraft"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found — чужой или несуществующий"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_broadcasts_partial_update",
+    "description": "GET/PATCH/DELETE /api/v1/broadcasts/{id}/\n\nПравить и удалять можно только черновик в статусе draft: отправленный —\nэто уже история, её меняют аварийными ручками sends/*.",
+    "summary": "Изменить черновик (только переданные поля)",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "broadcasts"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedBroadcastDraftPatch"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedBroadcastDraftPatch"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedBroadcastDraftPatch"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastDraft"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "invalid_payload"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "branch_forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found / segment_not_found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_a_draft — уже отправлен"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "v1_broadcasts_destroy",
+    "description": "GET/PATCH/DELETE /api/v1/broadcasts/{id}/\n\nПравить и удалять можно только черновик в статусе draft: отправленный —\nэто уже история, её меняют аварийными ручками sends/*.",
+    "summary": "Удалить черновик",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastOk"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_a_draft — отправленный не удаляется"
+     }
+    }
+   }
+  },
+  "/api/v1/broadcasts/{id}/preview/": {
+   "get": {
+    "operationId": "v1_broadcasts_preview_retrieve",
+    "description": "GET /api/v1/broadcasts/{id}/preview/\n\ncount — та самая цифра, которую кабинет обязан вернуть в expected_count\nпри отправке. Считается ровно тем же кодом, что и аудитория отправки.",
+    "summary": "Предпросмотр аудитории (count → expected_count)",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastPreview"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     }
+    }
+   }
+  },
+  "/api/v1/broadcasts/{id}/send/": {
+   "post": {
+    "operationId": "v1_broadcasts_send_create",
+    "description": "POST /api/v1/broadcasts/{id}/send/  {expected_count, confirm: true}\n\nПорядок (нарушать нельзя):\n  1) RBAC и статус черновика;\n  2) expected_count + confirm обязательны;\n  3) аудитория пересчитывается СВЕЖО;\n  4) пусто → 400, разошлось с показанным → 409 (guard);\n  5) Broadcast(SPECIFIC) + create_send на каждую точку (и на каждый\n     A/B-вариант, если они заданы);\n  6) черновик помечается sent ДО запуска — чтобы падение отправки не\n     позволило отправить его второй раз;\n  7) запуск: >30 получателей — ОДИН celery-таск на весь запрос,\n     иначе синхронно.",
+    "summary": "Отправить черновик (expected_count + confirm обязательны)",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "broadcasts"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastSendRequest"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastSendRequest"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/BroadcastSendRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastSendResult"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "expected_count_required / confirm_required / empty_audience"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BroadcastAudienceChanged"
+        }
+       }
+      },
+      "description": "audience_changed (+expected, +actual) / already_sent / not_a_draft"
+     }
+    }
+   }
+  },
+  "/api/v1/dashboard/today/": {
+   "get": {
+    "operationId": "v1_dashboard_today_retrieve",
+    "description": "GET /api/v1/dashboard/today/?branch_ids=1,2\n\n«Задачи дня» для главного экрана: негатив без ответа, черновики ИИ,\nзапланированные автоответы, коды дня по точкам, срок оплаты сети, топ точек\nза 30 дней. Один запрос вместо четырёх, которые собирал клиент.",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string"
+      },
+      "description": "id точек через запятую (пересекается с правами)"
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/guests/": {
+   "get": {
+    "operationId": "v1_guests_retrieve",
+    "description": "GET /api/v1/guests/?search=&limit=100&offset=0\n\nВсе гости тенанта с RF-метриками, монетами и датой последнего визита.",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "1..10000, по умолчанию 10000"
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "search",
+      "schema": {
+       "type": "string"
+      },
+      "description": "подстрока имени, фамилии или VK ID"
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/guests/{vk_id}/": {
+   "get": {
+    "operationId": "v1_guests_retrieve_2",
+    "description": "GET /api/v1/guests/<vk_id>/\n\nКарточка гостя для мобильного приложения. Агрегирует данные по всем\nClientBranch-профилям гостя в текущем тенанте: баланс монет (income−expense),\nRF-сегмент, последние визиты и транзакции, VK-статус, призы и отзывы.\n\nОдин гость (guest.Client по vk_id) = одна карточка, даже если он состоит\nв нескольких точках сети.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vk_id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/guests/{vk_id}/adjust-coins/": {
+   "post": {
+    "operationId": "v1_guests_adjust_coins_create",
+    "description": "POST /api/v1/guests/<vk_id>/adjust-coins/  body: {amount: int (знаковое), reason: str}\n\nРучная корректировка баланса монет гостя администратором.\namount > 0 — начисление (income), amount < 0 — списание (expense).\nТранзакция привязывается к самому свежему ClientBranch-профилю гостя;\nдостаточность баланса проверяется по агрегату всех профилей (как его\nвидит мобайл). Требует право adjust_coins.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "vk_id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/me/push-prefs/": {
+   "get": {
+    "operationId": "v1_me_push_prefs_retrieve",
+    "description": "GET /api/v1/me/push-prefs/  — текущие настройки + доступные тенанты/типы для UI.\nPATCH /api/v1/me/push-prefs/  body: {tenants?: {...}, types?: {...}}\n\nФормат push_prefs (хранится в User.push_prefs JSONField):\n  {\n    \"tenants\": {\"asap_orel\": true, \"shavuha_ot_leo\": false, \"*\": true},\n    \"types\":   {\"review_new\": true, \"draft_ready\": false}\n  }\n\nДефолт (пустой prefs) = все пуши включены.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_me_push_prefs_partial_update",
+    "description": "GET /api/v1/me/push-prefs/  — текущие настройки + доступные тенанты/типы для UI.\nPATCH /api/v1/me/push-prefs/  body: {tenants?: {...}, types?: {...}}\n\nФормат push_prefs (хранится в User.push_prefs JSONField):\n  {\n    \"tenants\": {\"asap_orel\": true, \"shavuha_ot_leo\": false, \"*\": true},\n    \"types\":   {\"review_new\": true, \"draft_ready\": false}\n  }\n\nДефолт (пустой prefs) = все пуши включены.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/mobile/branches/": {
+   "get": {
+    "operationId": "v1_mobile_branches_list",
+    "description": "GET /api/v1/mobile/branches/",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Branch"
+         }
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/mobile/branches/{id}/": {
+   "get": {
+    "operationId": "v1_mobile_branches_retrieve",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_mobile_branches_partial_update",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/mobile/reviews/": {
+   "get": {
+    "operationId": "v1_mobile_reviews_list",
+    "description": "GET /api/v1/mobile/reviews/?branch_ids=1,2&period=30\n    &sentiment=bad|NEGATIVE,…&status=unread|replied|unanswered&source=app|vk\n    &checkup_status=in_progress|resolved|rejected|none&q=…&limit=50&offset=0\n\nВозвращает {reviews: Review[], total, limit, offset}. period — целое число\nдней (фильтр по last_message_at). Фильтры и пагинация — review_filters.py;\nбез них ответ тот же, что до 16.09.2026 (весь список).",
+    "summary": "Лента отзывов",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string"
+      },
+      "description": "id точек через запятую (пересекается с правами)"
+     },
+     {
+      "in": "query",
+      "name": "checkup_status",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "any",
+        "in_progress",
+        "none",
+        "rejected",
+        "resolved"
+       ]
+      },
+      "description": "статус жалобы в CheckUp"
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "1..200; без limit — весь список"
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "period",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "дней назад по last_message_at"
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "schema": {
+       "type": "string"
+      },
+      "description": "поиск по VK ID отправителя или имени гостя"
+     },
+     {
+      "in": "query",
+      "name": "sentiment",
+      "schema": {
+       "type": "string"
+      },
+      "description": "POSITIVE,NEGATIVE,PARTIALLY_NEGATIVE,NEUTRAL,SPAM,WAITING или bad (= весь негатив)"
+     },
+     {
+      "in": "query",
+      "name": "source",
+      "schema": {
+       "type": "string"
+      },
+      "description": "app | vk — есть ли в треде сообщение такого источника"
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "all",
+        "replied",
+        "unanswered",
+        "unread"
+       ]
+      },
+      "description": "ждёт ответа / отвечен / без ответа"
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MobileReviewList"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/mobile/reviews/{id}/cancel-auto-send/": {
+   "post": {
+    "operationId": "v1_mobile_reviews_cancel_auto_send_create",
+    "description": "POST /api/v1/mobile/reviews/{pk}/cancel-auto-send/\n\nОтменить запланированный автоответ ИИ («Отменить» из пуша/карточки отзыва).\n200 {'ok': True, 'auto_send_status': 'cancelled'} — отменили.\n200 {'ok': False, 'auto_send_status': '<текущий>'} — отменять было нечего.\n409 — ИИ уже успел отправить ответ.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/mobile/reviews/{review_id}/": {
+   "get": {
+    "operationId": "v1_mobile_reviews_retrieve",
+    "description": "GET /api/v1/mobile/reviews/{review_id}/\n\nОдна карточка отзыва — РОВНО той же формы, что элемент `reviews` в списке\n(18.09.2026, просьба стороны CheckUp: открыть отзыв по ссылке из карточки\nжалобы, не выкачивая ленту целиком). Новых данных не показывает: и база, и\nRBAC те же, что у списка — `review_card_queryset`.\n\nЧужой или несуществующий тред — `404`, а не `403`: по разнице кодов можно\nбыло бы пересчитать треды соседней точки.",
+    "summary": "Карточка одного отзыва (та же форма, что элемент reviews[] в ленте)",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "review_id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReviewList"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundDetail"
+        }
+       }
+      },
+      "description": "Нет такого треда или он вне точек пользователя: {\"detail\": \"Отзыв не найден\"}"
+     }
+    }
+   }
+  },
+  "/api/v1/mobile/reviews/{review_id}/messages/": {
+   "get": {
+    "operationId": "v1_mobile_reviews_messages_list",
+    "description": "GET /api/v1/mobile/reviews/{id}/messages/",
+    "summary": "Сообщения треда",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "review_id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MobileReviewMessages"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/mobile/reviews/{review_id}/reply/": {
+   "post": {
+    "operationId": "v1_mobile_reviews_reply_create",
+    "description": "POST /api/v1/mobile/reviews/{review_id}/reply/  body: {text}\n\nДля VK-диалога (есть vk_sender_id) РЕАЛЬНО отправляет сообщение гостю в\nВКонтакте через send_vk_reply (он же сохранит ADMIN_REPLY с vk_message_id\nи обновит conv). Для APP-отзыва (нет VK-канала) — сохраняет ответ локально.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "review_id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/mobile/reviews/{review_id}/resolve/": {
+   "post": {
+    "operationId": "v1_mobile_reviews_resolve_create",
+    "description": "POST /api/v1/mobile/reviews/{review_id}/resolve/\n\nПомечает обращение как прочитанное (has_unread=False).\nСообщение в VK не отправляется. Не разрешено для негативных VK-отзывов\nбез ответа — мобайл это валидирует, дублирование тут.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "review_id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/notifications/": {
+   "get": {
+    "operationId": "v1_notifications_retrieve",
+    "description": "Параметры (все необязательные, без них ответ как раньше — последние limit штук):\n  limit       1..200 (по умолчанию 50)\n  before_id   курсор: отдать записи со id < before_id (листать историю назад);\n              в ответе next_before_id — что передать за следующей страницей\n  since       ISO-8601: только записи новее этого момента (опрос «что нового»)\n  type        типы через запятую (review_new,draft_ready,…)\n  unread=1    только непрочитанные\nКурсор по id, а не по offset: уведомления прибывают постоянно, и offset\nсдвигал бы страницы. Добавлено 16.09.2026 для колокольчика CheckUp (контракт №17).",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "post": {
+    "operationId": "v1_notifications_create",
+    "description": "GET /api/v1/notifications/?limit=50 — история уведомлений текущего пользователя.\nPOST /api/v1/notifications/ {ids?: [int], all?: true} — отметить прочитанными.\n\nNotification лежит в public schema, поэтому работает из любого тенант-домена.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/push/register/": {
+   "post": {
+    "operationId": "v1_push_register_create",
+    "description": "POST /api/v1/push/register/  body: {token, platform}\nDELETE /api/v1/push/register/ body: {token}\n\nСохраняем Expo/APNs/FCM push-токен в `users.PushToken`. Один user может\nиметь несколько токенов (несколько устройств). При повторной регистрации\nтого же токена — обновляем `last_seen_at` (auto_now=True) и перепривязываем\nк текущему user'у на случай переустановки приложения другим админом.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "v1_push_register_destroy",
+    "description": "POST /api/v1/push/register/  body: {token, platform}\nDELETE /api/v1/push/register/ body: {token}\n\nСохраняем Expo/APNs/FCM push-токен в `users.PushToken`. Один user может\nиметь несколько токенов (несколько устройств). При повторной регистрации\nтого же токена — обновляем `last_seen_at` (auto_now=True) и перепривязываем\nк текущему user'у на случай переустановки приложения другим админом.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "No response body"
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "AutoSendKindEnum": {
+    "enum": [
+     "reply",
+     "ack"
+    ],
+    "type": "string",
+    "description": "* `reply` - ответ ИИ (позитив)\n* `ack` - подтверждение «разберёмся» (негатив)"
+   },
+   "AutoSendStatusEnum": {
+    "enum": [
+     "scheduled",
+     "sent",
+     "cancelled",
+     "skipped",
+     "failed"
+    ],
+    "type": "string",
+    "description": "* `scheduled` - Запланирован\n* `sent` - Отправлен\n* `cancelled` - Отменён\n* `skipped` - Пропущен\n* `failed` - Ошибка отправки"
+   },
+   "BlankEnum": {
+    "enum": [
+     ""
+    ]
+   },
+   "Branch": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer",
+      "readOnly": true
+     },
+     "branch_id": {
+      "type": "integer",
+      "readOnly": true,
+      "title": "ID точки",
+      "description": "Используется в QR-кодах и ссылках. Задаётся вручную."
+     },
+     "name": {
+      "type": "string",
+      "readOnly": true,
+      "title": "Название"
+     },
+     "is_active": {
+      "type": "boolean",
+      "readOnly": true,
+      "title": "Активна",
+      "description": "Неактивная точка скрыта для гостей."
+     },
+     "address": {
+      "type": "string",
+      "nullable": true,
+      "readOnly": true
+     }
+    },
+    "required": [
+     "address",
+     "branch_id",
+     "id",
+     "is_active",
+     "name"
+    ]
+   },
+   "BroadcastApiError": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "$ref": "#/components/schemas/Code430Enum"
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "detail"
+    ]
+   },
+   "BroadcastAudienceChanged": {
+    "type": "object",
+    "properties": {
+     "expected": {
+      "type": "integer",
+      "description": "сколько показал предпросмотр"
+     },
+     "actual": {
+      "type": "integer",
+      "description": "сколько сейчас"
+     },
+     "code": {
+      "$ref": "#/components/schemas/Code430Enum"
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "actual",
+     "code",
+     "detail",
+     "expected"
+    ]
+   },
+   "BroadcastCancelResult": {
+    "type": "object",
+    "properties": {
+     "ok": {
+      "type": "boolean"
+     },
+     "status": {
+      "$ref": "#/components/schemas/Status9a5Enum"
+     },
+     "note": {
+      "type": "string",
+      "description": "отмена не мгновенная: до 10 сообщений ещё может уйти"
+     }
+    },
+    "required": [
+     "note",
+     "ok",
+     "status"
+    ]
+   },
+   "BroadcastConfirmRequest": {
+    "type": "object",
+    "properties": {
+     "confirm": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "confirm"
+    ]
+   },
+   "BroadcastDeleteInVkResult": {
+    "type": "object",
+    "properties": {
+     "ok": {
+      "type": "boolean"
+     },
+     "status": {
+      "$ref": "#/components/schemas/Status9a5Enum"
+     },
+     "deleted": {
+      "type": "integer"
+     },
+     "skipped": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "errors": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    },
+    "required": [
+     "deleted",
+     "errors",
+     "ok",
+     "skipped",
+     "status"
+    ]
+   },
+   "BroadcastDraft": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string"
+     },
+     "message_text": {
+      "type": "string"
+     },
+     "image": {
+      "type": "string",
+      "nullable": true,
+      "description": "всегда null — картинки в v1 не поддержаны"
+     },
+     "mode": {
+      "$ref": "#/components/schemas/ModeE71Enum"
+     },
+     "segment": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/BroadcastSegment"
+       }
+      ],
+      "nullable": true
+     },
+     "r_score": {
+      "type": "integer",
+      "nullable": true
+     },
+     "f_score": {
+      "type": "integer",
+      "nullable": true
+     },
+     "period": {
+      "$ref": "#/components/schemas/BroadcastPeriod"
+     },
+     "branch_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "ВНУТРЕННИЕ Branch.id (не публичные branch_id)"
+     },
+     "gender_filter": {
+      "$ref": "#/components/schemas/GenderFilterEnum"
+     },
+     "variants": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/BroadcastVariant"
+      }
+     },
+     "status": {
+      "$ref": "#/components/schemas/BroadcastDraftStatusEnum"
+     },
+     "created_by": {
+      "type": "string"
+     },
+     "sent_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "last_send_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "branch_ids",
+     "created_at",
+     "created_by",
+     "f_score",
+     "gender_filter",
+     "id",
+     "image",
+     "last_send_id",
+     "message_text",
+     "mode",
+     "name",
+     "period",
+     "r_score",
+     "segment",
+     "sent_at",
+     "status",
+     "updated_at",
+     "variants"
+    ]
+   },
+   "BroadcastDraftCreate": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 200
+     },
+     "message_text": {
+      "type": "string",
+      "maxLength": 4096
+     },
+     "branch_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "внутренние Branch.id; все должны быть в доступе пользователя"
+     },
+     "mode": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/ModeE71Enum"
+       }
+      ],
+      "description": "неизвестное → restaurant\n\n* `restaurant` - Кафе (визиты)\n* `delivery` - Доставка"
+     },
+     "gender_filter": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/GenderFilterEnum"
+       }
+      ],
+      "description": "неизвестное → all\n\n* `all` - Все\n* `m` - Мужчины\n* `f` - Женщины"
+     },
+     "segment_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "r_score": {
+      "type": "integer",
+      "nullable": true
+     },
+     "f_score": {
+      "type": "integer",
+      "nullable": true
+     },
+     "start": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     },
+     "end": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     },
+     "variants": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/BroadcastVariant"
+      }
+     },
+     "status": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/StatusF24Enum"
+       }
+      ],
+      "description": "только draft и archived\n\n* `draft` - Черновик\n* `archived` - В архиве"
+     }
+    },
+    "required": [
+     "branch_ids",
+     "message_text"
+    ]
+   },
+   "BroadcastDraftList": {
+    "type": "object",
+    "properties": {
+     "results": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/BroadcastDraft"
+      }
+     },
+     "total": {
+      "type": "integer"
+     },
+     "limit": {
+      "type": "integer"
+     },
+     "offset": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "limit",
+     "offset",
+     "results",
+     "total"
+    ]
+   },
+   "BroadcastDraftStatusEnum": {
+    "enum": [
+     "draft",
+     "sent",
+     "archived"
+    ],
+    "type": "string",
+    "description": "* `draft` - Черновик\n* `sent` - Отправлен\n* `archived` - В архиве"
+   },
+   "BroadcastEditInVkRequest": {
+    "type": "object",
+    "properties": {
+     "confirm": {
+      "type": "boolean"
+     },
+     "message_text": {
+      "type": "string",
+      "maxLength": 4096
+     }
+    },
+    "required": [
+     "confirm",
+     "message_text"
+    ]
+   },
+   "BroadcastEditInVkResult": {
+    "type": "object",
+    "properties": {
+     "ok": {
+      "type": "boolean"
+     },
+     "updated": {
+      "type": "integer"
+     },
+     "skipped": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "«vk<id>: причина» — старше 24 ч"
+     },
+     "errors": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    },
+    "required": [
+     "errors",
+     "ok",
+     "skipped",
+     "updated"
+    ]
+   },
+   "BroadcastOk": {
+    "type": "object",
+    "properties": {
+     "ok": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "ok"
+    ]
+   },
+   "BroadcastPeriod": {
+    "type": "object",
+    "properties": {
+     "start": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     },
+     "end": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     }
+    },
+    "required": [
+     "end",
+     "start"
+    ]
+   },
+   "BroadcastPreview": {
+    "type": "object",
+    "properties": {
+     "count": {
+      "type": "integer",
+      "description": "вернуть как expected_count в POST …/send/"
+     },
+     "by_branch": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/BroadcastPreviewBranch"
+      }
+     },
+     "mode": {
+      "$ref": "#/components/schemas/ModeE71Enum"
+     },
+     "segment": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/BroadcastSegment"
+       }
+      ],
+      "nullable": true
+     },
+     "period": {
+      "$ref": "#/components/schemas/BroadcastPeriod"
+     }
+    },
+    "required": [
+     "by_branch",
+     "count",
+     "mode",
+     "period",
+     "segment"
+    ]
+   },
+   "BroadcastPreviewBranch": {
+    "type": "object",
+    "properties": {
+     "branch_id": {
+      "type": "integer",
+      "description": "внутренний Branch.id"
+     },
+     "name": {
+      "type": "string"
+     },
+     "count": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "branch_id",
+     "count",
+     "name"
+    ]
+   },
+   "BroadcastSegment": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "code": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "emoji": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "emoji",
+     "id",
+     "name"
+    ]
+   },
+   "BroadcastSend": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "status": {
+      "$ref": "#/components/schemas/Status9a5Enum"
+     },
+     "branch_id": {
+      "type": "integer",
+      "nullable": true,
+      "description": "внутренний Branch.id"
+     },
+     "branch_name": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "message_text": {
+      "type": "string",
+      "description": "обрезан до 200 символов"
+     },
+     "trigger_type": {
+      "$ref": "#/components/schemas/TriggerTypeEnum"
+     },
+     "triggered_by": {
+      "type": "string"
+     },
+     "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "finished_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "recipients_count": {
+      "type": "integer"
+     },
+     "sent_count": {
+      "type": "integer"
+     },
+     "failed_count": {
+      "type": "integer"
+     },
+     "skipped_count": {
+      "type": "integer"
+     },
+     "read_count": {
+      "type": "integer"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "can_cancel": {
+      "type": "boolean"
+     },
+     "can_edit_in_vk": {
+      "type": "boolean",
+      "description": "done, есть доставленные, окно ВК 24 ч"
+     },
+     "can_delete_in_vk": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "branch_id",
+     "branch_name",
+     "can_cancel",
+     "can_delete_in_vk",
+     "can_edit_in_vk",
+     "created_at",
+     "failed_count",
+     "finished_at",
+     "id",
+     "message_text",
+     "name",
+     "read_count",
+     "recipients_count",
+     "sent_count",
+     "skipped_count",
+     "started_at",
+     "status",
+     "trigger_type",
+     "triggered_by"
+    ]
+   },
+   "BroadcastSendList": {
+    "type": "object",
+    "properties": {
+     "results": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/BroadcastSend"
+      }
+     },
+     "total": {
+      "type": "integer"
+     },
+     "limit": {
+      "type": "integer"
+     },
+     "offset": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "limit",
+     "offset",
+     "results",
+     "total"
+    ]
+   },
+   "BroadcastSendRequest": {
+    "type": "object",
+    "properties": {
+     "expected_count": {
+      "type": "integer",
+      "description": "count из предпросмотра"
+     },
+     "confirm": {
+      "type": "boolean",
+      "description": "true — человек видел цифру"
+     }
+    },
+    "required": [
+     "confirm",
+     "expected_count"
+    ]
+   },
+   "BroadcastSendResult": {
+    "type": "object",
+    "properties": {
+     "ok": {
+      "type": "boolean"
+     },
+     "queued": {
+      "type": "boolean",
+      "description": "true — >30 получателей, ушло одним celery-таском, в sends статус queued"
+     },
+     "sends": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/BroadcastSendResultRow"
+      }
+     },
+     "total_recipients": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "ok",
+     "queued",
+     "sends",
+     "total_recipients"
+    ]
+   },
+   "BroadcastSendResultRow": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer",
+      "description": "id запуска (BroadcastSend)"
+     },
+     "branch_id": {
+      "type": "integer",
+      "description": "внутренний Branch.id"
+     },
+     "branch_name": {
+      "type": "string"
+     },
+     "variant": {
+      "type": "string",
+      "description": "только при A/B: «#1 (50%)»"
+     },
+     "recipients": {
+      "type": "integer"
+     },
+     "status": {
+      "type": "string",
+      "description": "queued | pending | running | done | failed | cancelled"
+     },
+     "sent": {
+      "type": "integer",
+      "description": "только при синхронной отправке (≤30)"
+     },
+     "failed": {
+      "type": "integer"
+     },
+     "skipped": {
+      "type": "integer"
+     },
+     "error": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "branch_id",
+     "branch_name",
+     "id",
+     "recipients",
+     "status"
+    ]
+   },
+   "BroadcastVariant": {
+    "type": "object",
+    "properties": {
+     "message_text": {
+      "type": "string"
+     },
+     "percent": {
+      "type": "integer",
+      "maximum": 100,
+      "minimum": 0
+     }
+    },
+    "required": [
+     "message_text",
+     "percent"
+    ]
+   },
+   "CheckupStatusEnum": {
+    "enum": [
+     "in_progress",
+     "resolved",
+     "rejected"
+    ],
+    "type": "string",
+    "description": "* `in_progress` - В работе в CheckUp\n* `resolved` - Решено в CheckUp\n* `rejected` - Отклонено в CheckUp"
+   },
+   "Code430Enum": {
+    "enum": [
+     "not_found",
+     "invalid_payload",
+     "branch_forbidden",
+     "segment_not_found",
+     "not_a_draft",
+     "expected_count_required",
+     "confirm_required",
+     "empty_audience",
+     "audience_changed",
+     "already_sent",
+     "not_cancellable",
+     "not_editable",
+     "not_deletable"
+    ],
+    "type": "string",
+    "description": "* `not_found` - 404 — черновик/запуск не найден или вне точек пользователя\n* `invalid_payload` - 400 — тело запроса не разобрано\n* `branch_forbidden` - 403 — точка вне доступа пользователя\n* `segment_not_found` - 404 — нет такого RF-сегмента\n* `not_a_draft` - 409 — черновик уже отправлен или в архиве\n* `expected_count_required` - 400 — нет expected_count из предпросмотра\n* `confirm_required` - 400 — нет confirm=true\n* `empty_audience` - 400 — аудитория пуста\n* `audience_changed` - 409 — аудитория разошлась с показанной (+expected, +actual)\n* `already_sent` - 409 — черновик уже отправлен\n* `not_cancellable` - 409 — запуск не в статусе pending/running\n* `not_editable` - 409 — правка текста в ВК невозможна\n* `not_deletable` - 409 — удаление в ВК невозможно"
+   },
+   "GenderFilterEnum": {
+    "enum": [
+     "all",
+     "m",
+     "f"
+    ],
+    "type": "string",
+    "description": "* `all` - Все\n* `m` - Мужчины\n* `f` - Женщины"
+   },
+   "MobileReviewList": {
+    "type": "object",
+    "properties": {
+     "reviews": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ReviewList"
+      }
+     },
+     "total": {
+      "type": "integer"
+     },
+     "limit": {
+      "type": "integer",
+      "nullable": true,
+      "description": "null — без пагинации, список полный"
+     },
+     "offset": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "limit",
+     "offset",
+     "reviews",
+     "total"
+    ]
+   },
+   "MobileReviewMessages": {
+    "type": "object",
+    "properties": {
+     "messages": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ReviewMessage"
+      }
+     }
+    },
+    "required": [
+     "messages"
+    ]
+   },
+   "ModeE71Enum": {
+    "enum": [
+     "restaurant",
+     "delivery"
+    ],
+    "type": "string",
+    "description": "* `restaurant` - Кафе (визиты)\n* `delivery` - Доставка"
+   },
+   "NotFoundDetail": {
+    "type": "object",
+    "properties": {
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "detail"
+    ]
+   },
+   "PatchedBroadcastDraftPatch": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 200
+     },
+     "message_text": {
+      "type": "string",
+      "maxLength": 4096
+     },
+     "branch_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "внутренние Branch.id; все должны быть в доступе пользователя"
+     },
+     "mode": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/ModeE71Enum"
+       }
+      ],
+      "description": "неизвестное → restaurant\n\n* `restaurant` - Кафе (визиты)\n* `delivery` - Доставка"
+     },
+     "gender_filter": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/GenderFilterEnum"
+       }
+      ],
+      "description": "неизвестное → all\n\n* `all` - Все\n* `m` - Мужчины\n* `f` - Женщины"
+     },
+     "segment_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "r_score": {
+      "type": "integer",
+      "nullable": true
+     },
+     "f_score": {
+      "type": "integer",
+      "nullable": true
+     },
+     "start": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     },
+     "end": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     },
+     "variants": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/BroadcastVariant"
+      }
+     },
+     "status": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/StatusF24Enum"
+       }
+      ],
+      "description": "только draft и archived\n\n* `draft` - Черновик\n* `archived` - В архиве"
+     }
+    }
+   },
+   "PeriodEnum": {
+    "enum": [
+     "today",
+     "7d",
+     "30d",
+     "90d",
+     "year",
+     "all"
+    ],
+    "type": "string",
+    "description": "* `today` - today\n* `7d` - 7d\n* `30d` - 30d\n* `90d` - 90d\n* `year` - year\n* `all` - all"
+   },
+   "RFQuery": {
+    "type": "object",
+    "description": "Query params for RF analysis endpoint.",
+    "properties": {
+     "branch_ids": {
+      "type": "string",
+      "default": ""
+     },
+     "trend_days": {
+      "type": "integer",
+      "maximum": 365,
+      "minimum": 7,
+      "default": 30
+     },
+     "mode": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/RFQueryModeEnum"
+       }
+      ],
+      "default": "restaurant"
+     },
+     "r_score": {
+      "type": "integer",
+      "maximum": 10,
+      "minimum": 1
+     },
+     "f_score": {
+      "type": "integer",
+      "maximum": 10,
+      "minimum": 1
+     },
+     "period": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/PeriodEnum"
+       }
+      ],
+      "default": "30d"
+     },
+     "start": {
+      "type": "string",
+      "format": "date"
+     },
+     "end": {
+      "type": "string",
+      "format": "date"
+     }
+    }
+   },
+   "RFQueryModeEnum": {
+    "enum": [
+     "restaurant",
+     "delivery"
+    ],
+    "type": "string",
+    "description": "* `restaurant` - restaurant\n* `delivery` - delivery"
+   },
+   "ReviewList": {
+    "type": "object",
+    "description": "Соответствует мобильному `Review` interface.\n\nСериализатор НЕ создаёт draft-полей (`has_draft`, `draft_text`,\n`draft_created_at`) пока их нет в модели. Возвращаем безопасные\nдефолты — мобайл это переварит.",
+    "properties": {
+     "id": {
+      "type": "integer",
+      "readOnly": true
+     },
+     "source": {
+      "type": "string",
+      "description": "Главный источник для обратной совместимости: APP приоритетнее.",
+      "readOnly": true
+     },
+     "sources": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Все источники: ['APP'] / ['VK_MESSAGE'] / ['APP', 'VK_MESSAGE'].",
+      "readOnly": true
+     },
+     "sentiment": {
+      "type": "string",
+      "readOnly": true
+     },
+     "ai_comment": {
+      "type": "string",
+      "title": "Комментарий ИИ"
+     },
+     "branch_id": {
+      "type": "integer",
+      "nullable": true,
+      "readOnly": true
+     },
+     "branch_name": {
+      "type": "string",
+      "readOnly": true
+     },
+     "customer_name": {
+      "type": "string",
+      "readOnly": true
+     },
+     "vk_sender_id": {
+      "type": "string",
+      "title": "VK ID отправителя",
+      "maxLength": 50
+     },
+     "text": {
+      "type": "string",
+      "readOnly": true
+     },
+     "rating": {
+      "type": "integer",
+      "nullable": true,
+      "readOnly": true
+     },
+     "checkup_status": {
+      "title": "Статус жалобы в CheckUp",
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/CheckupStatusEnum"
+       },
+       {
+        "$ref": "#/components/schemas/BlankEnum"
+       }
+      ]
+     },
+     "checkup_verdict": {
+      "type": "string",
+      "title": "Вердикт CheckUp"
+     },
+     "checkup_manager": {
+      "type": "string",
+      "title": "Менеджер CheckUp",
+      "maxLength": 120
+     },
+     "checkup_resolved_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true,
+      "title": "Жалоба закрыта в CheckUp"
+     },
+     "last_message_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true,
+      "title": "Последнее сообщение"
+     },
+     "has_unread": {
+      "type": "boolean",
+      "title": "Есть непрочитанные"
+     },
+     "is_replied": {
+      "type": "boolean",
+      "title": "Ответ отправлен"
+     },
+     "has_draft": {
+      "type": "boolean",
+      "readOnly": true
+     },
+     "draft_text": {
+      "type": "string",
+      "nullable": true,
+      "readOnly": true
+     },
+     "draft_created_at": {
+      "type": "string",
+      "readOnly": true
+     },
+     "review_link_yandex": {
+      "type": "string",
+      "readOnly": true
+     },
+     "review_link_2gis": {
+      "type": "string",
+      "readOnly": true
+     },
+     "auto_send_status": {
+      "title": "Статус автоответа",
+      "description": "Пусто — автоответ не рассматривался. scheduled — запланирован, sent — отправлен, cancelled — отменён, skipped — не подошёл по условиям, failed — ошибка отправки.\n\n* `scheduled` - Запланирован\n* `sent` - Отправлен\n* `cancelled` - Отменён\n* `skipped` - Пропущен\n* `failed` - Ошибка отправки",
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/AutoSendStatusEnum"
+       },
+       {
+        "$ref": "#/components/schemas/BlankEnum"
+       }
+      ]
+     },
+     "auto_send_at": {
+      "type": "string",
+      "nullable": true,
+      "readOnly": true
+     },
+     "auto_send_reason": {
+      "type": "string",
+      "title": "Причина",
+      "description": "Почему автоответ пропущен/отменён/упал: manual_reply, needs_human, numeric_only, daily_limit, vk_error: …",
+      "maxLength": 120
+     },
+     "auto_send_kind": {
+      "title": "Тип автоответа",
+      "description": "Что именно запланировано/отправлено в auto_send_*: полный ответ ИИ на позитив или короткое автоподтверждение на негатив. Пусто у старых записей = ответ.\n\n* `reply` - ответ ИИ (позитив)\n* `ack` - подтверждение «разберёмся» (негатив)",
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/AutoSendKindEnum"
+       },
+       {
+        "$ref": "#/components/schemas/BlankEnum"
+       }
+      ]
+     },
+     "auto_send_with_links": {
+      "type": "boolean",
+      "readOnly": true
+     },
+     "ai_needs_human": {
+      "type": "boolean",
+      "title": "Нужен человек",
+      "description": "ИИ определил, что в отзыве вопрос/просьба — автоответ отправлять нельзя."
+     },
+     "inferred_branch_id": {
+      "type": "integer",
+      "nullable": true,
+      "readOnly": true
+     },
+     "inferred_branch_name": {
+      "type": "string",
+      "readOnly": true
+     },
+     "inferred_table_number": {
+      "type": "integer",
+      "nullable": true,
+      "readOnly": true
+     },
+     "inferred_scan_at": {
+      "type": "string",
+      "nullable": true,
+      "readOnly": true
+     },
+     "inferred_source": {
+      "type": "string",
+      "readOnly": true
+     }
+    },
+    "required": [
+     "auto_send_at",
+     "auto_send_with_links",
+     "branch_id",
+     "branch_name",
+     "customer_name",
+     "draft_created_at",
+     "draft_text",
+     "has_draft",
+     "id",
+     "inferred_branch_id",
+     "inferred_branch_name",
+     "inferred_scan_at",
+     "inferred_source",
+     "inferred_table_number",
+     "rating",
+     "review_link_2gis",
+     "review_link_yandex",
+     "sentiment",
+     "source",
+     "sources",
+     "text"
+    ]
+   },
+   "ReviewMessage": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer",
+      "readOnly": true
+     },
+     "source": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/ReviewMessageSourceEnum"
+       }
+      ],
+      "readOnly": true,
+      "title": "Источник"
+     },
+     "text": {
+      "type": "string",
+      "readOnly": true,
+      "title": "Текст сообщения"
+     },
+     "rating": {
+      "type": "integer",
+      "readOnly": true,
+      "nullable": true,
+      "title": "Оценка (1–5)"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "readOnly": true,
+      "title": "Время"
+     },
+     "admin_name": {
+      "type": "string",
+      "readOnly": true
+     },
+     "attachments": {
+      "type": "string",
+      "readOnly": true
+     },
+     "is_ai_generated": {
+      "type": "boolean",
+      "readOnly": true,
+      "title": "Отправлено ИИ",
+      "description": "Ответ отправлен автоматически (автоотправка ИИ), а не сотрудником."
+     },
+     "reply_to_text": {
+      "type": "string",
+      "readOnly": true,
+      "title": "Контекст (на что ответ)"
+     },
+     "reply_to_date": {
+      "type": "string",
+      "format": "date-time",
+      "readOnly": true,
+      "nullable": true,
+      "title": "Время контекста"
+     },
+     "branch_name": {
+      "type": "string",
+      "readOnly": true
+     },
+     "table_number": {
+      "type": "integer",
+      "readOnly": true,
+      "nullable": true,
+      "title": "Столик"
+     }
+    },
+    "required": [
+     "admin_name",
+     "attachments",
+     "branch_name",
+     "created_at",
+     "id",
+     "is_ai_generated",
+     "rating",
+     "reply_to_date",
+     "reply_to_text",
+     "source",
+     "table_number",
+     "text"
+    ]
+   },
+   "ReviewMessageSourceEnum": {
+    "enum": [
+     "APP",
+     "VK_MESSAGE",
+     "ADMIN_REPLY"
+    ],
+    "type": "string",
+    "description": "* `APP` - Из приложения\n* `VK_MESSAGE` - ВК сообщение\n* `ADMIN_REPLY` - Ответ администратора"
+   },
+   "Status9a5Enum": {
+    "enum": [
+     "pending",
+     "running",
+     "done",
+     "failed",
+     "cancelled"
+    ],
+    "type": "string",
+    "description": "* `pending` - Ожидает\n* `running` - Отправляется\n* `done` - Завершена\n* `failed` - Ошибка\n* `cancelled` - Отменена"
+   },
+   "StatusF24Enum": {
+    "enum": [
+     "draft",
+     "archived"
+    ],
+    "type": "string",
+    "description": "* `draft` - Черновик\n* `archived` - В архиве"
+   },
+   "TriggerTypeEnum": {
+    "enum": [
+     "manual",
+     "auto"
+    ],
+    "type": "string",
+    "description": "* `manual` - Вручную\n* `auto` - Автоматически"
+   }
+  },
+  "securitySchemes": {
+   "cookieAuth": {
+    "type": "apiKey",
+    "in": "cookie",
+    "name": "sessionid"
+   }
+  }
+ }
+}

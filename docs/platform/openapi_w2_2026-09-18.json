@@ -1,0 +1,5181 @@
+{
+ "openapi": "3.0.3",
+ "info": {
+  "title": "LoyalUP API — срез волны 2 для CheckUp",
+  "version": "2026-09-18",
+  "description": "Ручки волны 2 (контракт, раздел 3б): готовые ручки мобилки (№18–22, 24, 25, 30, 32) и новые модули (точки контакта №26/27, сториз №23, отчёт №28, маркетолог №29, авторассылки №31, база знаний №52, флаги №56). У готовых ручек мобилки схемы ответов могут быть неполными (вьюхи без сериализаторов) — форма там по fixtures/w2/. Полная схема: GET https://levelupapp.ru/api/schema/. Внутренние ручки обмена токена и вердикта — обычные Django-вьюхи, в схеме их нет (форма — fixtures/w1/exchange_*.json, verdict_*.json). Все ручки: Authorization: Bearer <JWT из обмена>, Host: <schema>.levelupapp.ru. Источник истины по форме ответов — записанные эталоны fixtures/; срез описывает состав ручек и типы полей."
+ },
+ "servers": [
+  {
+   "url": "http://127.0.0.1:7000",
+   "description": "gunicorn с того же сервера (Host выбирает сеть)"
+  }
+ ],
+ "paths": {
+  "/api/v1/ai/knowledge/": {
+   "get": {
+    "operationId": "v1_ai_knowledge_retrieve",
+    "description": "GET  /api/v1/ai/knowledge/?include_archived=1&limit=&offset=\nPOST /api/v1/ai/knowledge/ — multipart: `file` (.docx/.txt ≤10 МБ) + `title`.\n\nАрхивные документы в списке по умолчанию скрыты.",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "include_archived",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "показать архивные"
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeDocuments"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   },
+   "post": {
+    "operationId": "v1_ai_knowledge_create",
+    "description": "GET  /api/v1/ai/knowledge/?include_archived=1&limit=&offset=\nPOST /api/v1/ai/knowledge/ — multipart: `file` (.docx/.txt ≤10 МБ) + `title`.\n\nАрхивные документы в списке по умолчанию скрыты.",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/KnowledgeUpload"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/KnowledgeUpload"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/KnowledgeUpload"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeDocument"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · role_not_allowed (403) · not_found (404)"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · role_not_allowed (403) · not_found (404)"
+     }
+    }
+   }
+  },
+  "/api/v1/ai/knowledge/{id}/": {
+   "get": {
+    "operationId": "v1_ai_knowledge_retrieve_2",
+    "description": "PATCH  /api/v1/ai/knowledge/{id}/ {title, is_active}\nDELETE /api/v1/ai/knowledge/{id}/ — архивирует (файл и текст остаются).",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeDocument"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · role_not_allowed (403) · not_found (404)"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_ai_knowledge_partial_update",
+    "description": "PATCH  /api/v1/ai/knowledge/{id}/ {title, is_active}\nDELETE /api/v1/ai/knowledge/{id}/ — архивирует (файл и текст остаются).",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedKnowledgeDocument"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedKnowledgeDocument"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedKnowledgeDocument"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeDocument"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · role_not_allowed (403) · not_found (404)"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · role_not_allowed (403) · not_found (404)"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · role_not_allowed (403) · not_found (404)"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "v1_ai_knowledge_destroy",
+    "description": "PATCH  /api/v1/ai/knowledge/{id}/ {title, is_active}\nDELETE /api/v1/ai/knowledge/{id}/ — архивирует (файл и текст остаются).",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "архивирован"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · role_not_allowed (403) · not_found (404)"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · role_not_allowed (403) · not_found (404)"
+     }
+    }
+   }
+  },
+  "/api/v1/ai/knowledge/{id}/text/": {
+   "get": {
+    "operationId": "v1_ai_knowledge_text_retrieve",
+    "description": "GET /api/v1/ai/knowledge/{id}/text/ — что из документа видит ИИ.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeText"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KnowledgeError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · role_not_allowed (403) · not_found (404)"
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/engagement/": {
+   "get": {
+    "operationId": "v1_analytics_engagement_retrieve",
+    "description": "GET /api/v1/analytics/engagement/?period_days=30&branch_id=7\n\nВозвращает аналитику по подаркам (InventoryItem) и квестам (QuestSubmit)\nза период: суммарные показатели + per-gift и per-quest разбивку с трендом\nотносительно предыдущего периода.\n\nПараметры:\n  period_days  — 1..365 (по умолчанию 30)\n  branch_id    — опц., фильтр по торговой точке",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/report/": {
+   "get": {
+    "operationId": "v1_analytics_report_retrieve",
+    "description": "GET /api/v1/analytics/report/?branch_ids=&period=&start=&end=\n\nJSON-версия отчёта лояльности для мобильного приложения (тип LoyaltyReport).\nПереиспользует те же расчёты, что и HTML-страница LoyaltyReportView:\nобщая статистика, тональность отзывов, RF-сводка, миграции, источники.\nai_summary не генерируется здесь (дорого + Anthropic-кредиты), мобайл\nобрабатывает его как опциональный.",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string",
+       "default": ""
+      }
+     },
+     {
+      "in": "query",
+      "name": "end",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "in": "query",
+      "name": "period",
+      "schema": {
+       "enum": [
+        "today",
+        "7d",
+        "30d",
+        "90d",
+        "year",
+        "all"
+       ],
+       "type": "string",
+       "default": "30d",
+       "minLength": 1
+      },
+      "description": "* `today` - today\n* `7d` - 7d\n* `30d` - 30d\n* `90d` - 90d\n* `year` - year\n* `all` - all"
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/report/comments/": {
+   "get": {
+    "operationId": "v1_analytics_report_comments_retrieve",
+    "description": "GET /api/v1/analytics/report/comments/?period|start&end&branch_ids\nPUT /api/v1/analytics/report/comments/?…  {comments: [{section_num, text, updated_at?}]}\n\nPUT пишет ТОЛЬКО присланные секции: кабинет может сохранять по одной, не\nперетирая остальные. Пустой `text` удаляет комментарий. Если в элементе\nпришёл `updated_at` и он не совпал с тем, что в базе, — `409 conflict` со\nсписком разошедшихся секций: значит кто-то сохранил раньше вас.",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string",
+       "default": ""
+      }
+     },
+     {
+      "in": "query",
+      "name": "end",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "in": "query",
+      "name": "period",
+      "schema": {
+       "enum": [
+        "today",
+        "7d",
+        "30d",
+        "90d",
+        "year",
+        "all"
+       ],
+       "type": "string",
+       "default": "30d",
+       "minLength": 1
+      },
+      "description": "* `today` - today\n* `7d` - 7d\n* `30d` - 30d\n* `90d` - 90d\n* `year` - year\n* `all` - all"
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportComments"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · conflict (409) · ai_unavailable (502/503)"
+     }
+    }
+   },
+   "put": {
+    "operationId": "v1_analytics_report_comments_update",
+    "description": "GET /api/v1/analytics/report/comments/?period|start&end&branch_ids\nPUT /api/v1/analytics/report/comments/?…  {comments: [{section_num, text, updated_at?}]}\n\nPUT пишет ТОЛЬКО присланные секции: кабинет может сохранять по одной, не\nперетирая остальные. Пустой `text` удаляет комментарий. Если в элементе\nпришёл `updated_at` и он не совпал с тем, что в базе, — `409 conflict` со\nсписком разошедшихся секций: значит кто-то сохранил раньше вас.",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string",
+       "default": ""
+      }
+     },
+     {
+      "in": "query",
+      "name": "end",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "in": "query",
+      "name": "period",
+      "schema": {
+       "enum": [
+        "today",
+        "7d",
+        "30d",
+        "90d",
+        "year",
+        "all"
+       ],
+       "type": "string",
+       "default": "30d",
+       "minLength": 1
+      },
+      "description": "* `today` - today\n* `7d` - 7d\n* `30d` - 30d\n* `90d` - 90d\n* `year` - year\n* `all` - all"
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReportComments"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/ReportComments"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/ReportComments"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportComments"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · conflict (409) · ai_unavailable (502/503)"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · conflict (409) · ai_unavailable (502/503)"
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/report/comments/generate/": {
+   "post": {
+    "operationId": "v1_analytics_report_comments_generate_create",
+    "description": "POST /api/v1/analytics/report/comments/generate/?period|start&end&branch_ids\n\nТело: `section_num`, `section_title`, `metrics_json`, `draft`, `save`.\nПромпт и модель — те же, что у живой `generate-comment/` (общая функция).\n`save: true` сохраняет текст в базу как комментарий ИИ.",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReportCommentGenerateIn"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/ReportCommentGenerateIn"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/ReportCommentGenerateIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportCommentGenerateOut"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · conflict (409) · ai_unavailable (502/503)"
+     },
+     "502": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · conflict (409) · ai_unavailable (502/503)"
+     },
+     "503": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · conflict (409) · ai_unavailable (502/503)"
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/report/generate-comment/": {
+   "post": {
+    "operationId": "v1_analytics_report_generate_comment_create",
+    "description": "POST /api/v1/analytics/report/generate-comment/\n\nUses Claude AI to generate a manager comment for a report section.\n\nBody (JSON):\n  section_num   — section number (1-11)\n  section_title — section title\n  metrics_json  — JSON string of section metrics data",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": {}
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     },
+     "500": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/report/print/": {
+   "get": {
+    "operationId": "v1_analytics_report_print_retrieve",
+    "description": "GET /api/v1/analytics/report/print/?period|start&end&branch_ids\n\nСамодостаточный HTML для печати: инлайн-стили, без скриптов кроме кнопки\n«Печать», комментарии из базы, цифры — из живой JSON-ручки. Авторизация\nтолько заголовком (JWT): `?token=` в адресе контракт запрещает — он\nостаётся в истории браузера и в логах nginx.",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string",
+       "default": ""
+      }
+     },
+     {
+      "in": "query",
+      "name": "end",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "in": "query",
+      "name": "period",
+      "schema": {
+       "enum": [
+        "today",
+        "7d",
+        "30d",
+        "90d",
+        "year",
+        "all"
+       ],
+       "type": "string",
+       "default": "30d",
+       "minLength": 1
+      },
+      "description": "* `today` - today\n* `7d` - 7d\n* `30d` - 30d\n* `90d` - 90d\n* `year` - year\n* `all` - all"
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "text/html"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · conflict (409) · ai_unavailable (502/503)"
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/report/sections/": {
+   "get": {
+    "operationId": "v1_analytics_report_sections_retrieve",
+    "description": "GET /api/v1/analytics/report/sections/ — 11 секций отчёта.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportSections"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/rf/reward-catalog/": {
+   "get": {
+    "operationId": "v1_analytics_rf_reward_catalog_retrieve",
+    "description": "GET /api/v1/analytics/rf/reward-catalog/\n\nПозиции «Каталога наград», доступные для назначения RFM-кампанией:\nактивные, не архивные, available_for_rfm, с привязанным подарком\n(без product гостю нечего показать в «Моих подарках»).",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {}
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/assistant/ask/": {
+   "post": {
+    "operationId": "v1_assistant_ask_create",
+    "description": "POST /api/v1/assistant/ask/\nbody: {question: str, history?: [{role: 'user'|'assistant', content: str}]}\nВозвращает {answer}. AI «Лояльчик» — ответы по системе через Claude (прокси).",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/assistant/context/": {
+   "get": {
+    "operationId": "v1_assistant_context_retrieve",
+    "description": "GET /api/v1/assistant/context/\nПроактивное приветствие Лояльчика по реальной сводке + быстрые вопросы.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/auto-broadcasts/": {
+   "get": {
+    "operationId": "v1_auto_broadcasts_retrieve",
+    "description": "GET  /api/v1/auto-broadcasts/  — список правил.\nPOST /api/v1/auto-broadcasts/  — создать правило (ВСЕГДА выключенным).\n\nКлюч списка — `rules` (так его читает мобилка); total/limit/offset\nдобавлены аддитивно. Без параметра limit отдаётся полный список.\nАрхивные скрыты, пока не передан include_archived=1.",
+    "summary": "Правила авторассылок (ключ rules; без limit — полный список)",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "event",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "after_game_3h",
+        "birthday",
+        "birthday_1d",
+        "birthday_7d",
+        "follow_up",
+        "gift_not_claimed",
+        "no_visit_days",
+        "phone_request",
+        "rf_gift_expiring",
+        "subscribed_days"
+       ]
+      },
+      "description": "фильтр по событию"
+     },
+     {
+      "in": "query",
+      "name": "include_archived",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "1 — показать архивные"
+     },
+     {
+      "in": "query",
+      "name": "is_active",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "фильтр по включённости"
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "1..200, по умолчанию 50"
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "с нуля"
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "schema": {
+       "type": "string"
+      },
+      "description": "поиск по названию и тексту"
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastRuleList"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "invalid_payload"
+     }
+    }
+   },
+   "post": {
+    "operationId": "v1_auto_broadcasts_create",
+    "description": "GET  /api/v1/auto-broadcasts/  — список правил.\nPOST /api/v1/auto-broadcasts/  — создать правило (ВСЕГДА выключенным).\n\nКлюч списка — `rules` (так его читает мобилка); total/limit/offset\nдобавлены аддитивно. Без параметра limit отдаётся полный список.\nАрхивные скрыты, пока не передан include_archived=1.",
+    "summary": "Создать правило (всегда выключенным)",
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoBroadcastRuleCreate"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoBroadcastRuleCreate"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoBroadcastRuleCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastRule"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "invalid_payload / event_unknown / delay_required / variant_weights_invalid / reward_invalid"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found — точка недоступна / segment_not_found"
+     }
+    }
+   }
+  },
+  "/api/v1/auto-broadcasts/events/": {
+   "get": {
+    "operationId": "v1_auto_broadcasts_events_retrieve",
+    "description": "GET /api/v1/auto-broadcasts/events/ — справочник событий и словарей.",
+    "summary": "Справочник событий, полов, условий догона и тиров подарка",
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastEvents"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/auto-broadcasts/{id}/": {
+   "get": {
+    "operationId": "v1_auto_broadcasts_retrieve_2",
+    "description": "GET    /api/v1/auto-broadcasts/{id}/  — карточка.\nPATCH  /api/v1/auto-broadcasts/{id}/  — любые поля карточки.\nDELETE /api/v1/auto-broadcasts/{id}/  — АРХИВ (204), физически не удаляем.\n\nPATCH: audience / reward / follow_up / variants меняются ЦЕЛИКОМ (замена);\nплоские message_text, is_active, name, delay_days, send_hour_*, active_*,\npriority принимаются ради совместимости с мобилкой.",
+    "summary": "Карточка правила",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastRule"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found — чужое, архивное сетевое или несуществующее"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_auto_broadcasts_partial_update",
+    "description": "GET    /api/v1/auto-broadcasts/{id}/  — карточка.\nPATCH  /api/v1/auto-broadcasts/{id}/  — любые поля карточки.\nDELETE /api/v1/auto-broadcasts/{id}/  — АРХИВ (204), физически не удаляем.\n\nPATCH: audience / reward / follow_up / variants меняются ЦЕЛИКОМ (замена);\nплоские message_text, is_active, name, delay_days, send_hour_*, active_*,\npriority принимаются ради совместимости с мобилкой.",
+    "summary": "Изменить правило (audience/reward/follow_up/variants — целиком)",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedAutoBroadcastRulePatch"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedAutoBroadcastRulePatch"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedAutoBroadcastRulePatch"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastRule"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "invalid_payload / event_unknown / delay_required / variant_weights_invalid / reward_invalid / use_activate"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found / segment_not_found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "archived"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "v1_auto_broadcasts_destroy",
+    "description": "GET    /api/v1/auto-broadcasts/{id}/  — карточка.\nPATCH  /api/v1/auto-broadcasts/{id}/  — любые поля карточки.\nDELETE /api/v1/auto-broadcasts/{id}/  — АРХИВ (204), физически не удаляем.\n\nPATCH: audience / reward / follow_up / variants меняются ЦЕЛИКОМ (замена);\nплоские message_text, is_active, name, delay_days, send_hour_*, active_*,\npriority принимаются ради совместимости с мобилкой.",
+    "summary": "Архивировать правило (физически не удаляется)",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "правило в архиве и выключено"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     }
+    }
+   }
+  },
+  "/api/v1/auto-broadcasts/{id}/activate/": {
+   "post": {
+    "operationId": "v1_auto_broadcasts_activate_create",
+    "description": "POST /api/v1/auto-broadcasts/{id}/activate/  {expected_count, confirm: true}\n\nЕдинственный путь включения из кабинета. Порядок проверок:\n  1) RBAC → 404;\n  2) состояние правила (архив / уже включено) → 409;\n  3) expected_count и confirm обязательны → 400;\n  4) аудитория пересчитывается СВЕЖО (тем же кодом, что и предпросмотр);\n  5) пусто → 400 audience_empty, разошлось → 409 audience_changed.",
+    "summary": "Включить правило (expected_count + confirm обязательны)",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoBroadcastActivateRequest"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoBroadcastActivateRequest"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoBroadcastActivateRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastRule"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "expected_count_required / confirm_required / audience_empty / invalid_payload"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastAudienceChanged"
+        }
+       }
+      },
+      "description": "audience_changed (+expected, +actual) / already_active / archived / preview_failed"
+     }
+    }
+   }
+  },
+  "/api/v1/auto-broadcasts/{id}/deactivate/": {
+   "post": {
+    "operationId": "v1_auto_broadcasts_deactivate_create",
+    "description": "POST /api/v1/auto-broadcasts/{id}/deactivate/ — выключить (всегда можно).",
+    "summary": "Выключить правило",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastRule"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     }
+    }
+   }
+  },
+  "/api/v1/auto-broadcasts/{id}/log/": {
+   "get": {
+    "operationId": "v1_auto_broadcasts_log_retrieve",
+    "description": "GET /api/v1/auto-broadcasts/{id}/log/?limit&offset&status\n\nПолучатели всех запусков правила (BroadcastRecipient всех BroadcastSend с\nauto_broadcast_rule=rule). Отсева дедупом/кэпом/окном здесь нет: он\nпроисходит ДО создания получателей.",
+    "summary": "Лог получателей всех запусков правила",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "1..200, по умолчанию 50"
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "с нуля"
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "failed",
+        "pending",
+        "sent",
+        "skipped"
+       ]
+      },
+      "description": "фильтр по статусу получателя"
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastLog"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     }
+    }
+   }
+  },
+  "/api/v1/auto-broadcasts/{id}/preview/": {
+   "get": {
+    "operationId": "v1_auto_broadcasts_preview_retrieve",
+    "description": "GET /api/v1/auto-broadcasts/{id}/preview/\n\nСтарые поля мобилки (recipients, due_now, reason, sample_text,\nsample_names) собираются ТАК ЖЕ, как engine.preview_rule (тот же\nresolve_recipients + rule_is_due + render_text), но одним проходом:\nиз того же списка кандидатов считаются count/by_branch/sample_texts.\nРезолв аудитории тяжёлый (сегменты, дедуп, кэп) — дважды его не гоняем.\n\ncount — та цифра, которую кабинет обязан вернуть в expected_count при\nactivate/. Расчёт упал → 409 preview_failed (включать тоже нельзя, ★11).",
+    "summary": "Предпросмотр: count → expected_count для activate/",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastPreview"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "preview_failed"
+     }
+    }
+   }
+  },
+  "/api/v1/auto-broadcasts/{id}/stats/": {
+   "get": {
+    "operationId": "v1_auto_broadcasts_stats_retrieve",
+    "description": "GET /api/v1/auto-broadcasts/{id}/stats/ — сводка правила и вариантов.",
+    "summary": "Статистика правила и вариантов",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastStats"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     }
+    }
+   }
+  },
+  "/api/v1/auto-broadcasts/{id}/test-send/": {
+   "post": {
+    "operationId": "v1_auto_broadcasts_test_send_create",
+    "description": "POST /api/v1/auto-broadcasts/{id}/test-send/  {vk_id}\n\nОтправляет ОДНО сообщение тем же путём, что и движок (send_vk_message от\nимени сообщества точки гостя), но НИЧЕГО не пишет: ни AutoBroadcastLog\n(общий дедуп — испортим боевую отправку этому гостю), ни BroadcastSend /\nBroadcastRecipient (статистика правила осталась бы кривой). Факт — только\nв серверный лог (★12).\n\nТроттл ★37: не чаще раза в минуту на правило (django cache).",
+    "summary": "Тест-отправка одному гостю (без записи в лог и статистику)",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoBroadcastTestSendRequest"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoBroadcastTestSendRequest"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoBroadcastTestSendRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastTestSendResult"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "invalid_payload / guest_not_found / not_subscribed"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "no_vk_token / rate_limited"
+     },
+     "502": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "vk_error"
+     }
+    }
+   }
+  },
+  "/api/v1/auto-broadcasts/{id}/variants/": {
+   "post": {
+    "operationId": "v1_auto_broadcasts_variants_create",
+    "description": "POST /api/v1/auto-broadcasts/{id}/variants/ — добавить вариант текста.",
+    "summary": "Добавить вариант A/B",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoBroadcastVariantCreate"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoBroadcastVariantCreate"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoBroadcastVariantCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastVariant"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "variant_weights_invalid"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "archived"
+     }
+    }
+   }
+  },
+  "/api/v1/auto-broadcasts/{id}/variants/{vid}/": {
+   "patch": {
+    "operationId": "v1_auto_broadcasts_variants_partial_update",
+    "description": "PATCH/DELETE /api/v1/auto-broadcasts/{id}/variants/{vid}/\n\nDELETE варианта, у которого есть отправки, — 409 has_sends: на нём висит\nстатистика и прочтения (BroadcastSend.auto_broadcast_variant). Такой\nвариант выключают (is_active=false), а не удаляют.",
+    "summary": "Изменить вариант A/B",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     },
+     {
+      "in": "path",
+      "name": "vid",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedAutoBroadcastVariantPatch"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedAutoBroadcastVariantPatch"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedAutoBroadcastVariantPatch"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastVariant"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "variant_weights_invalid"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "v1_auto_broadcasts_variants_destroy",
+    "description": "PATCH/DELETE /api/v1/auto-broadcasts/{id}/variants/{vid}/\n\nDELETE варианта, у которого есть отправки, — 409 has_sends: на нём висит\nстатистика и прочтения (BroadcastSend.auto_broadcast_variant). Такой\nвариант выключают (is_active=false), а не удаляют.",
+    "summary": "Удалить вариант A/B (с отправками — нельзя)",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     },
+     {
+      "in": "path",
+      "name": "vid",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "auto-broadcasts"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "вариант удалён"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "not_found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoBroadcastApiError"
+        }
+       }
+      },
+      "description": "has_sends"
+     }
+    }
+   }
+  },
+  "/api/v1/branch/daily-codes/": {
+   "get": {
+    "operationId": "v1_branch_daily_codes_retrieve",
+    "description": "GET /api/v1/branch/daily-codes/\n\nВозвращает коды дня за последние 7 дней по всем активным точкам.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/branch/daily-codes/generate/": {
+   "post": {
+    "operationId": "v1_branch_daily_codes_generate_create",
+    "description": "POST /api/v1/branch/daily-codes/generate/\n\nBody (JSON):\n  branch_id — int, обязательно\n  purpose   — 'BIRTHDAY' | 'SUPERPRIZE' | 'OTHER' (по умолчанию BIRTHDAY)\n\nРучной/экстренный триггер: создаёт или перегенерирует 5-значный код\nдля (branch, purpose, today). Возвращает обновлённую запись.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/branch/promotions/": {
+   "get": {
+    "operationId": "v1_branch_promotions_retrieve",
+    "description": "GET /api/v1/branch/promotions/ ; POST (multipart) same URL.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "post": {
+    "operationId": "v1_branch_promotions_create",
+    "description": "GET /api/v1/branch/promotions/ ; POST (multipart) same URL.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/branch/promotions/{id}/": {
+   "patch": {
+    "operationId": "v1_branch_promotions_partial_update",
+    "description": "PATCH/DELETE /api/v1/branch/promotions/<id>/.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "v1_branch_promotions_destroy",
+    "description": "PATCH/DELETE /api/v1/branch/promotions/<id>/.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/catalog/categories/": {
+   "get": {
+    "operationId": "v1_catalog_categories_retrieve",
+    "description": "GET /api/v1/catalog/categories/?branch_ids= ; POST same URL.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "post": {
+    "operationId": "v1_catalog_categories_create",
+    "description": "GET /api/v1/catalog/categories/?branch_ids= ; POST same URL.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/catalog/categories/{id}/": {
+   "patch": {
+    "operationId": "v1_catalog_categories_partial_update",
+    "description": "PATCH/DELETE /api/v1/catalog/categories/<id>/.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "v1_catalog_categories_destroy",
+    "description": "PATCH/DELETE /api/v1/catalog/categories/<id>/.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/catalog/products/": {
+   "get": {
+    "operationId": "v1_catalog_products_retrieve",
+    "description": "GET /api/v1/catalog/products/ ; POST (multipart) same URL.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "post": {
+    "operationId": "v1_catalog_products_create",
+    "description": "GET /api/v1/catalog/products/ ; POST (multipart) same URL.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/catalog/products/{id}/": {
+   "patch": {
+    "operationId": "v1_catalog_products_partial_update",
+    "description": "PATCH/DELETE /api/v1/catalog/products/<id>/.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "v1_catalog_products_destroy",
+    "description": "PATCH/DELETE /api/v1/catalog/products/<id>/.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/contact-points/": {
+   "get": {
+    "operationId": "v1_contact_points_retrieve",
+    "description": "GET  /api/v1/contact-points/ — список точек контакта с воронкой за период.\nPOST /api/v1/contact-points/ — создать точку контакта.\n\nФильтры GET: `branch_ids` (внутренние id, через запятую), `mode`,\n`is_active`, `q` (по названию и метке), `period|start|end`, `limit`/`offset`.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "post": {
+    "operationId": "v1_contact_points_create",
+    "description": "GET  /api/v1/contact-points/ — список точек контакта с воронкой за период.\nPOST /api/v1/contact-points/ — создать точку контакта.\n\nФильтры GET: `branch_ids` (внутренние id, через запятую), `mode`,\n`is_active`, `q` (по названию и метке), `period|start|end`, `limit`/`offset`.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/contact-points/batch-tables/": {
+   "post": {
+    "operationId": "v1_contact_points_batch_tables_create",
+    "description": "POST /api/v1/contact-points/batch-tables/ {branch_id, from, to, name_template?}\n\nЗаводит QR «отзыв со стола» на диапазон столов. Столы, у которых уже есть\nАКТИВНЫЙ такой QR, пропускаются (в схеме уникального индекса на пару\n«точка + стол» нет — защищаемся здесь, чтобы не печатать два кода на один\nстол). Потолок — BATCH_TABLES_MAX за вызов.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/contact-points/{id}/": {
+   "get": {
+    "operationId": "v1_contact_points_retrieve_2",
+    "description": "GET    /api/v1/contact-points/{id}/ — карточка + воронка по дням.\nPATCH  /api/v1/contact-points/{id}/ — name, is_active всегда; mode,\n       branch_id, table_number — только пока сканов нет (иначе 409).\nDELETE /api/v1/contact-points/{id}/ — только пока сканов нет (иначе 409).",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_contact_points_partial_update",
+    "description": "GET    /api/v1/contact-points/{id}/ — карточка + воронка по дням.\nPATCH  /api/v1/contact-points/{id}/ — name, is_active всегда; mode,\n       branch_id, table_number — только пока сканов нет (иначе 409).\nDELETE /api/v1/contact-points/{id}/ — только пока сканов нет (иначе 409).",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "v1_contact_points_destroy",
+    "description": "GET    /api/v1/contact-points/{id}/ — карточка + воронка по дням.\nPATCH  /api/v1/contact-points/{id}/ — name, is_active всегда; mode,\n       branch_id, table_number — только пока сканов нет (иначе 409).\nDELETE /api/v1/contact-points/{id}/ — только пока сканов нет (иначе 409).",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/contact-points/{id}/guests/": {
+   "get": {
+    "operationId": "v1_contact_points_guests_retrieve",
+    "description": "GET /api/v1/contact-points/{id}/guests/?stage=scan|subscribe|play|activate\n\nГости одной стадии: по одной строке на ГОСТЯ (не на событие), `at` — время\nпоследнего события этой стадии. Так `total` сходится с `funnel.guests` из\nкарточки; список сканов с каждым отдельным открытием тут не нужен — у\nскана есть кулдаун 6 ч, и одному гостю соответствует несколько записей.\n\nПрава проверяются по точке QR (⚠️ веб-страница детализации этого не делает\n— apps/tenant/analytics/views.py:275; здесь дырку не повторяем).",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/guests/birthdays/": {
+   "get": {
+    "operationId": "v1_guests_birthdays_retrieve",
+    "description": "GET /api/v1/guests/birthdays/?days_ahead=30&include_past=1\n\nВозвращает список гостей с ближайшими/прошедшими днями рождения.\n\nПараметры:\n  days_ahead   — горизонт вперёд в днях (0..365, по умолчанию 30)\n  include_past — 0|1 (по умолчанию 1) — включать ли уже прошедшие ДР этого года\n\nГруппировка по уникальному vk_id (один гость может быть в нескольких точках —\nберём самый свежий ClientBranch). Сотрудники (is_employee=True) исключены.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/marketer/posts/": {
+   "get": {
+    "operationId": "v1_marketer_posts_retrieve",
+    "description": "GET /api/v1/marketer/posts/?status=&post_type=&limit=&offset=",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "post_type",
+      "schema": {
+       "type": "string"
+      },
+      "description": "digest | insight | promo | custom"
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "schema": {
+       "type": "string"
+      },
+      "description": "draft | published | rejected | failed"
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerPostsOut"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     }
+    }
+   }
+  },
+  "/api/v1/marketer/posts/generate/": {
+   "post": {
+    "operationId": "v1_marketer_posts_generate_create",
+    "description": "POST /api/v1/marketer/posts/generate/ — запустить генерацию дайджеста.\n\nОтвечает `202 {queued: true}`: пост появится в ленте черновиком (или\n`failed` с ошибкой) в течение минуты. Повторный запуск внутри окна\nблокировки → `409 already_generating` (поля «генерируется» в модели нет —\nблокировка живёт в кэше и сама истекает).",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "{queued: true}"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     }
+    }
+   }
+  },
+  "/api/v1/marketer/posts/{id}/": {
+   "get": {
+    "operationId": "v1_marketer_posts_retrieve_2",
+    "description": "GET   /api/v1/marketer/posts/{id}/\nPATCH /api/v1/marketer/posts/{id}/ {text} — только у draft и failed.\n\nУ `failed` правка текста статус НЕ меняет: пост остаётся упавшим, пока его\nне опубликуют повторно (иначе из ленты пропадёт след ошибки).",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerPostOut"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_marketer_posts_partial_update",
+    "description": "GET   /api/v1/marketer/posts/{id}/\nPATCH /api/v1/marketer/posts/{id}/ {text} — только у draft и failed.\n\nУ `failed` правка текста статус НЕ меняет: пост остаётся упавшим, пока его\nне опубликуют повторно (иначе из ленты пропадёт след ошибки).",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedMarketerPostOut"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedMarketerPostOut"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedMarketerPostOut"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerPostOut"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     }
+    }
+   }
+  },
+  "/api/v1/marketer/posts/{id}/context/": {
+   "get": {
+    "operationId": "v1_marketer_posts_context_retrieve",
+    "description": "GET /api/v1/marketer/posts/{id}/context/ — снимок фактов, из которых написан пост.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "{context}"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     }
+    }
+   }
+  },
+  "/api/v1/marketer/posts/{id}/publish/": {
+   "post": {
+    "operationId": "v1_marketer_posts_publish_create",
+    "description": "POST /api/v1/marketer/posts/{id}/publish/ {confirm: true}\n\nПубликация необратима, поэтому нужен `confirm`. Идемпотентна по состоянию:\nуже опубликованный пост отвечает `200` и вторым `wall.post` не уходит.\nОшибку ВК отдаём как есть — `502 vk_error`.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerPostOut"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     },
+     "502": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     }
+    }
+   }
+  },
+  "/api/v1/marketer/posts/{id}/reject/": {
+   "post": {
+    "operationId": "v1_marketer_posts_reject_create",
+    "description": "POST /api/v1/marketer/posts/{id}/reject/ — отклонить черновик.\n\nТолько из `draft`: отклонять опубликованный пост нечего (его снимают в ВК),\nа у `failed` есть повторная публикация.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerPostOut"
+        }
+       }
+      },
+      "description": ""
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     }
+    }
+   }
+  },
+  "/api/v1/marketer/settings/": {
+   "get": {
+    "operationId": "v1_marketer_settings_retrieve",
+    "description": "GET   /api/v1/marketer/settings/ — состояние маркетолога.\nPATCH /api/v1/marketer/settings/ — 8 полей белым списком (network_admin).\n\n`vk_wall_token` не отдаётся и не принимается: в ответе только\n`vk_wall_token_set`.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerSettingsOut"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_marketer_settings_partial_update",
+    "description": "GET   /api/v1/marketer/settings/ — состояние маркетолога.\nPATCH /api/v1/marketer/settings/ — 8 полей белым списком (network_admin).\n\n`vk_wall_token` не отдаётся и не принимается: в ответе только\n`vk_wall_token_set`.",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedMarketerSettingsOut"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedMarketerSettingsOut"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedMarketerSettingsOut"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerSettingsOut"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MarketerError"
+        }
+       }
+      },
+      "description": "invalid_payload (400) · confirm_required (400) · role_not_allowed (403) · not_found (404) · marketer_disabled / no_vk_token / not_editable / not_publishable / not_rejectable / already_generating (409) · vk_error (502)"
+     }
+    }
+   }
+  },
+  "/api/v1/mobile/branches/{id}/": {
+   "get": {
+    "operationId": "v1_mobile_branches_retrieve",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_mobile_branches_partial_update",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/mobile/branches/{id}/materials/": {
+   "get": {
+    "operationId": "v1_mobile_branches_materials_retrieve",
+    "description": "GET /api/v1/mobile/branches/{id}/materials/\n\nГотовые ссылки и список QR точки — чтобы «скопировать» в кабинете CheckUp\nработало без сборки ссылок на их стороне.\n\n⚠️ `links.mini_app_vk` и `links.delivery` идут БЕЗ метки `src`: это ссылки\n«просто войти», в воронку точек контакта они не попадают. Для печати нужен\nQR из `qr` — у него метка есть. `links.site` без QR режима website не\nсуществует вовсе (метка `web=<src>` там обязательна), поэтому там `null`.\nСсылки на Телеграм в v1.5 нет: ТГ-мини-апп живёт на своём домене и другим\nбандлом, формат подтверждает CheckUp.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/mobile/branches/{id}/story/": {
+   "get": {
+    "operationId": "v1_mobile_branches_story_retrieve",
+    "description": "GET   /api/v1/mobile/branches/{id}/story/ — переопределения точки,\n      действующие значения, источник каждого значения, призы и превью.\nPATCH /api/v1/mobile/branches/{id}/story/ — переопределения; `null`, `\"\"`\n      и `0` означают «как в сети» (только network_admin/суперадмин).\n\n⚠️ Порог «0 ₽» задать НЕЛЬЗЯ ни у точки, ни у сети: резолв трактует ноль\nкак «не задано», поэтому `story_min_order_amount: 0` вернётся со\n`source: network` (или `default` = 600 ₽, если у сети тоже ноль). Ответ на\nтакой PATCH — `200`, а не ошибка: поле принято, просто означает\n«наследовать». Настоящее «без порога» — правка резолва и миграция, вне\nv1.5 (★15/м16 ревью CheckUp).",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StoryBranchSettings"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StoryError"
+        }
+       }
+      },
+      "description": "invalid_payload (400, с editable) · role_not_allowed (403) · not_found (404)"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_mobile_branches_story_partial_update",
+    "description": "GET   /api/v1/mobile/branches/{id}/story/ — переопределения точки,\n      действующие значения, источник каждого значения, призы и превью.\nPATCH /api/v1/mobile/branches/{id}/story/ — переопределения; `null`, `\"\"`\n      и `0` означают «как в сети» (только network_admin/суперадмин).\n\n⚠️ Порог «0 ₽» задать НЕЛЬЗЯ ни у точки, ни у сети: резолв трактует ноль\nкак «не задано», поэтому `story_min_order_amount: 0` вернётся со\n`source: network` (или `default` = 600 ₽, если у сети тоже ноль). Ответ на\nтакой PATCH — `200`, а не ошибка: поле принято, просто означает\n«наследовать». Настоящее «без порога» — правка резолва и миграция, вне\nv1.5 (★15/м16 ревью CheckUp).",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedStoryBranchSettings"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedStoryBranchSettings"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedStoryBranchSettings"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StoryBranchSettings"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StoryError"
+        }
+       }
+      },
+      "description": "invalid_payload (400, с editable) · role_not_allowed (403) · not_found (404)"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StoryError"
+        }
+       }
+      },
+      "description": "invalid_payload (400, с editable) · role_not_allowed (403) · not_found (404)"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StoryError"
+        }
+       }
+      },
+      "description": "invalid_payload (400, с editable) · role_not_allowed (403) · not_found (404)"
+     }
+    }
+   }
+  },
+  "/api/v1/quests/": {
+   "get": {
+    "operationId": "v1_quests_retrieve",
+    "description": "GET /api/v1/quests/ ; POST same URL.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "post": {
+    "operationId": "v1_quests_create",
+    "description": "GET /api/v1/quests/ ; POST same URL.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/quests/{id}/": {
+   "patch": {
+    "operationId": "v1_quests_partial_update",
+    "description": "PATCH/DELETE /api/v1/quests/<id>/.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "v1_quests_destroy",
+    "description": "PATCH/DELETE /api/v1/quests/<id>/.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "No response body"
+     }
+    }
+   }
+  },
+  "/api/v1/settings/features/": {
+   "get": {
+    "operationId": "v1_settings_features_retrieve",
+    "description": "GET /api/v1/settings/features/ — что включено у сети (только чтение).\n\nЧитают обе роли: `client` видит состояние своей сети, но переключать\nмеханики через API нельзя никому (см. шапку модуля).",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeatureFlags"
+        }
+       }
+      },
+      "description": "флаги механик сети"
+     }
+    }
+   }
+  },
+  "/api/v1/settings/story/": {
+   "get": {
+    "operationId": "v1_settings_story_retrieve",
+    "description": "GET   /api/v1/settings/story/ — настройки механики у сети.\nPATCH /api/v1/settings/story/ — правка (только network_admin/суперадмин).\n\nПишем ТОЛЬКО 11 полей белым списком: в `ClientConfig` рядом лежат\nбрендинг, флаги механик и настройки интеграций — запись «всем телом»\nоттуда однажды снесёт чужую настройку всей сети.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StoryNetworkSettings"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_settings_story_partial_update",
+    "description": "GET   /api/v1/settings/story/ — настройки механики у сети.\nPATCH /api/v1/settings/story/ — правка (только network_admin/суперадмин).\n\nПишем ТОЛЬКО 11 полей белым списком: в `ClientConfig` рядом лежат\nбрендинг, флаги механик и настройки интеграций — запись «всем телом»\nоттуда однажды снесёт чужую настройку всей сети.",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedStoryNetworkSettings"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedStoryNetworkSettings"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedStoryNetworkSettings"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StoryNetworkSettings"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StoryError"
+        }
+       }
+      },
+      "description": "invalid_payload (400, с editable) · role_not_allowed (403) · not_found (404)"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StoryError"
+        }
+       }
+      },
+      "description": "invalid_payload (400, с editable) · role_not_allowed (403) · not_found (404)"
+     }
+    }
+   }
+  },
+  "/api/v1/support/chat/manager/": {
+   "get": {
+    "operationId": "v1_support_chat_manager_retrieve",
+    "description": "GET /api/v1/support/chat/manager/\n\nReturns manager metadata PLUS chat state (recent messages, unread count,\nlast message preview). Mobile polls this every few seconds — having\neverything in one response means new manager replies appear without\na separate /messages/ fetch.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "No response body"
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "AutoBroadcastActivateRequest": {
+    "type": "object",
+    "properties": {
+     "expected_count": {
+      "type": "integer",
+      "description": "count из предпросмотра — цифра, которую видел человек"
+     },
+     "confirm": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "confirm",
+     "expected_count"
+    ]
+   },
+   "AutoBroadcastApiError": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "$ref": "#/components/schemas/Code2beEnum"
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "detail"
+    ]
+   },
+   "AutoBroadcastAudience": {
+    "type": "object",
+    "properties": {
+     "branch_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "ВНУТРЕННИЕ Branch.id; [] = все точки сети"
+     },
+     "gender_filter": {
+      "$ref": "#/components/schemas/GenderFilterEnum"
+     },
+     "rf_segments": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastSegment"
+      }
+     }
+    },
+    "required": [
+     "branch_ids",
+     "gender_filter",
+     "rf_segments"
+    ]
+   },
+   "AutoBroadcastAudienceChanged": {
+    "type": "object",
+    "properties": {
+     "expected": {
+      "type": "integer",
+      "description": "сколько показал предпросмотр"
+     },
+     "actual": {
+      "type": "integer",
+      "description": "сколько сейчас"
+     },
+     "code": {
+      "$ref": "#/components/schemas/Code2beEnum"
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "actual",
+     "code",
+     "detail",
+     "expected"
+    ]
+   },
+   "AutoBroadcastAudienceWrite": {
+    "type": "object",
+    "properties": {
+     "branch_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "внутренние Branch.id; [] = все точки. Роль с ограничением по точкам обязана прислать непустой список"
+     },
+     "gender_filter": {
+      "$ref": "#/components/schemas/GenderFilterEnum"
+     },
+     "rf_segment_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      }
+     }
+    }
+   },
+   "AutoBroadcastEvent": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "$ref": "#/components/schemas/CodeE6bEnum"
+     },
+     "label": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "dedup": {
+      "$ref": "#/components/schemas/DedupEnum"
+     },
+     "delay_unit": {
+      "type": "string",
+      "description": "всегда 'days'"
+     },
+     "default_delay_days": {
+      "type": "integer",
+      "nullable": true
+     },
+     "delay_required": {
+      "type": "boolean",
+      "description": "true — delay_days обязателен"
+     },
+     "placeholders": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    },
+    "required": [
+     "code",
+     "dedup",
+     "default_delay_days",
+     "delay_required",
+     "delay_unit",
+     "description",
+     "label",
+     "placeholders"
+    ]
+   },
+   "AutoBroadcastEvents": {
+    "type": "object",
+    "properties": {
+     "events": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastEvent"
+      }
+     },
+     "gender_filters": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastGenderFilter"
+      }
+     },
+     "follow_up_conditions": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastFollowUpCondition"
+      }
+     },
+     "gift_tiers": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastGiftTier"
+      }
+     }
+    },
+    "required": [
+     "events",
+     "follow_up_conditions",
+     "gender_filters",
+     "gift_tiers"
+    ]
+   },
+   "AutoBroadcastFollowUp": {
+    "type": "object",
+    "properties": {
+     "parent_rule_id": {
+      "type": "integer"
+     },
+     "parent_rule_name": {
+      "type": "string"
+     },
+     "condition": {
+      "$ref": "#/components/schemas/ConditionEnum"
+     }
+    },
+    "required": [
+     "condition",
+     "parent_rule_id",
+     "parent_rule_name"
+    ]
+   },
+   "AutoBroadcastFollowUpCondition": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "$ref": "#/components/schemas/Code98cEnum"
+     },
+     "label": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "label"
+    ]
+   },
+   "AutoBroadcastFollowUpWrite": {
+    "type": "object",
+    "properties": {
+     "parent_rule_id": {
+      "type": "integer"
+     },
+     "condition": {
+      "$ref": "#/components/schemas/ConditionEnum"
+     }
+    },
+    "required": [
+     "condition",
+     "parent_rule_id"
+    ]
+   },
+   "AutoBroadcastGenderFilter": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "$ref": "#/components/schemas/Code97eEnum"
+     },
+     "label": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "label"
+    ]
+   },
+   "AutoBroadcastGiftTier": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "type": "string"
+     },
+     "label": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "label"
+    ]
+   },
+   "AutoBroadcastLog": {
+    "type": "object",
+    "properties": {
+     "total": {
+      "type": "integer"
+     },
+     "limit": {
+      "type": "integer"
+     },
+     "offset": {
+      "type": "integer"
+     },
+     "results": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastLogRow"
+      }
+     }
+    },
+    "required": [
+     "limit",
+     "offset",
+     "results",
+     "total"
+    ]
+   },
+   "AutoBroadcastLogRow": {
+    "type": "object",
+    "properties": {
+     "sent_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "vk_id": {
+      "type": "string",
+      "description": "строкой"
+     },
+     "name": {
+      "type": "string"
+     },
+     "variant": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/AutoBroadcastLogVariant"
+       }
+      ],
+      "nullable": true
+     },
+     "status": {
+      "$ref": "#/components/schemas/AutoBroadcastLogRowStatusEnum"
+     },
+     "read_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "error": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "error",
+     "name",
+     "read_at",
+     "sent_at",
+     "status",
+     "variant",
+     "vk_id"
+    ]
+   },
+   "AutoBroadcastLogRowStatusEnum": {
+    "enum": [
+     "pending",
+     "sent",
+     "failed",
+     "skipped"
+    ],
+    "type": "string",
+    "description": "* `pending` - Ожидает\n* `sent` - Отправлено\n* `failed` - Ошибка\n* `skipped` - Пропущен"
+   },
+   "AutoBroadcastLogVariant": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name"
+    ]
+   },
+   "AutoBroadcastPreview": {
+    "type": "object",
+    "properties": {
+     "recipients": {
+      "type": "integer",
+      "description": "старое поле мобилки"
+     },
+     "due_now": {
+      "type": "boolean"
+     },
+     "reason": {
+      "type": "string",
+      "description": "inactive | not_started | finished | outside_send_window"
+     },
+     "sample_text": {
+      "type": "string"
+     },
+     "sample_names": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "count": {
+      "type": "integer",
+      "description": "= recipients; вернуть как expected_count в activate/"
+     },
+     "by_branch": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastPreviewBranch"
+      }
+     },
+     "sample_texts": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastPreviewText"
+      }
+     }
+    },
+    "required": [
+     "by_branch",
+     "count",
+     "due_now",
+     "reason",
+     "recipients",
+     "sample_names",
+     "sample_text",
+     "sample_texts"
+    ]
+   },
+   "AutoBroadcastPreviewBranch": {
+    "type": "object",
+    "properties": {
+     "branch_id": {
+      "type": "integer",
+      "description": "внутренний Branch.id"
+     },
+     "name": {
+      "type": "string"
+     },
+     "count": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "branch_id",
+     "count",
+     "name"
+    ]
+   },
+   "AutoBroadcastPreviewText": {
+    "type": "object",
+    "properties": {
+     "variant_id": {
+      "type": "integer",
+      "nullable": true,
+      "description": "null — основной текст правила"
+     },
+     "name": {
+      "type": "string"
+     },
+     "text": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "text",
+     "variant_id"
+    ]
+   },
+   "AutoBroadcastReward": {
+    "type": "object",
+    "properties": {
+     "gift_tier": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/GiftTierEnum"
+       },
+       {
+        "$ref": "#/components/schemas/BlankEnum"
+       }
+      ]
+     },
+     "gift_lifetime_days": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0 — срок позиции каталога"
+     },
+     "gift_fallback_text": {
+      "type": "string",
+      "description": "текст, если подарок выдать нельзя"
+     }
+    },
+    "required": [
+     "gift_fallback_text",
+     "gift_lifetime_days",
+     "gift_tier"
+    ]
+   },
+   "AutoBroadcastRule": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string"
+     },
+     "event": {
+      "$ref": "#/components/schemas/EventEnum"
+     },
+     "event_label": {
+      "type": "string"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "is_archived": {
+      "type": "boolean"
+     },
+     "priority": {
+      "type": "integer"
+     },
+     "delay_days": {
+      "type": "integer",
+      "nullable": true
+     },
+     "default_delay_days": {
+      "type": "integer",
+      "nullable": true,
+      "description": "из справочника событий"
+     },
+     "send_hour_start": {
+      "type": "integer"
+     },
+     "send_hour_end": {
+      "type": "integer"
+     },
+     "active_from": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     },
+     "active_to": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     },
+     "audience": {
+      "$ref": "#/components/schemas/AutoBroadcastAudience"
+     },
+     "audience_summary": {
+      "type": "string"
+     },
+     "message_text": {
+      "type": "string"
+     },
+     "image": {
+      "type": "string",
+      "nullable": true,
+      "description": "всегда null — картинки в v1.5 не поддержаны"
+     },
+     "reward": {
+      "$ref": "#/components/schemas/AutoBroadcastReward"
+     },
+     "reward_summary": {
+      "type": "string"
+     },
+     "follow_up": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/AutoBroadcastFollowUp"
+       }
+      ],
+      "nullable": true
+     },
+     "variants": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastVariant"
+      }
+     },
+     "stats": {
+      "$ref": "#/components/schemas/AutoBroadcastStats"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "branches_count": {
+      "type": "integer",
+      "description": "0 = все точки"
+     },
+     "gender_filter": {
+      "$ref": "#/components/schemas/GenderFilterEnum"
+     },
+     "segments_count": {
+      "type": "integer"
+     },
+     "sent_total": {
+      "type": "integer",
+      "description": "записей в общем дедуп-логе"
+     },
+     "sent": {
+      "type": "integer"
+     },
+     "read": {
+      "type": "integer"
+     },
+     "failed": {
+      "type": "integer"
+     },
+     "open_rate": {
+      "type": "number",
+      "format": "double"
+     },
+     "parent_rule_name": {
+      "type": "string",
+      "nullable": true
+     }
+    },
+    "required": [
+     "active_from",
+     "active_to",
+     "audience",
+     "audience_summary",
+     "branches_count",
+     "created_at",
+     "default_delay_days",
+     "delay_days",
+     "event",
+     "event_label",
+     "failed",
+     "follow_up",
+     "gender_filter",
+     "id",
+     "image",
+     "is_active",
+     "is_archived",
+     "message_text",
+     "name",
+     "open_rate",
+     "parent_rule_name",
+     "priority",
+     "read",
+     "reward",
+     "reward_summary",
+     "segments_count",
+     "send_hour_end",
+     "send_hour_start",
+     "sent",
+     "sent_total",
+     "stats",
+     "updated_at",
+     "variants"
+    ]
+   },
+   "AutoBroadcastRuleCreate": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 120
+     },
+     "event": {
+      "$ref": "#/components/schemas/EventEnum"
+     },
+     "message_text": {
+      "type": "string",
+      "maxLength": 4096
+     },
+     "delay_days": {
+      "type": "integer",
+      "minimum": 0,
+      "nullable": true,
+      "description": "обязателен у событий с delay_required"
+     },
+     "send_hour_start": {
+      "type": "integer",
+      "maximum": 23,
+      "minimum": 0
+     },
+     "send_hour_end": {
+      "type": "integer",
+      "maximum": 23,
+      "minimum": 0
+     },
+     "active_from": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     },
+     "active_to": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     },
+     "priority": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "is_active": {
+      "type": "boolean",
+      "description": "для мобилки LoyalUP; из кабинета CheckUp true → 400 use_activate (только activate/)"
+     },
+     "audience": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/AutoBroadcastAudienceWrite"
+       }
+      ],
+      "description": "заменяется целиком"
+     },
+     "reward": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/AutoBroadcastReward"
+       }
+      ],
+      "description": "заменяется целиком"
+     },
+     "follow_up": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/AutoBroadcastFollowUpWrite"
+       }
+      ],
+      "nullable": true,
+      "description": "null — убрать связку"
+     },
+     "variants": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastVariantWrite"
+      },
+      "description": "заменяются целиком; варианты с отправками выключаются"
+     }
+    },
+    "required": [
+     "event",
+     "message_text",
+     "name"
+    ]
+   },
+   "AutoBroadcastRuleList": {
+    "type": "object",
+    "properties": {
+     "rules": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastRule"
+      }
+     },
+     "total": {
+      "type": "integer"
+     },
+     "limit": {
+      "type": "integer",
+      "description": "без параметра limit равен total — отдан полный список"
+     },
+     "offset": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "limit",
+     "offset",
+     "rules",
+     "total"
+    ]
+   },
+   "AutoBroadcastSegment": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "code": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "emoji": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "emoji",
+     "id",
+     "name"
+    ]
+   },
+   "AutoBroadcastStats": {
+    "type": "object",
+    "properties": {
+     "sent": {
+      "type": "integer"
+     },
+     "read": {
+      "type": "integer"
+     },
+     "failed": {
+      "type": "integer"
+     },
+     "open_rate": {
+      "type": "number",
+      "format": "double"
+     },
+     "sent_30d": {
+      "type": "integer"
+     },
+     "last_run_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "variants": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastVariant"
+      },
+      "description": "есть в ответе …/stats/; в карточке — ключ variants"
+     }
+    },
+    "required": [
+     "failed",
+     "last_run_at",
+     "open_rate",
+     "read",
+     "sent",
+     "sent_30d"
+    ]
+   },
+   "AutoBroadcastTestSendRequest": {
+    "type": "object",
+    "properties": {
+     "vk_id": {
+      "type": "integer",
+      "description": "VK ID гостя сети (обычно сам сотрудник)"
+     }
+    },
+    "required": [
+     "vk_id"
+    ]
+   },
+   "AutoBroadcastTestSendResult": {
+    "type": "object",
+    "properties": {
+     "ok": {
+      "type": "boolean"
+     },
+     "message_id": {
+      "type": "integer",
+      "nullable": true,
+      "description": "id сообщения в ВК"
+     }
+    },
+    "required": [
+     "message_id",
+     "ok"
+    ]
+   },
+   "AutoBroadcastVariant": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string"
+     },
+     "message_text": {
+      "type": "string"
+     },
+     "weight": {
+      "type": "integer",
+      "minimum": 1
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "sent": {
+      "type": "integer"
+     },
+     "read": {
+      "type": "integer"
+     },
+     "failed": {
+      "type": "integer"
+     },
+     "open_rate": {
+      "type": "number",
+      "format": "double"
+     }
+    },
+    "required": [
+     "failed",
+     "id",
+     "is_active",
+     "message_text",
+     "name",
+     "open_rate",
+     "read",
+     "sent",
+     "weight"
+    ]
+   },
+   "AutoBroadcastVariantCreate": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 60
+     },
+     "message_text": {
+      "type": "string",
+      "maxLength": 4096
+     },
+     "weight": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "по умолчанию 1"
+     },
+     "is_active": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "message_text",
+     "name"
+    ]
+   },
+   "AutoBroadcastVariantWrite": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 60
+     },
+     "message_text": {
+      "type": "string",
+      "maxLength": 4096
+     },
+     "weight": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "по умолчанию 1"
+     },
+     "is_active": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "message_text",
+     "name"
+    ]
+   },
+   "BlankEnum": {
+    "enum": [
+     ""
+    ]
+   },
+   "Code2beEnum": {
+    "enum": [
+     "not_found",
+     "invalid_payload",
+     "event_unknown",
+     "delay_required",
+     "variant_weights_invalid",
+     "reward_invalid",
+     "segment_not_found",
+     "use_activate",
+     "archived",
+     "already_active",
+     "expected_count_required",
+     "confirm_required",
+     "audience_empty",
+     "audience_changed",
+     "preview_failed",
+     "has_sends",
+     "guest_not_found",
+     "not_subscribed",
+     "no_vk_token",
+     "rate_limited",
+     "vk_error"
+    ],
+    "type": "string",
+    "description": "* `not_found` - 404 — правило/вариант/точка/сегмент не найдены или вне доступа\n* `invalid_payload` - 400 — тело запроса не разобрано (в т.ч. пустой branch_ids у роли с ограничением)\n* `event_unknown` - 400 — нет такого события\n* `delay_required` - 400 — у события нет задержки по умолчанию, нужен delay_days\n* `variant_weights_invalid` - 400 — вариант A/B: weight < 1, пустое имя/текст или текст > 4096\n* `reward_invalid` - 400 — gift_tier не из списка или отрицательный срок\n* `segment_not_found` - 404 — нет такого RF-сегмента\n* `use_activate` - 400 — пользователь CheckUp включает правило только через activate/\n* `archived` - 409 — правило в архиве\n* `already_active` - 409 — правило уже включено\n* `expected_count_required` - 400 — нет expected_count из предпросмотра\n* `confirm_required` - 400 — нет confirm=true\n* `audience_empty` - 400 — правило сейчас никому не отправит\n* `audience_changed` - 409 — аудитория разошлась с показанной (+expected, +actual)\n* `preview_failed` - 409 — расчёт аудитории упал (включать тоже нельзя)\n* `has_sends` - 409 — у варианта есть отправки, удалять нельзя (выключите)\n* `guest_not_found` - 400 — гость с таким vk_id не найден в доступных точках\n* `not_subscribed` - 400 — гость не разрешил сообщения сообщества\n* `no_vk_token` - 409 — у точки гостя нет активного сообщества ВК\n* `rate_limited` - 409 — тест-отправка не чаще раза в минуту на правило\n* `vk_error` - 502 — ВК не принял сообщение, текст ответа в detail"
+   },
+   "Code97eEnum": {
+    "enum": [
+     "all",
+     "m",
+     "f"
+    ],
+    "type": "string",
+    "description": "* `all` - Все\n* `m` - Мужчины\n* `f` - Женщины"
+   },
+   "Code98cEnum": {
+    "enum": [
+     "not_read",
+     "not_visited"
+    ],
+    "type": "string",
+    "description": "* `not_read` - Не прочитал сообщение\n* `not_visited` - Не пришёл в кафе после сообщения"
+   },
+   "CodeE6bEnum": {
+    "enum": [
+     "birthday_7d",
+     "birthday_1d",
+     "birthday",
+     "after_game_3h",
+     "gift_not_claimed",
+     "no_visit_days",
+     "subscribed_days",
+     "follow_up",
+     "rf_gift_expiring",
+     "phone_request"
+    ],
+    "type": "string",
+    "description": "* `birthday_7d` - За 7 дней до дня рождения\n* `birthday_1d` - За 1 день до дня рождения\n* `birthday` - День рождения\n* `after_game_3h` - Через 3 часа после игры\n* `gift_not_claimed` - Подарок из сториз/сайта не забран\n* `no_visit_days` - Не приходил N дней (реактивация)\n* `subscribed_days` - Подписался N дней назад (welcome)\n* `follow_up` - Догоняющее (не отреагировал на другое правило)\n* `rf_gift_expiring` - RF-подарок скоро сгорит (напоминание)\n* `phone_request` - Просьба поделиться номером (через N дней после визита)"
+   },
+   "ConditionEnum": {
+    "enum": [
+     "not_read",
+     "not_visited"
+    ],
+    "type": "string",
+    "description": "* `not_read` - Не прочитал сообщение\n* `not_visited` - Не пришёл в кафе после сообщения"
+   },
+   "DedupEnum": {
+    "enum": [
+     "year",
+     "day",
+     "entity"
+    ],
+    "type": "string",
+    "description": "* `year` - раз в год на гостя\n* `day` - раз в сутки на гостя\n* `entity` - раз на объект (подарок)"
+   },
+   "EventEnum": {
+    "enum": [
+     "birthday_7d",
+     "birthday_1d",
+     "birthday",
+     "after_game_3h",
+     "gift_not_claimed",
+     "no_visit_days",
+     "subscribed_days",
+     "follow_up",
+     "rf_gift_expiring",
+     "phone_request"
+    ],
+    "type": "string",
+    "description": "* `birthday_7d` - За 7 дней до дня рождения\n* `birthday_1d` - За 1 день до дня рождения\n* `birthday` - День рождения\n* `after_game_3h` - Через 3 часа после игры\n* `gift_not_claimed` - Подарок из сториз/сайта не забран\n* `no_visit_days` - Не приходил N дней (реактивация)\n* `subscribed_days` - Подписался N дней назад (welcome)\n* `follow_up` - Догоняющее (не отреагировал на другое правило)\n* `rf_gift_expiring` - RF-подарок скоро сгорит (напоминание)\n* `phone_request` - Просьба поделиться номером (через N дней после визита)"
+   },
+   "FeatureFlags": {
+    "type": "object",
+    "properties": {
+     "flags": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{ключ: {value, source: network|default}}"
+     }
+    },
+    "required": [
+     "flags"
+    ]
+   },
+   "GenderFilterEnum": {
+    "enum": [
+     "all",
+     "m",
+     "f"
+    ],
+    "type": "string",
+    "description": "* `all` - Все\n* `m` - Мужчины\n* `f` - Женщины"
+   },
+   "GiftTierEnum": {
+    "enum": [
+     "G1",
+     "G1,G2"
+    ],
+    "type": "string",
+    "description": "* `` - без подарка\n* `G1` - G1\n* `G1,G2` - G1,G2"
+   },
+   "KnowledgeDocument": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "title": {
+      "type": "string"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "filename": {
+      "type": "string"
+     },
+     "has_text": {
+      "type": "boolean"
+     },
+     "char_count": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "char_count",
+     "filename",
+     "has_text",
+     "id",
+     "is_active",
+     "title"
+    ]
+   },
+   "KnowledgeDocuments": {
+    "type": "object",
+    "properties": {
+     "total": {
+      "type": "integer"
+     },
+     "limit": {
+      "type": "integer"
+     },
+     "offset": {
+      "type": "integer"
+     },
+     "documents": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": {}
+      }
+     }
+    },
+    "required": [
+     "documents",
+     "limit",
+     "offset",
+     "total"
+    ]
+   },
+   "KnowledgeError": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "type": "string"
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "detail"
+    ]
+   },
+   "KnowledgeText": {
+    "type": "object",
+    "properties": {
+     "text": {
+      "type": "string"
+     },
+     "truncated": {
+      "type": "boolean"
+     },
+     "char_count": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "char_count",
+     "text",
+     "truncated"
+    ]
+   },
+   "KnowledgeUpload": {
+    "type": "object",
+    "properties": {
+     "title": {
+      "type": "string"
+     },
+     "file": {
+      "type": "string",
+      "format": "uri",
+      "description": ".docx или .txt, до 10 МБ"
+     }
+    },
+    "required": [
+     "file",
+     "title"
+    ]
+   },
+   "MarketerError": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "type": "string"
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "detail"
+    ]
+   },
+   "MarketerPostOut": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "post_type": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     },
+     "text": {
+      "type": "string"
+     },
+     "vk_post_url": {
+      "type": "string"
+     },
+     "error": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "error",
+     "id",
+     "post_type",
+     "status",
+     "text",
+     "vk_post_url"
+    ]
+   },
+   "MarketerPostsOut": {
+    "type": "object",
+    "properties": {
+     "total": {
+      "type": "integer"
+     },
+     "limit": {
+      "type": "integer"
+     },
+     "offset": {
+      "type": "integer"
+     },
+     "results": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": {}
+      }
+     }
+    },
+    "required": [
+     "limit",
+     "offset",
+     "results",
+     "total"
+    ]
+   },
+   "MarketerSettingsOut": {
+    "type": "object",
+    "properties": {
+     "is_enabled": {
+      "type": "boolean"
+     },
+     "vk_group_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "vk_wall_token_set": {
+      "type": "boolean",
+      "description": "сам токен не отдаётся"
+     },
+     "autopost_enabled": {
+      "type": "boolean"
+     },
+     "digest_enabled": {
+      "type": "boolean"
+     },
+     "digest_weekday": {
+      "type": "integer",
+      "description": "0 = понедельник"
+     },
+     "digest_hour": {
+      "type": "integer"
+     },
+     "last_digest_at": {
+      "type": "string",
+      "nullable": true
+     },
+     "brand_voice": {
+      "type": "string"
+     },
+     "extra_facts": {
+      "type": "string"
+     },
+     "editable": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    },
+    "required": [
+     "autopost_enabled",
+     "brand_voice",
+     "digest_enabled",
+     "digest_hour",
+     "digest_weekday",
+     "editable",
+     "extra_facts",
+     "is_enabled",
+     "last_digest_at",
+     "vk_group_id",
+     "vk_wall_token_set"
+    ]
+   },
+   "PatchedAutoBroadcastRulePatch": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 120
+     },
+     "event": {
+      "$ref": "#/components/schemas/EventEnum"
+     },
+     "message_text": {
+      "type": "string",
+      "maxLength": 4096
+     },
+     "delay_days": {
+      "type": "integer",
+      "minimum": 0,
+      "nullable": true,
+      "description": "обязателен у событий с delay_required"
+     },
+     "send_hour_start": {
+      "type": "integer",
+      "maximum": 23,
+      "minimum": 0
+     },
+     "send_hour_end": {
+      "type": "integer",
+      "maximum": 23,
+      "minimum": 0
+     },
+     "active_from": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     },
+     "active_to": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     },
+     "priority": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "is_active": {
+      "type": "boolean",
+      "description": "для мобилки LoyalUP; из кабинета CheckUp true → 400 use_activate (только activate/)"
+     },
+     "audience": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/AutoBroadcastAudienceWrite"
+       }
+      ],
+      "description": "заменяется целиком"
+     },
+     "reward": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/AutoBroadcastReward"
+       }
+      ],
+      "description": "заменяется целиком"
+     },
+     "follow_up": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/AutoBroadcastFollowUpWrite"
+       }
+      ],
+      "nullable": true,
+      "description": "null — убрать связку"
+     },
+     "variants": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/AutoBroadcastVariantWrite"
+      },
+      "description": "заменяются целиком; варианты с отправками выключаются"
+     }
+    }
+   },
+   "PatchedAutoBroadcastVariantPatch": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 60
+     },
+     "message_text": {
+      "type": "string",
+      "maxLength": 4096
+     },
+     "weight": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "по умолчанию 1"
+     },
+     "is_active": {
+      "type": "boolean"
+     }
+    }
+   },
+   "PatchedKnowledgeDocument": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "title": {
+      "type": "string"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "filename": {
+      "type": "string"
+     },
+     "has_text": {
+      "type": "boolean"
+     },
+     "char_count": {
+      "type": "integer"
+     }
+    }
+   },
+   "PatchedMarketerPostOut": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "post_type": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     },
+     "text": {
+      "type": "string"
+     },
+     "vk_post_url": {
+      "type": "string"
+     },
+     "error": {
+      "type": "string"
+     }
+    }
+   },
+   "PatchedMarketerSettingsOut": {
+    "type": "object",
+    "properties": {
+     "is_enabled": {
+      "type": "boolean"
+     },
+     "vk_group_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "vk_wall_token_set": {
+      "type": "boolean",
+      "description": "сам токен не отдаётся"
+     },
+     "autopost_enabled": {
+      "type": "boolean"
+     },
+     "digest_enabled": {
+      "type": "boolean"
+     },
+     "digest_weekday": {
+      "type": "integer",
+      "description": "0 = понедельник"
+     },
+     "digest_hour": {
+      "type": "integer"
+     },
+     "last_digest_at": {
+      "type": "string",
+      "nullable": true
+     },
+     "brand_voice": {
+      "type": "string"
+     },
+     "extra_facts": {
+      "type": "string"
+     },
+     "editable": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "PatchedStoryBranchSettings": {
+    "type": "object",
+    "properties": {
+     "branch": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{id, branch_id, name}"
+     },
+     "overrides": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "5 полей, null = как в сети"
+     },
+     "effective": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "11 полей после резолва"
+     },
+     "source": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "branch | network | branch_address | default"
+     },
+     "prizes": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{count, first, story_image_url}"
+     },
+     "rendered": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{activation_text, saved_text}"
+     }
+    }
+   },
+   "PatchedStoryNetworkSettings": {
+    "type": "object",
+    "properties": {
+     "settings": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "11 полей ClientConfig.story_*"
+     },
+     "placeholders": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "branch_override_fields": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "prizes": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{network_count}"
+     }
+    }
+   },
+   "ReportCommentGenerateIn": {
+    "type": "object",
+    "properties": {
+     "section_num": {
+      "type": "integer"
+     },
+     "section_title": {
+      "type": "string"
+     },
+     "metrics_json": {
+      "type": "string",
+      "description": "JSON-строка цифр раздела"
+     },
+     "draft": {
+      "type": "string",
+      "description": "пожелания менеджера к тексту"
+     },
+     "save": {
+      "type": "boolean",
+      "description": "сохранить в базу как комментарий ИИ"
+     }
+    },
+    "required": [
+     "section_num"
+    ]
+   },
+   "ReportCommentGenerateOut": {
+    "type": "object",
+    "properties": {
+     "text": {
+      "type": "string"
+     },
+     "saved": {
+      "type": "boolean"
+     },
+     "period_key": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "period_key",
+     "saved",
+     "text"
+    ]
+   },
+   "ReportComments": {
+    "type": "object",
+    "properties": {
+     "period_key": {
+      "type": "string"
+     },
+     "comments": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": {}
+      }
+     },
+     "meta": {
+      "type": "object",
+      "additionalProperties": {}
+     }
+    },
+    "required": [
+     "comments",
+     "meta",
+     "period_key"
+    ]
+   },
+   "ReportError": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "type": "string"
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "detail"
+    ]
+   },
+   "ReportSections": {
+    "type": "object",
+    "properties": {
+     "sections": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": {}
+      },
+      "description": "[{num, title, metric_keys}]"
+     }
+    },
+    "required": [
+     "sections"
+    ]
+   },
+   "StoryBranchSettings": {
+    "type": "object",
+    "properties": {
+     "branch": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{id, branch_id, name}"
+     },
+     "overrides": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "5 полей, null = как в сети"
+     },
+     "effective": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "11 полей после резолва"
+     },
+     "source": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "branch | network | branch_address | default"
+     },
+     "prizes": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{count, first, story_image_url}"
+     },
+     "rendered": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{activation_text, saved_text}"
+     }
+    },
+    "required": [
+     "branch",
+     "effective",
+     "overrides",
+     "prizes",
+     "rendered",
+     "source"
+    ]
+   },
+   "StoryError": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "type": "string"
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "detail"
+    ]
+   },
+   "StoryNetworkSettings": {
+    "type": "object",
+    "properties": {
+     "settings": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "11 полей ClientConfig.story_*"
+     },
+     "placeholders": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "branch_override_fields": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "prizes": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{network_count}"
+     }
+    },
+    "required": [
+     "branch_override_fields",
+     "placeholders",
+     "prizes",
+     "settings"
+    ]
+   }
+  },
+  "securitySchemes": {
+   "cookieAuth": {
+    "type": "apiKey",
+    "in": "cookie",
+    "name": "sessionid"
+   }
+  }
+ }
+}
