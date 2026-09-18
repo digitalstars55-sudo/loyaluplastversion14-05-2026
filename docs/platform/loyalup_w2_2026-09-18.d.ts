@@ -261,19 +261,68 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description GET /api/v1/analytics/rf/reward-catalog/
+         * @description GET  /api/v1/analytics/rf/reward-catalog/ — пул наград.
+         *     POST /api/v1/analytics/rf/reward-catalog/ — завести позицию.
          *
-         *     Позиции «Каталога наград», доступные для назначения RFM-кампанией:
-         *     активные, не архивные, available_for_rfm, с привязанным подарком
-         *     (без product гостю нечего показать в «Моих подарках»).
+         *     Ответ GET — надмножество старой ручки `analytics/api/views.py:1746`:
+         *     ключ `items` и все её поля на месте, поэтому существующий веб RFM
+         *     продолжает работать без правок.
          */
         get: operations["v1_analytics_rf_reward_catalog_retrieve"];
         put?: never;
-        post?: never;
+        /**
+         * @description GET  /api/v1/analytics/rf/reward-catalog/ — пул наград.
+         *     POST /api/v1/analytics/rf/reward-catalog/ — завести позицию.
+         *
+         *     Ответ GET — надмножество старой ручки `analytics/api/views.py:1746`:
+         *     ключ `items` и все её поля на месте, поэтому существующий веб RFM
+         *     продолжает работать без правок.
+         */
+        post: operations["v1_analytics_rf_reward_catalog_create"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/rf/reward-catalog/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET    /api/v1/analytics/rf/reward-catalog/{id}/ — карточка позиции.
+         *     PATCH  …/{id}/ — правка. Подарок, тир и точку нельзя менять, пока позиция
+         *            занята (`409 in_use`); лимит нельзя опустить ниже выданного
+         *            (`409 limit_below_issued`). Остальные поля — всегда.
+         *     DELETE …/{id}/ — архив (`is_archived=True, is_active=False`), физического
+         *            удаления нет.
+         */
+        get: operations["v1_analytics_rf_reward_catalog_retrieve_2"];
+        put?: never;
+        post?: never;
+        /**
+         * @description GET    /api/v1/analytics/rf/reward-catalog/{id}/ — карточка позиции.
+         *     PATCH  …/{id}/ — правка. Подарок, тир и точку нельзя менять, пока позиция
+         *            занята (`409 in_use`); лимит нельзя опустить ниже выданного
+         *            (`409 limit_below_issued`). Остальные поля — всегда.
+         *     DELETE …/{id}/ — архив (`is_archived=True, is_active=False`), физического
+         *            удаления нет.
+         */
+        delete: operations["v1_analytics_rf_reward_catalog_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description GET    /api/v1/analytics/rf/reward-catalog/{id}/ — карточка позиции.
+         *     PATCH  …/{id}/ — правка. Подарок, тир и точку нельзя менять, пока позиция
+         *            занята (`409 in_use`); лимит нельзя опустить ниже выданного
+         *            (`409 limit_below_issued`). Остальные поля — всегда.
+         *     DELETE …/{id}/ — архив (`is_archived=True, is_active=False`), физического
+         *            удаления нет.
+         */
+        patch: operations["v1_analytics_rf_reward_catalog_partial_update"];
         trace?: never;
     };
     "/api/v1/assistant/ask/": {
@@ -901,7 +950,19 @@ export interface paths {
          *
          *     Параметры:
          *       days_ahead   — горизонт вперёд в днях (0..365, по умолчанию 30)
-         *       include_past — 0|1 (по умолчанию 1) — включать ли уже прошедшие ДР этого года
+         *       include_past — включать ли уже прошедшие ДР (окно 30 дней назад).
+         *                      ⚠️ ПО УМОЛЧАНИЮ ВКЛЮЧЕНЫ: параметр не передан или пуст =
+         *                      то же, что `1`. Чтобы прошедшие СКРЫТЬ, нужно передать
+         *                      ровно `include_past=0` (понимаются `1|true|yes` как «да»,
+         *                      всё остальное — как «нет»). Пропуск параметра прошедшие
+         *                      НЕ скрывает.
+         *
+         *     Поля строки: vk_id (строкой), first_name, last_name, phone, phone_source,
+         *     branch_name, coins, segment_emoji, segment_name, birthday,
+         *     birthday_this_year, days_until, age_turning, is_loyal, greeting_status.
+         *     Телефон и сегмент резолвятся пачкой (по два запроса на всю выборку, не на
+         *     гостя); phone_source — 'vk' | 'vk_unverified' | 'review' | ''.
+         *     is_loyal пока всегда false — поле зарезервировано, смысла за ним нет.
          *
          *     Группировка по уникальному vk_id (один гость может быть в нескольких точках —
          *     берём самый свежий ClientBranch). Сотрудники (is_employee=True) исключены.
@@ -1165,6 +1226,75 @@ export interface paths {
         patch: operations["v1_mobile_branches_story_partial_update"];
         trace?: never;
     };
+    "/api/v1/mobile/branches/{id}/vk/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET   /api/v1/mobile/branches/{id}/vk/ — карточка подключения (обе роли).
+         *     PATCH /api/v1/mobile/branches/{id}/vk/ — правка (network_admin/суперадмин).
+         *
+         *     PATCH создаёт подключение, если его ещё нет (тогда `vk_group_id` и
+         *     `vk_community_token` обязательны). Смена токена, группы или секрета требует
+         *     `confirm: true` — см. шапку модуля. Новый токен ВСЕГДА проверяется у ВК до
+         *     записи; сменить группу у точки, по которой уже есть история (рассылки или
+         *     диалоги отзывов), нельзя — `409 group_in_use`: старая переписка привязана к
+         *     прежнему сообществу, и после подмены гости просто перестанут получать
+         *     ответы в свой диалог.
+         */
+        get: operations["v1_mobile_branches_vk_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * @description GET   /api/v1/mobile/branches/{id}/vk/ — карточка подключения (обе роли).
+         *     PATCH /api/v1/mobile/branches/{id}/vk/ — правка (network_admin/суперадмин).
+         *
+         *     PATCH создаёт подключение, если его ещё нет (тогда `vk_group_id` и
+         *     `vk_community_token` обязательны). Смена токена, группы или секрета требует
+         *     `confirm: true` — см. шапку модуля. Новый токен ВСЕГДА проверяется у ВК до
+         *     записи; сменить группу у точки, по которой уже есть история (рассылки или
+         *     диалоги отзывов), нельзя — `409 group_in_use`: старая переписка привязана к
+         *     прежнему сообществу, и после подмены гости просто перестанут получать
+         *     ответы в свой диалог.
+         */
+        patch: operations["v1_mobile_branches_vk_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/mobile/branches/{id}/vk/check/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description POST /api/v1/mobile/branches/{id}/vk/check/ — «а живой ли токен?».
+         *
+         *     Тело `{vk_group_id?, vk_community_token?}` — проверить ещё НЕ сохранённые
+         *     значения (форма в кабинете); пустое тело — проверить сохранённые. Ручка
+         *     НИЧЕГО не пишет: её зовут до PATCH и после, чтобы понять, что именно
+         *     сломалось.
+         *
+         *     Не больше трёх вызовов ВК за запрос: права токена, его сообщество и
+         *     callback-серверы группы. Отказ ВК — 424 с настоящим `vk_error_code`
+         *     (5 — токен невалиден, 27 — ключ сообщества недействителен, 15 — нет
+         *     доступа): кабинет показывает человеку причину, а не «ошибка сервера».
+         */
+        post: operations["v1_mobile_branches_vk_check_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/quests/": {
         parameters: {
             query?: never;
@@ -1209,10 +1339,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description GET /api/v1/settings/features/ — что включено у сети (только чтение).
-         *
-         *     Читают обе роли: `client` видит состояние своей сети, но переключать
-         *     механики через API нельзя никому (см. шапку модуля).
+         * @description GET /api/v1/settings/features/ — что включено у сети (читают обе роли).
+         *     PATCH — запись по списку EDITABLE (network_admin), см. FeatureFlagsPatchMixin.
          */
         get: operations["v1_settings_features_retrieve"];
         put?: never;
@@ -1220,7 +1348,12 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Изменить флаги механик сети (частично); с branch_id — переопределение точки
+         * @description GET /api/v1/settings/features/ — что включено у сети (читают обе роли).
+         *     PATCH — запись по списку EDITABLE (network_admin), см. FeatureFlagsPatchMixin.
+         */
+        patch: operations["v1_settings_features_partial_update"];
         trace?: never;
     };
     "/api/v1/settings/story/": {
@@ -1253,6 +1386,36 @@ export interface paths {
          *     оттуда однажды снесёт чужую настройку всей сети.
          */
         patch: operations["v1_settings_story_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/settings/vk/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET /api/v1/settings/vk/ — какие точки подключены к ВК и как.
+         *
+         *     Ни одного вызова ВК: это моментальная карта настроек, её открывают, чтобы
+         *     понять «куда смотреть», а не чтобы проверить токены (для этого есть
+         *     `.../vk/check/`).
+         *
+         *     `groups` — разрез по сообществам. `secrets_consistent: false` означает, что
+         *     у конфигов одной группы РАЗНЫЕ (или пустые) секреты callback: именно этот
+         *     разъезд однажды заставил ВК отключить callback всей сети. Согласованность
+         *     считается по ВСЕМ конфигам группы, а в `branches` перечислены только точки,
+         *     доступные сотруднику: иначе ограниченный по точкам сотрудник видел бы
+         *     зелёный флаг там, где мина лежит у соседа.
+         */
+        get: operations["v1_settings_vk_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/support/chat/manager/": {
@@ -1628,6 +1791,11 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        FeatureFlagsError: {
+            /** @description unknown_flag | readonly_flag | no_branch_override | invalid_payload | role_not_allowed | not_found */
+            code: string;
+            detail: string;
+        };
         /**
          * @description * `all` - Все
          *     * `m` - Мужчины
@@ -1741,6 +1909,10 @@ export interface components {
             weight?: number;
             is_active?: boolean;
         };
+        PatchedFeatureFlagsPatch: {
+            /** @description внутренний id точки — переопределение (только BRANCH_OVERRIDABLE) */
+            branch_id?: number;
+        };
         PatchedKnowledgeDocument: {
             id?: number;
             title?: string;
@@ -1771,6 +1943,27 @@ export interface components {
             brand_voice?: string;
             extra_facts?: string;
             editable?: string[];
+        };
+        PatchedRewardCatalogIn: {
+            product_id?: number;
+            tier?: components["schemas"]["TierEnum"];
+            name?: string;
+            internal_code?: string;
+            description?: string;
+            /** Format: double */
+            cost_price?: number;
+            /** Format: double */
+            min_order_amount?: number;
+            weight?: number;
+            default_lifetime_days?: number;
+            activation_limit?: number | null;
+            /** Format: date-time */
+            available_from?: string | null;
+            /** Format: date-time */
+            available_to?: string | null;
+            branch_id?: number | null;
+            available_for_rfm?: boolean;
+            is_active?: boolean;
         };
         PatchedStoryBranchSettings: {
             /** @description {id, branch_id, name} */
@@ -1810,6 +2003,15 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        PatchedVkConnectPatchIn: {
+            vk_group_id?: number;
+            vk_community_token?: string;
+            vk_callback_secret?: string;
+            vk_callback_confirmation?: string;
+            is_active?: boolean;
+            notes?: string;
+            confirm?: boolean;
+        };
         ReportCommentGenerateIn: {
             section_num: number;
             section_title?: string;
@@ -1843,6 +2045,216 @@ export interface components {
             sections: {
                 [key: string]: unknown;
             }[];
+        };
+        RewardCatalogArchived: {
+            id: number;
+            is_archived: boolean;
+            is_active: boolean;
+            warning?: string | null;
+            rules?: {
+                [key: string]: unknown;
+            }[];
+        };
+        RewardCatalogCard: {
+            id: number;
+            /** @description display_name: своё или название подарка */
+            name: string;
+            tier: components["schemas"]["TierEnum"];
+            tier_label: string;
+            /** @description {id, name} | null */
+            product: {
+                [key: string]: unknown;
+            } | null;
+            product_id: number | null;
+            internal_code: string;
+            description: string;
+            image_url: string | null;
+            /**
+             * Format: double
+             * @description effective: своя либо подарка
+             */
+            cost_price: number;
+            /** Format: double */
+            min_order_amount: number;
+            /** @description 0 — запасная позиция */
+            weight: number;
+            default_lifetime_days: number;
+            /** @description null — без лимита */
+            activation_limit: number | null;
+            readonly issued_count: number;
+            remaining_issues: number | null;
+            /** Format: date-time */
+            available_from: string | null;
+            /** Format: date-time */
+            available_to: string | null;
+            /** @description внутренний id точки; null — вся сеть */
+            branch_id: number | null;
+            /** @description имя точки (старый ключ) */
+            branch: string | null;
+            is_active: boolean;
+            is_archived: boolean;
+            available_for_rfm: boolean;
+            is_available_now: boolean;
+            /** @description {campaigns, live_gifts} */
+            in_use: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        RewardCatalogCardRow: {
+            id: number;
+            /** @description display_name: своё или название подарка */
+            name: string;
+            tier: components["schemas"]["TierEnum"];
+            tier_label: string;
+            /** @description {id, name} | null */
+            product: {
+                [key: string]: unknown;
+            } | null;
+            product_id: number | null;
+            internal_code: string;
+            description: string;
+            image_url: string | null;
+            /**
+             * Format: double
+             * @description effective: своя либо подарка
+             */
+            cost_price: number;
+            /** Format: double */
+            min_order_amount: number;
+            /** @description 0 — запасная позиция */
+            weight: number;
+            default_lifetime_days: number;
+            /** @description null — без лимита */
+            activation_limit: number | null;
+            readonly issued_count: number;
+            remaining_issues: number | null;
+            /** Format: date-time */
+            available_from: string | null;
+            /** Format: date-time */
+            available_to: string | null;
+            /** @description внутренний id точки; null — вся сеть */
+            branch_id: number | null;
+            /** @description имя точки (старый ключ) */
+            branch: string | null;
+            is_active: boolean;
+            is_archived: boolean;
+            available_for_rfm: boolean;
+            is_available_now: boolean;
+            /** @description {campaigns, live_gifts} */
+            in_use: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        RewardCatalogError: {
+            code: components["schemas"]["RewardCatalogErrorCodeEnum"];
+            detail: string;
+        };
+        /**
+         * @description * `invalid_payload` - 400 — тело запроса не разобрано (+editable, +read_only)
+         *     * `product_required` - 400 — не выбран подарок
+         *     * `tier_invalid` - 400 — неизвестный тир
+         *     * `period_invalid` - 400 — available_from позже available_to
+         *     * `role_not_allowed` - 403 — править каталог может только администратор сети
+         *     * `not_found` - 404 — позиция/точка/подарок не найдены или вне доступа
+         *     * `limit_below_issued` - 409 — лимит меньше уже выданного
+         *     * `in_use` - 409 — позиция занята (+campaigns, +live_gifts, +blocked_fields)
+         * @enum {string}
+         */
+        RewardCatalogErrorCodeEnum: "invalid_payload" | "product_required" | "tier_invalid" | "period_invalid" | "role_not_allowed" | "not_found" | "limit_below_issued" | "in_use";
+        RewardCatalogIn: {
+            product_id: number;
+            tier: components["schemas"]["TierEnum"];
+            name?: string;
+            internal_code?: string;
+            description?: string;
+            /** Format: double */
+            cost_price?: number;
+            /** Format: double */
+            min_order_amount?: number;
+            weight?: number;
+            default_lifetime_days?: number;
+            activation_limit?: number | null;
+            /** Format: date-time */
+            available_from?: string | null;
+            /** Format: date-time */
+            available_to?: string | null;
+            branch_id?: number | null;
+            available_for_rfm?: boolean;
+            is_active?: boolean;
+        };
+        RewardCatalogList: {
+            items: components["schemas"]["RewardCatalogCardRow"][];
+            total: number;
+            limit: number;
+            offset: number;
+            /** @description [{code, label}] — справочник тиров */
+            tiers: {
+                [key: string]: unknown;
+            }[];
+        };
+        RewardCatalogPatchedCard: {
+            changed: string[];
+            /** @description last_item_in_tier */
+            warning?: string | null;
+            /** @description [{id, name}] — авторассылки этого тира */
+            rules?: {
+                [key: string]: unknown;
+            }[];
+            id: number;
+            /** @description display_name: своё или название подарка */
+            name: string;
+            tier: components["schemas"]["TierEnum"];
+            tier_label: string;
+            /** @description {id, name} | null */
+            product: {
+                [key: string]: unknown;
+            } | null;
+            product_id: number | null;
+            internal_code: string;
+            description: string;
+            image_url: string | null;
+            /**
+             * Format: double
+             * @description effective: своя либо подарка
+             */
+            cost_price: number;
+            /** Format: double */
+            min_order_amount: number;
+            /** @description 0 — запасная позиция */
+            weight: number;
+            default_lifetime_days: number;
+            /** @description null — без лимита */
+            activation_limit: number | null;
+            readonly issued_count: number;
+            remaining_issues: number | null;
+            /** Format: date-time */
+            available_from: string | null;
+            /** Format: date-time */
+            available_to: string | null;
+            /** @description внутренний id точки; null — вся сеть */
+            branch_id: number | null;
+            /** @description имя точки (старый ключ) */
+            branch: string | null;
+            is_active: boolean;
+            is_archived: boolean;
+            available_for_rfm: boolean;
+            is_available_now: boolean;
+            /** @description {campaigns, live_gifts} */
+            in_use: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         StoryBranchSettings: {
             /** @description {id, branch_id, name} */
@@ -1885,6 +2297,64 @@ export interface components {
             prizes: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * @description * `G1` - G1 · Лёгкий (низкая себестоимость)
+         *     * `G2` - G2 · Средний
+         *     * `G3` - G3 · Ценный (VIP)
+         * @enum {string}
+         */
+        TierEnum: "G1" | "G2" | "G3";
+        VkConnectCard: {
+            /** @description {id, branch_id, name} */
+            branch: {
+                [key: string]: unknown;
+            };
+            connected: boolean;
+            is_active: boolean;
+            vk_group_id: number | null;
+            token_set: boolean;
+            token_last4: string | null;
+            confirmation_set: boolean;
+            secret_set: boolean;
+            callback_url: string;
+            notes: string;
+            group_shared_with: number[];
+            updated_at: string | null;
+        };
+        VkConnectCheckIn: {
+            vk_group_id?: number;
+            vk_community_token?: string;
+        };
+        VkConnectCheckOut: {
+            ok: boolean;
+            /** @description {id, name, screen_name, photo} */
+            group: {
+                [key: string]: unknown;
+            } | null;
+            permissions: string[];
+            missing_permissions: string[];
+            group_matches: boolean;
+            /** @description {id, title, url, status, ours} */
+            callback_servers: {
+                [key: string]: unknown;
+            }[];
+            callback_servers_error: string | null;
+            can_save: boolean;
+        };
+        VkConnectError: {
+            code: string;
+            detail: string;
+        };
+        VkConnectSummary: {
+            /** @description {id, branch_id, name, connected, is_active, vk_group_id, token_set, token_last4, confirmation_set, secret_set, callback_url} */
+            branches: {
+                [key: string]: unknown;
+            }[];
+            /** @description {vk_group_id, branches: [id], secrets_consistent} */
+            groups: {
+                [key: string]: unknown;
+            }[];
         };
     };
     responses: never;
@@ -2432,7 +2902,19 @@ export interface operations {
     };
     v1_analytics_rf_reward_catalog_retrieve: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description внутренние id точек через запятую (сетевые позиции остаются) */
+                branch_ids?: string;
+                /** @description 1 — показать архивные */
+                include_archived?: boolean;
+                /** @description 1 — показать выключенные, без подарка, вне периода */
+                include_inactive?: boolean;
+                /** @description не передан — весь список; потолок 200 */
+                limit?: number;
+                offset?: number;
+                /** @description G1 | G2 | G3, можно через запятую */
+                tier?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2444,9 +2926,198 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RewardCatalogList"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+        };
+    };
+    v1_analytics_rf_reward_catalog_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RewardCatalogIn"];
+                "application/x-www-form-urlencoded": components["schemas"]["RewardCatalogIn"];
+                "multipart/form-data": components["schemas"]["RewardCatalogIn"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogCard"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+        };
+    };
+    v1_analytics_rf_reward_catalog_retrieve_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogCard"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+        };
+    };
+    v1_analytics_rf_reward_catalog_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogArchived"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+        };
+    };
+    v1_analytics_rf_reward_catalog_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedRewardCatalogIn"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedRewardCatalogIn"];
+                "multipart/form-data": components["schemas"]["PatchedRewardCatalogIn"];
+            };
+        };
+        responses: {
+            /** @description карточка + changed[] (+warning/rules) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogPatchedCard"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
                 };
             };
         };
@@ -4024,6 +4695,189 @@ export interface operations {
             };
         };
     };
+    v1_mobile_branches_vk_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectCard"];
+                };
+            };
+            /** @description invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectError"];
+                };
+            };
+        };
+    };
+    v1_mobile_branches_vk_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedVkConnectPatchIn"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedVkConnectPatchIn"];
+                "multipart/form-data": components["schemas"]["PatchedVkConnectPatchIn"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectCard"];
+                };
+            };
+            /** @description invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectError"];
+                };
+            };
+            /** @description invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectError"];
+                };
+            };
+            /** @description invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectError"];
+                };
+            };
+            /** @description invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectError"];
+                };
+            };
+            /** @description invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504) */
+            424: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectError"];
+                };
+            };
+            /** @description invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504) */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectError"];
+                };
+            };
+        };
+    };
+    v1_mobile_branches_vk_check_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["VkConnectCheckIn"];
+                "application/x-www-form-urlencoded": components["schemas"]["VkConnectCheckIn"];
+                "multipart/form-data": components["schemas"]["VkConnectCheckIn"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectCheckOut"];
+                };
+            };
+            /** @description invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectError"];
+                };
+            };
+            /** @description invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectError"];
+                };
+            };
+            /** @description invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectError"];
+                };
+            };
+            /** @description invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504) */
+            424: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectError"];
+                };
+            };
+            /** @description invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504) */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectError"];
+                };
+            };
+        };
+    };
     v1_quests_retrieve: {
         parameters: {
             query?: never;
@@ -4120,6 +4974,55 @@ export interface operations {
             };
         };
     };
+    v1_settings_features_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedFeatureFlagsPatch"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedFeatureFlagsPatch"];
+                "multipart/form-data": components["schemas"]["PatchedFeatureFlagsPatch"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureFlags"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureFlagsError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureFlagsError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureFlagsError"];
+                };
+            };
+        };
+    };
     v1_settings_story_retrieve: {
         parameters: {
             query?: never;
@@ -4178,6 +5081,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StoryError"];
+                };
+            };
+        };
+    };
+    v1_settings_vk_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VkConnectSummary"];
                 };
             };
         };

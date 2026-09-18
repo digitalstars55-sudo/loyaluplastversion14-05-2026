@@ -435,15 +435,24 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description GET /api/v1/analytics/rf/reward-catalog/
+         * @description GET  /api/v1/analytics/rf/reward-catalog/ — пул наград.
+         *     POST /api/v1/analytics/rf/reward-catalog/ — завести позицию.
          *
-         *     Позиции «Каталога наград», доступные для назначения RFM-кампанией:
-         *     активные, не архивные, available_for_rfm, с привязанным подарком
-         *     (без product гостю нечего показать в «Моих подарках»).
+         *     Ответ GET — надмножество старой ручки `analytics/api/views.py:1746`:
+         *     ключ `items` и все её поля на месте, поэтому существующий веб RFM
+         *     продолжает работать без правок.
          */
         get: operations["v1_analytics_rf_reward_catalog_retrieve"];
         put?: never;
-        post?: never;
+        /**
+         * @description GET  /api/v1/analytics/rf/reward-catalog/ — пул наград.
+         *     POST /api/v1/analytics/rf/reward-catalog/ — завести позицию.
+         *
+         *     Ответ GET — надмножество старой ручки `analytics/api/views.py:1746`:
+         *     ключ `items` и все её поля на месте, поэтому существующий веб RFM
+         *     продолжает работать без правок.
+         */
+        post: operations["v1_analytics_rf_reward_catalog_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1733,6 +1742,151 @@ export interface components {
          * @enum {string}
          */
         ReviewMessageSourceEnum: "APP" | "VK_MESSAGE" | "ADMIN_REPLY";
+        RewardCatalogCard: {
+            id: number;
+            /** @description display_name: своё или название подарка */
+            name: string;
+            tier: components["schemas"]["TierEnum"];
+            tier_label: string;
+            /** @description {id, name} | null */
+            product: {
+                [key: string]: unknown;
+            } | null;
+            product_id: number | null;
+            internal_code: string;
+            description: string;
+            image_url: string | null;
+            /**
+             * Format: double
+             * @description effective: своя либо подарка
+             */
+            cost_price: number;
+            /** Format: double */
+            min_order_amount: number;
+            /** @description 0 — запасная позиция */
+            weight: number;
+            default_lifetime_days: number;
+            /** @description null — без лимита */
+            activation_limit: number | null;
+            readonly issued_count: number;
+            remaining_issues: number | null;
+            /** Format: date-time */
+            available_from: string | null;
+            /** Format: date-time */
+            available_to: string | null;
+            /** @description внутренний id точки; null — вся сеть */
+            branch_id: number | null;
+            /** @description имя точки (старый ключ) */
+            branch: string | null;
+            is_active: boolean;
+            is_archived: boolean;
+            available_for_rfm: boolean;
+            is_available_now: boolean;
+            /** @description {campaigns, live_gifts} */
+            in_use: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        RewardCatalogCardRow: {
+            id: number;
+            /** @description display_name: своё или название подарка */
+            name: string;
+            tier: components["schemas"]["TierEnum"];
+            tier_label: string;
+            /** @description {id, name} | null */
+            product: {
+                [key: string]: unknown;
+            } | null;
+            product_id: number | null;
+            internal_code: string;
+            description: string;
+            image_url: string | null;
+            /**
+             * Format: double
+             * @description effective: своя либо подарка
+             */
+            cost_price: number;
+            /** Format: double */
+            min_order_amount: number;
+            /** @description 0 — запасная позиция */
+            weight: number;
+            default_lifetime_days: number;
+            /** @description null — без лимита */
+            activation_limit: number | null;
+            readonly issued_count: number;
+            remaining_issues: number | null;
+            /** Format: date-time */
+            available_from: string | null;
+            /** Format: date-time */
+            available_to: string | null;
+            /** @description внутренний id точки; null — вся сеть */
+            branch_id: number | null;
+            /** @description имя точки (старый ключ) */
+            branch: string | null;
+            is_active: boolean;
+            is_archived: boolean;
+            available_for_rfm: boolean;
+            is_available_now: boolean;
+            /** @description {campaigns, live_gifts} */
+            in_use: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        RewardCatalogError: {
+            code: components["schemas"]["RewardCatalogErrorCodeEnum"];
+            detail: string;
+        };
+        /**
+         * @description * `invalid_payload` - 400 — тело запроса не разобрано (+editable, +read_only)
+         *     * `product_required` - 400 — не выбран подарок
+         *     * `tier_invalid` - 400 — неизвестный тир
+         *     * `period_invalid` - 400 — available_from позже available_to
+         *     * `role_not_allowed` - 403 — править каталог может только администратор сети
+         *     * `not_found` - 404 — позиция/точка/подарок не найдены или вне доступа
+         *     * `limit_below_issued` - 409 — лимит меньше уже выданного
+         *     * `in_use` - 409 — позиция занята (+campaigns, +live_gifts, +blocked_fields)
+         * @enum {string}
+         */
+        RewardCatalogErrorCodeEnum: "invalid_payload" | "product_required" | "tier_invalid" | "period_invalid" | "role_not_allowed" | "not_found" | "limit_below_issued" | "in_use";
+        RewardCatalogIn: {
+            product_id: number;
+            tier: components["schemas"]["TierEnum"];
+            name?: string;
+            internal_code?: string;
+            description?: string;
+            /** Format: double */
+            cost_price?: number;
+            /** Format: double */
+            min_order_amount?: number;
+            weight?: number;
+            default_lifetime_days?: number;
+            activation_limit?: number | null;
+            /** Format: date-time */
+            available_from?: string | null;
+            /** Format: date-time */
+            available_to?: string | null;
+            branch_id?: number | null;
+            available_for_rfm?: boolean;
+            is_active?: boolean;
+        };
+        RewardCatalogList: {
+            items: components["schemas"]["RewardCatalogCardRow"][];
+            total: number;
+            limit: number;
+            offset: number;
+            /** @description [{code, label}] — справочник тиров */
+            tiers: {
+                [key: string]: unknown;
+            }[];
+        };
         /**
          * @description * `pending` - Ожидает
          *     * `running` - Отправляется
@@ -1748,6 +1902,13 @@ export interface components {
          * @enum {string}
          */
         StatusF24Enum: "draft" | "archived";
+        /**
+         * @description * `G1` - G1 · Лёгкий (низкая себестоимость)
+         *     * `G2` - G2 · Средний
+         *     * `G3` - G3 · Ценный (VIP)
+         * @enum {string}
+         */
+        TierEnum: "G1" | "G2" | "G3";
         /**
          * @description * `manual` - Вручную
          *     * `auto` - Автоматически
@@ -2292,7 +2453,19 @@ export interface operations {
     };
     v1_analytics_rf_reward_catalog_retrieve: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description внутренние id точек через запятую (сетевые позиции остаются) */
+                branch_ids?: string;
+                /** @description 1 — показать архивные */
+                include_archived?: boolean;
+                /** @description 1 — показать выключенные, без подарка, вне периода */
+                include_inactive?: boolean;
+                /** @description не передан — весь список; потолок 200 */
+                limit?: number;
+                offset?: number;
+                /** @description G1 | G2 | G3, можно через запятую */
+                tier?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2304,9 +2477,64 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RewardCatalogList"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+        };
+    };
+    v1_analytics_rf_reward_catalog_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RewardCatalogIn"];
+                "application/x-www-form-urlencoded": components["schemas"]["RewardCatalogIn"];
+                "multipart/form-data": components["schemas"]["RewardCatalogIn"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogCard"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RewardCatalogError"];
                 };
             };
         };

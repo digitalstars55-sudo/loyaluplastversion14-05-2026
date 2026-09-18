@@ -3,7 +3,7 @@
  "info": {
   "title": "LoyalUP API — срез волны 2 для CheckUp",
   "version": "2026-09-18",
-  "description": "Ручки волны 2 (контракт, раздел 3б): готовые ручки мобилки (№18–22, 24, 25, 30, 32) и новые модули (точки контакта №26/27, сториз №23, отчёт №28, маркетолог №29, авторассылки №31, база знаний №52, флаги №56). У готовых ручек мобилки схемы ответов могут быть неполными (вьюхи без сериализаторов) — форма там по fixtures/w2/. Полная схема: GET https://levelupapp.ru/api/schema/. Внутренние ручки обмена токена и вердикта — обычные Django-вьюхи, в схеме их нет (форма — fixtures/w1/exchange_*.json, verdict_*.json). Все ручки: Authorization: Bearer <JWT из обмена>, Host: <schema>.levelupapp.ru. Источник истины по форме ответов — записанные эталоны fixtures/; срез описывает состав ручек и типы полей."
+  "description": "Ручки волны 2 (контракт, раздел 3б): готовые ручки мобилки (№18–22, 24, 25, 30, 32) и новые модули (точки контакта №26/27, сториз №23, отчёт №28, маркетолог №29, авторассылки №31, база знаний №52, флаги №56) + добивка v1.8 (каталог наград №49, ВК №55, запись флагов, экспорт и синхронизация себестоимости №34, сводная волны 3). У готовых ручек мобилки схемы ответов могут быть неполными (вьюхи без сериализаторов) — форма там по fixtures/w2/. Полная схема: GET https://levelupapp.ru/api/schema/. Внутренние ручки обмена токена и вердикта — обычные Django-вьюхи, в схеме их нет (форма — fixtures/w1/exchange_*.json, verdict_*.json). Все ручки: Authorization: Bearer <JWT из обмена>, Host: <schema>.levelupapp.ru. Источник истины по форме ответов — записанные эталоны fixtures/; срез описывает состав ручек и типы полей."
  },
  "servers": [
   {
@@ -883,7 +883,56 @@
   "/api/v1/analytics/rf/reward-catalog/": {
    "get": {
     "operationId": "v1_analytics_rf_reward_catalog_retrieve",
-    "description": "GET /api/v1/analytics/rf/reward-catalog/\n\nПозиции «Каталога наград», доступные для назначения RFM-кампанией:\nактивные, не архивные, available_for_rfm, с привязанным подарком\n(без product гостю нечего показать в «Моих подарках»).",
+    "description": "GET  /api/v1/analytics/rf/reward-catalog/ — пул наград.\nPOST /api/v1/analytics/rf/reward-catalog/ — завести позицию.\n\nОтвет GET — надмножество старой ручки `analytics/api/views.py:1746`:\nключ `items` и все её поля на месте, поэтому существующий веб RFM\nпродолжает работать без правок.",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string"
+      },
+      "description": "внутренние id точек через запятую (сетевые позиции остаются)"
+     },
+     {
+      "in": "query",
+      "name": "include_archived",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "1 — показать архивные"
+     },
+     {
+      "in": "query",
+      "name": "include_inactive",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "1 — показать выключенные, без подарка, вне периода"
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "не передан — весь список; потолок 200"
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "tier",
+      "schema": {
+       "type": "string"
+      },
+      "description": "G1 | G2 | G3, можно через запятую"
+     }
+    ],
     "tags": [
      "v1"
     ],
@@ -897,8 +946,294 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object",
-         "additionalProperties": {}
+         "$ref": "#/components/schemas/RewardCatalogList"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   },
+   "post": {
+    "operationId": "v1_analytics_rf_reward_catalog_create",
+    "description": "GET  /api/v1/analytics/rf/reward-catalog/ — пул наград.\nPOST /api/v1/analytics/rf/reward-catalog/ — завести позицию.\n\nОтвет GET — надмножество старой ручки `analytics/api/views.py:1746`:\nключ `items` и все её поля на месте, поэтому существующий веб RFM\nпродолжает работать без правок.",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RewardCatalogIn"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/RewardCatalogIn"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/RewardCatalogIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogCard"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/rf/reward-catalog/{id}/": {
+   "get": {
+    "operationId": "v1_analytics_rf_reward_catalog_retrieve_2",
+    "description": "GET    /api/v1/analytics/rf/reward-catalog/{id}/ — карточка позиции.\nPATCH  …/{id}/ — правка. Подарок, тир и точку нельзя менять, пока позиция\n       занята (`409 in_use`); лимит нельзя опустить ниже выданного\n       (`409 limit_below_issued`). Остальные поля — всегда.\nDELETE …/{id}/ — архив (`is_archived=True, is_active=False`), физического\n       удаления нет.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogCard"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_analytics_rf_reward_catalog_partial_update",
+    "description": "GET    /api/v1/analytics/rf/reward-catalog/{id}/ — карточка позиции.\nPATCH  …/{id}/ — правка. Подарок, тир и точку нельзя менять, пока позиция\n       занята (`409 in_use`); лимит нельзя опустить ниже выданного\n       (`409 limit_below_issued`). Остальные поля — всегда.\nDELETE …/{id}/ — архив (`is_archived=True, is_active=False`), физического\n       удаления нет.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedRewardCatalogIn"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedRewardCatalogIn"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedRewardCatalogIn"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogPatchedCard"
+        }
+       }
+      },
+      "description": "карточка + changed[] (+warning/rules)"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   },
+   "delete": {
+    "operationId": "v1_analytics_rf_reward_catalog_destroy",
+    "description": "GET    /api/v1/analytics/rf/reward-catalog/{id}/ — карточка позиции.\nPATCH  …/{id}/ — правка. Подарок, тир и точку нельзя менять, пока позиция\n       занята (`409 in_use`); лимит нельзя опустить ниже выданного\n       (`409 limit_below_issued`). Остальные поля — всегда.\nDELETE …/{id}/ — архив (`is_archived=True, is_active=False`), физического\n       удаления нет.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogArchived"
+        }
+       }
+      },
+      "description": ""
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
         }
        }
       },
@@ -2428,7 +2763,7 @@
   "/api/v1/guests/birthdays/": {
    "get": {
     "operationId": "v1_guests_birthdays_retrieve",
-    "description": "GET /api/v1/guests/birthdays/?days_ahead=30&include_past=1\n\nВозвращает список гостей с ближайшими/прошедшими днями рождения.\n\nПараметры:\n  days_ahead   — горизонт вперёд в днях (0..365, по умолчанию 30)\n  include_past — 0|1 (по умолчанию 1) — включать ли уже прошедшие ДР этого года\n\nГруппировка по уникальному vk_id (один гость может быть в нескольких точках —\nберём самый свежий ClientBranch). Сотрудники (is_employee=True) исключены.",
+    "description": "GET /api/v1/guests/birthdays/?days_ahead=30&include_past=1\n\nВозвращает список гостей с ближайшими/прошедшими днями рождения.\n\nПараметры:\n  days_ahead   — горизонт вперёд в днях (0..365, по умолчанию 30)\n  include_past — включать ли уже прошедшие ДР (окно 30 дней назад).\n                 ⚠️ ПО УМОЛЧАНИЮ ВКЛЮЧЕНЫ: параметр не передан или пуст =\n                 то же, что `1`. Чтобы прошедшие СКРЫТЬ, нужно передать\n                 ровно `include_past=0` (понимаются `1|true|yes` как «да»,\n                 всё остальное — как «нет»). Пропуск параметра прошедшие\n                 НЕ скрывает.\n\nПоля строки: vk_id (строкой), first_name, last_name, phone, phone_source,\nbranch_name, coins, segment_emoji, segment_name, birthday,\nbirthday_this_year, days_until, age_turning, is_loyal, greeting_status.\nТелефон и сегмент резолвятся пачкой (по два запроса на всю выборку, не на\nгостя); phone_source — 'vk' | 'vk_unverified' | 'review' | ''.\nis_loyal пока всегда false — поле зарезервировано, смысла за ним нет.\n\nГруппировка по уникальному vk_id (один гость может быть в нескольких точках —\nберём самый свежий ClientBranch). Сотрудники (is_employee=True) исключены.",
     "tags": [
      "v1"
     ],
@@ -3182,6 +3517,270 @@
     }
    }
   },
+  "/api/v1/mobile/branches/{id}/vk/": {
+   "get": {
+    "operationId": "v1_mobile_branches_vk_retrieve",
+    "description": "GET   /api/v1/mobile/branches/{id}/vk/ — карточка подключения (обе роли).\nPATCH /api/v1/mobile/branches/{id}/vk/ — правка (network_admin/суперадмин).\n\nPATCH создаёт подключение, если его ещё нет (тогда `vk_group_id` и\n`vk_community_token` обязательны). Смена токена, группы или секрета требует\n`confirm: true` — см. шапку модуля. Новый токен ВСЕГДА проверяется у ВК до\nзаписи; сменить группу у точки, по которой уже есть история (рассылки или\nдиалоги отзывов), нельзя — `409 group_in_use`: старая переписка привязана к\nпрежнему сообществу, и после подмены гости просто перестанут получать\nответы в свой диалог.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectCard"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectError"
+        }
+       }
+      },
+      "description": "invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504)"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_mobile_branches_vk_partial_update",
+    "description": "GET   /api/v1/mobile/branches/{id}/vk/ — карточка подключения (обе роли).\nPATCH /api/v1/mobile/branches/{id}/vk/ — правка (network_admin/суперадмин).\n\nPATCH создаёт подключение, если его ещё нет (тогда `vk_group_id` и\n`vk_community_token` обязательны). Смена токена, группы или секрета требует\n`confirm: true` — см. шапку модуля. Новый токен ВСЕГДА проверяется у ВК до\nзаписи; сменить группу у точки, по которой уже есть история (рассылки или\nдиалоги отзывов), нельзя — `409 group_in_use`: старая переписка привязана к\nпрежнему сообществу, и после подмены гости просто перестанут получать\nответы в свой диалог.",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedVkConnectPatchIn"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedVkConnectPatchIn"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedVkConnectPatchIn"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectCard"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectError"
+        }
+       }
+      },
+      "description": "invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504)"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectError"
+        }
+       }
+      },
+      "description": "invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504)"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectError"
+        }
+       }
+      },
+      "description": "invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504)"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectError"
+        }
+       }
+      },
+      "description": "invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504)"
+     },
+     "424": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectError"
+        }
+       }
+      },
+      "description": "invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504)"
+     },
+     "504": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectError"
+        }
+       }
+      },
+      "description": "invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504)"
+     }
+    }
+   }
+  },
+  "/api/v1/mobile/branches/{id}/vk/check/": {
+   "post": {
+    "operationId": "v1_mobile_branches_vk_check_create",
+    "description": "POST /api/v1/mobile/branches/{id}/vk/check/ — «а живой ли токен?».\n\nТело `{vk_group_id?, vk_community_token?}` — проверить ещё НЕ сохранённые\nзначения (форма в кабинете); пустое тело — проверить сохранённые. Ручка\nНИЧЕГО не пишет: её зовут до PATCH и после, чтобы понять, что именно\nсломалось.\n\nНе больше трёх вызовов ВК за запрос: права токена, его сообщество и\ncallback-серверы группы. Отказ ВК — 424 с настоящим `vk_error_code`\n(5 — токен невалиден, 27 — ключ сообщества недействителен, 15 — нет\nдоступа): кабинет показывает человеку причину, а не «ошибка сервера».",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "schema": {
+       "type": "integer"
+      },
+      "required": true
+     }
+    ],
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/VkConnectCheckIn"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/VkConnectCheckIn"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/VkConnectCheckIn"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectCheckOut"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectError"
+        }
+       }
+      },
+      "description": "invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504)"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectError"
+        }
+       }
+      },
+      "description": "invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504)"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectError"
+        }
+       }
+      },
+      "description": "invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504)"
+     },
+     "424": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectError"
+        }
+       }
+      },
+      "description": "invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504)"
+     },
+     "504": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectError"
+        }
+       }
+      },
+      "description": "invalid_payload / confirm_required (400) · role_not_allowed (403) · not_found (404) · group_mismatch / group_in_use (409) · vk_error (424, + vk_error_code/vk_error_msg) · vk_timeout (504)"
+     }
+    }
+   }
+  },
   "/api/v1/quests/": {
    "get": {
     "operationId": "v1_quests_retrieve",
@@ -3277,7 +3876,7 @@
   "/api/v1/settings/features/": {
    "get": {
     "operationId": "v1_settings_features_retrieve",
-    "description": "GET /api/v1/settings/features/ — что включено у сети (только чтение).\n\nЧитают обе роли: `client` видит состояние своей сети, но переключать\nмеханики через API нельзя никому (см. шапку модуля).",
+    "description": "GET /api/v1/settings/features/ — что включено у сети (читают обе роли).\nPATCH — запись по списку EDITABLE (network_admin), см. FeatureFlagsPatchMixin.",
     "tags": [
      "v1"
     ],
@@ -3296,6 +3895,80 @@
        }
       },
       "description": "флаги механик сети"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "v1_settings_features_partial_update",
+    "description": "GET /api/v1/settings/features/ — что включено у сети (читают обе роли).\nPATCH — запись по списку EDITABLE (network_admin), см. FeatureFlagsPatchMixin.",
+    "summary": "Изменить флаги механик сети (частично); с branch_id — переопределение точки",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedFeatureFlagsPatch"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedFeatureFlagsPatch"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchedFeatureFlagsPatch"
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeatureFlags"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeatureFlagsError"
+        }
+       }
+      },
+      "description": ""
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeatureFlagsError"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeatureFlagsError"
+        }
+       }
+      },
+      "description": ""
      }
     }
    }
@@ -3385,6 +4058,32 @@
        }
       },
       "description": "invalid_payload (400, с editable) · role_not_allowed (403) · not_found (404)"
+     }
+    }
+   }
+  },
+  "/api/v1/settings/vk/": {
+   "get": {
+    "operationId": "v1_settings_vk_retrieve",
+    "description": "GET /api/v1/settings/vk/ — какие точки подключены к ВК и как.\n\nНи одного вызова ВК: это моментальная карта настроек, её открывают, чтобы\nпонять «куда смотреть», а не чтобы проверить токены (для этого есть\n`.../vk/check/`).\n\n`groups` — разрез по сообществам. `secrets_consistent: false` означает, что\nу конфигов одной группы РАЗНЫЕ (или пустые) секреты callback: именно этот\nразъезд однажды заставил ВК отключить callback всей сети. Согласованность\nсчитается по ВСЕМ конфигам группы, а в `branches` перечислены только точки,\nдоступные сотруднику: иначе ограниченный по точкам сотрудник видел бы\nзелёный флаг там, где мина лежит у соседа.",
+    "tags": [
+     "v1"
+    ],
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VkConnectSummary"
+        }
+       }
+      },
+      "description": ""
      }
     }
    }
@@ -4465,6 +5164,22 @@
      "flags"
     ]
    },
+   "FeatureFlagsError": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "type": "string",
+      "description": "unknown_flag | readonly_flag | no_branch_override | invalid_payload | role_not_allowed | not_found"
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "detail"
+    ]
+   },
    "GenderFilterEnum": {
     "enum": [
      "all",
@@ -4825,6 +5540,15 @@
      }
     }
    },
+   "PatchedFeatureFlagsPatch": {
+    "type": "object",
+    "properties": {
+     "branch_id": {
+      "type": "integer",
+      "description": "внутренний id точки — переопределение (только BRANCH_OVERRIDABLE)"
+     }
+    }
+   },
    "PatchedKnowledgeDocument": {
     "type": "object",
     "properties": {
@@ -4916,6 +5640,64 @@
      }
     }
    },
+   "PatchedRewardCatalogIn": {
+    "type": "object",
+    "properties": {
+     "product_id": {
+      "type": "integer"
+     },
+     "tier": {
+      "$ref": "#/components/schemas/TierEnum"
+     },
+     "name": {
+      "type": "string"
+     },
+     "internal_code": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "cost_price": {
+      "type": "number",
+      "format": "double"
+     },
+     "min_order_amount": {
+      "type": "number",
+      "format": "double"
+     },
+     "weight": {
+      "type": "integer"
+     },
+     "default_lifetime_days": {
+      "type": "integer"
+     },
+     "activation_limit": {
+      "type": "integer",
+      "nullable": true
+     },
+     "available_from": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "available_to": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "branch_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "available_for_rfm": {
+      "type": "boolean"
+     },
+     "is_active": {
+      "type": "boolean"
+     }
+    }
+   },
    "PatchedStoryBranchSettings": {
     "type": "object",
     "properties": {
@@ -4975,6 +5757,32 @@
       "type": "object",
       "additionalProperties": {},
       "description": "{network_count}"
+     }
+    }
+   },
+   "PatchedVkConnectPatchIn": {
+    "type": "object",
+    "properties": {
+     "vk_group_id": {
+      "type": "integer"
+     },
+     "vk_community_token": {
+      "type": "string"
+     },
+     "vk_callback_secret": {
+      "type": "string"
+     },
+     "vk_callback_confirmation": {
+      "type": "string"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "notes": {
+      "type": "string"
+     },
+     "confirm": {
+      "type": "boolean"
      }
     }
    },
@@ -5078,6 +5886,605 @@
      "sections"
     ]
    },
+   "RewardCatalogArchived": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "is_archived": {
+      "type": "boolean"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "warning": {
+      "type": "string",
+      "nullable": true
+     },
+     "rules": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": {}
+      }
+     }
+    },
+    "required": [
+     "id",
+     "is_active",
+     "is_archived"
+    ]
+   },
+   "RewardCatalogCard": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string",
+      "description": "display_name: своё или название подарка"
+     },
+     "tier": {
+      "$ref": "#/components/schemas/TierEnum"
+     },
+     "tier_label": {
+      "type": "string"
+     },
+     "product": {
+      "type": "object",
+      "additionalProperties": {},
+      "nullable": true,
+      "description": "{id, name} | null"
+     },
+     "product_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "internal_code": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "image_url": {
+      "type": "string",
+      "nullable": true
+     },
+     "cost_price": {
+      "type": "number",
+      "format": "double",
+      "description": "effective: своя либо подарка"
+     },
+     "min_order_amount": {
+      "type": "number",
+      "format": "double"
+     },
+     "weight": {
+      "type": "integer",
+      "description": "0 — запасная позиция"
+     },
+     "default_lifetime_days": {
+      "type": "integer"
+     },
+     "activation_limit": {
+      "type": "integer",
+      "nullable": true,
+      "description": "null — без лимита"
+     },
+     "issued_count": {
+      "type": "integer",
+      "readOnly": true
+     },
+     "remaining_issues": {
+      "type": "integer",
+      "nullable": true
+     },
+     "available_from": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "available_to": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "branch_id": {
+      "type": "integer",
+      "nullable": true,
+      "description": "внутренний id точки; null — вся сеть"
+     },
+     "branch": {
+      "type": "string",
+      "nullable": true,
+      "description": "имя точки (старый ключ)"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "is_archived": {
+      "type": "boolean"
+     },
+     "available_for_rfm": {
+      "type": "boolean"
+     },
+     "is_available_now": {
+      "type": "boolean"
+     },
+     "in_use": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{campaigns, live_gifts}"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "activation_limit",
+     "available_for_rfm",
+     "available_from",
+     "available_to",
+     "branch",
+     "branch_id",
+     "cost_price",
+     "created_at",
+     "default_lifetime_days",
+     "description",
+     "id",
+     "image_url",
+     "in_use",
+     "internal_code",
+     "is_active",
+     "is_archived",
+     "is_available_now",
+     "issued_count",
+     "min_order_amount",
+     "name",
+     "product",
+     "product_id",
+     "remaining_issues",
+     "tier",
+     "tier_label",
+     "updated_at",
+     "weight"
+    ]
+   },
+   "RewardCatalogCardRow": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string",
+      "description": "display_name: своё или название подарка"
+     },
+     "tier": {
+      "$ref": "#/components/schemas/TierEnum"
+     },
+     "tier_label": {
+      "type": "string"
+     },
+     "product": {
+      "type": "object",
+      "additionalProperties": {},
+      "nullable": true,
+      "description": "{id, name} | null"
+     },
+     "product_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "internal_code": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "image_url": {
+      "type": "string",
+      "nullable": true
+     },
+     "cost_price": {
+      "type": "number",
+      "format": "double",
+      "description": "effective: своя либо подарка"
+     },
+     "min_order_amount": {
+      "type": "number",
+      "format": "double"
+     },
+     "weight": {
+      "type": "integer",
+      "description": "0 — запасная позиция"
+     },
+     "default_lifetime_days": {
+      "type": "integer"
+     },
+     "activation_limit": {
+      "type": "integer",
+      "nullable": true,
+      "description": "null — без лимита"
+     },
+     "issued_count": {
+      "type": "integer",
+      "readOnly": true
+     },
+     "remaining_issues": {
+      "type": "integer",
+      "nullable": true
+     },
+     "available_from": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "available_to": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "branch_id": {
+      "type": "integer",
+      "nullable": true,
+      "description": "внутренний id точки; null — вся сеть"
+     },
+     "branch": {
+      "type": "string",
+      "nullable": true,
+      "description": "имя точки (старый ключ)"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "is_archived": {
+      "type": "boolean"
+     },
+     "available_for_rfm": {
+      "type": "boolean"
+     },
+     "is_available_now": {
+      "type": "boolean"
+     },
+     "in_use": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{campaigns, live_gifts}"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "activation_limit",
+     "available_for_rfm",
+     "available_from",
+     "available_to",
+     "branch",
+     "branch_id",
+     "cost_price",
+     "created_at",
+     "default_lifetime_days",
+     "description",
+     "id",
+     "image_url",
+     "in_use",
+     "internal_code",
+     "is_active",
+     "is_archived",
+     "is_available_now",
+     "issued_count",
+     "min_order_amount",
+     "name",
+     "product",
+     "product_id",
+     "remaining_issues",
+     "tier",
+     "tier_label",
+     "updated_at",
+     "weight"
+    ]
+   },
+   "RewardCatalogError": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "$ref": "#/components/schemas/RewardCatalogErrorCodeEnum"
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "detail"
+    ]
+   },
+   "RewardCatalogErrorCodeEnum": {
+    "enum": [
+     "invalid_payload",
+     "product_required",
+     "tier_invalid",
+     "period_invalid",
+     "role_not_allowed",
+     "not_found",
+     "limit_below_issued",
+     "in_use"
+    ],
+    "type": "string",
+    "description": "* `invalid_payload` - 400 — тело запроса не разобрано (+editable, +read_only)\n* `product_required` - 400 — не выбран подарок\n* `tier_invalid` - 400 — неизвестный тир\n* `period_invalid` - 400 — available_from позже available_to\n* `role_not_allowed` - 403 — править каталог может только администратор сети\n* `not_found` - 404 — позиция/точка/подарок не найдены или вне доступа\n* `limit_below_issued` - 409 — лимит меньше уже выданного\n* `in_use` - 409 — позиция занята (+campaigns, +live_gifts, +blocked_fields)"
+   },
+   "RewardCatalogIn": {
+    "type": "object",
+    "properties": {
+     "product_id": {
+      "type": "integer"
+     },
+     "tier": {
+      "$ref": "#/components/schemas/TierEnum"
+     },
+     "name": {
+      "type": "string"
+     },
+     "internal_code": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "cost_price": {
+      "type": "number",
+      "format": "double"
+     },
+     "min_order_amount": {
+      "type": "number",
+      "format": "double"
+     },
+     "weight": {
+      "type": "integer"
+     },
+     "default_lifetime_days": {
+      "type": "integer"
+     },
+     "activation_limit": {
+      "type": "integer",
+      "nullable": true
+     },
+     "available_from": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "available_to": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "branch_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "available_for_rfm": {
+      "type": "boolean"
+     },
+     "is_active": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "product_id",
+     "tier"
+    ]
+   },
+   "RewardCatalogList": {
+    "type": "object",
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/RewardCatalogCardRow"
+      }
+     },
+     "total": {
+      "type": "integer"
+     },
+     "limit": {
+      "type": "integer"
+     },
+     "offset": {
+      "type": "integer"
+     },
+     "tiers": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": {}
+      },
+      "description": "[{code, label}] — справочник тиров"
+     }
+    },
+    "required": [
+     "items",
+     "limit",
+     "offset",
+     "tiers",
+     "total"
+    ]
+   },
+   "RewardCatalogPatchedCard": {
+    "type": "object",
+    "properties": {
+     "changed": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "warning": {
+      "type": "string",
+      "nullable": true,
+      "description": "last_item_in_tier"
+     },
+     "rules": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": {}
+      },
+      "description": "[{id, name}] — авторассылки этого тира"
+     },
+     "id": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string",
+      "description": "display_name: своё или название подарка"
+     },
+     "tier": {
+      "$ref": "#/components/schemas/TierEnum"
+     },
+     "tier_label": {
+      "type": "string"
+     },
+     "product": {
+      "type": "object",
+      "additionalProperties": {},
+      "nullable": true,
+      "description": "{id, name} | null"
+     },
+     "product_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "internal_code": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "image_url": {
+      "type": "string",
+      "nullable": true
+     },
+     "cost_price": {
+      "type": "number",
+      "format": "double",
+      "description": "effective: своя либо подарка"
+     },
+     "min_order_amount": {
+      "type": "number",
+      "format": "double"
+     },
+     "weight": {
+      "type": "integer",
+      "description": "0 — запасная позиция"
+     },
+     "default_lifetime_days": {
+      "type": "integer"
+     },
+     "activation_limit": {
+      "type": "integer",
+      "nullable": true,
+      "description": "null — без лимита"
+     },
+     "issued_count": {
+      "type": "integer",
+      "readOnly": true
+     },
+     "remaining_issues": {
+      "type": "integer",
+      "nullable": true
+     },
+     "available_from": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "available_to": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "branch_id": {
+      "type": "integer",
+      "nullable": true,
+      "description": "внутренний id точки; null — вся сеть"
+     },
+     "branch": {
+      "type": "string",
+      "nullable": true,
+      "description": "имя точки (старый ключ)"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "is_archived": {
+      "type": "boolean"
+     },
+     "available_for_rfm": {
+      "type": "boolean"
+     },
+     "is_available_now": {
+      "type": "boolean"
+     },
+     "in_use": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{campaigns, live_gifts}"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "activation_limit",
+     "available_for_rfm",
+     "available_from",
+     "available_to",
+     "branch",
+     "branch_id",
+     "changed",
+     "cost_price",
+     "created_at",
+     "default_lifetime_days",
+     "description",
+     "id",
+     "image_url",
+     "in_use",
+     "internal_code",
+     "is_active",
+     "is_archived",
+     "is_available_now",
+     "issued_count",
+     "min_order_amount",
+     "name",
+     "product",
+     "product_id",
+     "remaining_issues",
+     "tier",
+     "tier_label",
+     "updated_at",
+     "weight"
+    ]
+   },
    "StoryBranchSettings": {
     "type": "object",
     "properties": {
@@ -5167,6 +6574,183 @@
      "placeholders",
      "prizes",
      "settings"
+    ]
+   },
+   "TierEnum": {
+    "enum": [
+     "G1",
+     "G2",
+     "G3"
+    ],
+    "type": "string",
+    "description": "* `G1` - G1 · Лёгкий (низкая себестоимость)\n* `G2` - G2 · Средний\n* `G3` - G3 · Ценный (VIP)"
+   },
+   "VkConnectCard": {
+    "type": "object",
+    "properties": {
+     "branch": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{id, branch_id, name}"
+     },
+     "connected": {
+      "type": "boolean"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "vk_group_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "token_set": {
+      "type": "boolean"
+     },
+     "token_last4": {
+      "type": "string",
+      "nullable": true
+     },
+     "confirmation_set": {
+      "type": "boolean"
+     },
+     "secret_set": {
+      "type": "boolean"
+     },
+     "callback_url": {
+      "type": "string"
+     },
+     "notes": {
+      "type": "string"
+     },
+     "group_shared_with": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      }
+     },
+     "updated_at": {
+      "type": "string",
+      "nullable": true
+     }
+    },
+    "required": [
+     "branch",
+     "callback_url",
+     "confirmation_set",
+     "connected",
+     "group_shared_with",
+     "is_active",
+     "notes",
+     "secret_set",
+     "token_last4",
+     "token_set",
+     "updated_at",
+     "vk_group_id"
+    ]
+   },
+   "VkConnectCheckIn": {
+    "type": "object",
+    "properties": {
+     "vk_group_id": {
+      "type": "integer"
+     },
+     "vk_community_token": {
+      "type": "string"
+     }
+    }
+   },
+   "VkConnectCheckOut": {
+    "type": "object",
+    "properties": {
+     "ok": {
+      "type": "boolean"
+     },
+     "group": {
+      "type": "object",
+      "additionalProperties": {},
+      "nullable": true,
+      "description": "{id, name, screen_name, photo}"
+     },
+     "permissions": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "missing_permissions": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "group_matches": {
+      "type": "boolean"
+     },
+     "callback_servers": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": {}
+      },
+      "description": "{id, title, url, status, ours}"
+     },
+     "callback_servers_error": {
+      "type": "string",
+      "nullable": true
+     },
+     "can_save": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "callback_servers",
+     "callback_servers_error",
+     "can_save",
+     "group",
+     "group_matches",
+     "missing_permissions",
+     "ok",
+     "permissions"
+    ]
+   },
+   "VkConnectError": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "type": "string"
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "detail"
+    ]
+   },
+   "VkConnectSummary": {
+    "type": "object",
+    "properties": {
+     "branches": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": {}
+      },
+      "description": "{id, branch_id, name, connected, is_active, vk_group_id, token_set, token_last4, confirmation_set, secret_set, callback_url}"
+     },
+     "groups": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": {}
+      },
+      "description": "{vk_group_id, branches: [id], secrets_consistent}"
+     }
+    },
+    "required": [
+     "branches",
+     "groups"
     ]
    }
   },

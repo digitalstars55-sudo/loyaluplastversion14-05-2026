@@ -907,7 +907,56 @@
   "/api/v1/analytics/rf/reward-catalog/": {
    "get": {
     "operationId": "v1_analytics_rf_reward_catalog_retrieve",
-    "description": "GET /api/v1/analytics/rf/reward-catalog/\n\nПозиции «Каталога наград», доступные для назначения RFM-кампанией:\nактивные, не архивные, available_for_rfm, с привязанным подарком\n(без product гостю нечего показать в «Моих подарках»).",
+    "description": "GET  /api/v1/analytics/rf/reward-catalog/ — пул наград.\nPOST /api/v1/analytics/rf/reward-catalog/ — завести позицию.\n\nОтвет GET — надмножество старой ручки `analytics/api/views.py:1746`:\nключ `items` и все её поля на месте, поэтому существующий веб RFM\nпродолжает работать без правок.",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "branch_ids",
+      "schema": {
+       "type": "string"
+      },
+      "description": "внутренние id точек через запятую (сетевые позиции остаются)"
+     },
+     {
+      "in": "query",
+      "name": "include_archived",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "1 — показать архивные"
+     },
+     {
+      "in": "query",
+      "name": "include_inactive",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "1 — показать выключенные, без подарка, вне периода"
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "не передан — весь список; потолок 200"
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "tier",
+      "schema": {
+       "type": "string"
+      },
+      "description": "G1 | G2 | G3, можно через запятую"
+     }
+    ],
     "tags": [
      "v1"
     ],
@@ -921,8 +970,91 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object",
-         "additionalProperties": {}
+         "$ref": "#/components/schemas/RewardCatalogList"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     }
+    }
+   },
+   "post": {
+    "operationId": "v1_analytics_rf_reward_catalog_create",
+    "description": "GET  /api/v1/analytics/rf/reward-catalog/ — пул наград.\nPOST /api/v1/analytics/rf/reward-catalog/ — завести позицию.\n\nОтвет GET — надмножество старой ручки `analytics/api/views.py:1746`:\nключ `items` и все её поля на месте, поэтому существующий веб RFM\nпродолжает работать без правок.",
+    "tags": [
+     "v1"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RewardCatalogIn"
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "$ref": "#/components/schemas/RewardCatalogIn"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/RewardCatalogIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "security": [
+     {
+      "cookieAuth": []
+     }
+    ],
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogCard"
+        }
+       }
+      },
+      "description": ""
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
+        }
+       }
+      },
+      "description": ""
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RewardCatalogError"
         }
        }
       },
@@ -4001,6 +4133,414 @@
     "type": "string",
     "description": "* `APP` - Из приложения\n* `VK_MESSAGE` - ВК сообщение\n* `ADMIN_REPLY` - Ответ администратора"
    },
+   "RewardCatalogCard": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string",
+      "description": "display_name: своё или название подарка"
+     },
+     "tier": {
+      "$ref": "#/components/schemas/TierEnum"
+     },
+     "tier_label": {
+      "type": "string"
+     },
+     "product": {
+      "type": "object",
+      "additionalProperties": {},
+      "nullable": true,
+      "description": "{id, name} | null"
+     },
+     "product_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "internal_code": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "image_url": {
+      "type": "string",
+      "nullable": true
+     },
+     "cost_price": {
+      "type": "number",
+      "format": "double",
+      "description": "effective: своя либо подарка"
+     },
+     "min_order_amount": {
+      "type": "number",
+      "format": "double"
+     },
+     "weight": {
+      "type": "integer",
+      "description": "0 — запасная позиция"
+     },
+     "default_lifetime_days": {
+      "type": "integer"
+     },
+     "activation_limit": {
+      "type": "integer",
+      "nullable": true,
+      "description": "null — без лимита"
+     },
+     "issued_count": {
+      "type": "integer",
+      "readOnly": true
+     },
+     "remaining_issues": {
+      "type": "integer",
+      "nullable": true
+     },
+     "available_from": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "available_to": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "branch_id": {
+      "type": "integer",
+      "nullable": true,
+      "description": "внутренний id точки; null — вся сеть"
+     },
+     "branch": {
+      "type": "string",
+      "nullable": true,
+      "description": "имя точки (старый ключ)"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "is_archived": {
+      "type": "boolean"
+     },
+     "available_for_rfm": {
+      "type": "boolean"
+     },
+     "is_available_now": {
+      "type": "boolean"
+     },
+     "in_use": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{campaigns, live_gifts}"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "activation_limit",
+     "available_for_rfm",
+     "available_from",
+     "available_to",
+     "branch",
+     "branch_id",
+     "cost_price",
+     "created_at",
+     "default_lifetime_days",
+     "description",
+     "id",
+     "image_url",
+     "in_use",
+     "internal_code",
+     "is_active",
+     "is_archived",
+     "is_available_now",
+     "issued_count",
+     "min_order_amount",
+     "name",
+     "product",
+     "product_id",
+     "remaining_issues",
+     "tier",
+     "tier_label",
+     "updated_at",
+     "weight"
+    ]
+   },
+   "RewardCatalogCardRow": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string",
+      "description": "display_name: своё или название подарка"
+     },
+     "tier": {
+      "$ref": "#/components/schemas/TierEnum"
+     },
+     "tier_label": {
+      "type": "string"
+     },
+     "product": {
+      "type": "object",
+      "additionalProperties": {},
+      "nullable": true,
+      "description": "{id, name} | null"
+     },
+     "product_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "internal_code": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "image_url": {
+      "type": "string",
+      "nullable": true
+     },
+     "cost_price": {
+      "type": "number",
+      "format": "double",
+      "description": "effective: своя либо подарка"
+     },
+     "min_order_amount": {
+      "type": "number",
+      "format": "double"
+     },
+     "weight": {
+      "type": "integer",
+      "description": "0 — запасная позиция"
+     },
+     "default_lifetime_days": {
+      "type": "integer"
+     },
+     "activation_limit": {
+      "type": "integer",
+      "nullable": true,
+      "description": "null — без лимита"
+     },
+     "issued_count": {
+      "type": "integer",
+      "readOnly": true
+     },
+     "remaining_issues": {
+      "type": "integer",
+      "nullable": true
+     },
+     "available_from": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "available_to": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "branch_id": {
+      "type": "integer",
+      "nullable": true,
+      "description": "внутренний id точки; null — вся сеть"
+     },
+     "branch": {
+      "type": "string",
+      "nullable": true,
+      "description": "имя точки (старый ключ)"
+     },
+     "is_active": {
+      "type": "boolean"
+     },
+     "is_archived": {
+      "type": "boolean"
+     },
+     "available_for_rfm": {
+      "type": "boolean"
+     },
+     "is_available_now": {
+      "type": "boolean"
+     },
+     "in_use": {
+      "type": "object",
+      "additionalProperties": {},
+      "description": "{campaigns, live_gifts}"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "activation_limit",
+     "available_for_rfm",
+     "available_from",
+     "available_to",
+     "branch",
+     "branch_id",
+     "cost_price",
+     "created_at",
+     "default_lifetime_days",
+     "description",
+     "id",
+     "image_url",
+     "in_use",
+     "internal_code",
+     "is_active",
+     "is_archived",
+     "is_available_now",
+     "issued_count",
+     "min_order_amount",
+     "name",
+     "product",
+     "product_id",
+     "remaining_issues",
+     "tier",
+     "tier_label",
+     "updated_at",
+     "weight"
+    ]
+   },
+   "RewardCatalogError": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "$ref": "#/components/schemas/RewardCatalogErrorCodeEnum"
+     },
+     "detail": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "detail"
+    ]
+   },
+   "RewardCatalogErrorCodeEnum": {
+    "enum": [
+     "invalid_payload",
+     "product_required",
+     "tier_invalid",
+     "period_invalid",
+     "role_not_allowed",
+     "not_found",
+     "limit_below_issued",
+     "in_use"
+    ],
+    "type": "string",
+    "description": "* `invalid_payload` - 400 — тело запроса не разобрано (+editable, +read_only)\n* `product_required` - 400 — не выбран подарок\n* `tier_invalid` - 400 — неизвестный тир\n* `period_invalid` - 400 — available_from позже available_to\n* `role_not_allowed` - 403 — править каталог может только администратор сети\n* `not_found` - 404 — позиция/точка/подарок не найдены или вне доступа\n* `limit_below_issued` - 409 — лимит меньше уже выданного\n* `in_use` - 409 — позиция занята (+campaigns, +live_gifts, +blocked_fields)"
+   },
+   "RewardCatalogIn": {
+    "type": "object",
+    "properties": {
+     "product_id": {
+      "type": "integer"
+     },
+     "tier": {
+      "$ref": "#/components/schemas/TierEnum"
+     },
+     "name": {
+      "type": "string"
+     },
+     "internal_code": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "cost_price": {
+      "type": "number",
+      "format": "double"
+     },
+     "min_order_amount": {
+      "type": "number",
+      "format": "double"
+     },
+     "weight": {
+      "type": "integer"
+     },
+     "default_lifetime_days": {
+      "type": "integer"
+     },
+     "activation_limit": {
+      "type": "integer",
+      "nullable": true
+     },
+     "available_from": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "available_to": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "branch_id": {
+      "type": "integer",
+      "nullable": true
+     },
+     "available_for_rfm": {
+      "type": "boolean"
+     },
+     "is_active": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "product_id",
+     "tier"
+    ]
+   },
+   "RewardCatalogList": {
+    "type": "object",
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/RewardCatalogCardRow"
+      }
+     },
+     "total": {
+      "type": "integer"
+     },
+     "limit": {
+      "type": "integer"
+     },
+     "offset": {
+      "type": "integer"
+     },
+     "tiers": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "additionalProperties": {}
+      },
+      "description": "[{code, label}] — справочник тиров"
+     }
+    },
+    "required": [
+     "items",
+     "limit",
+     "offset",
+     "tiers",
+     "total"
+    ]
+   },
    "Status9a5Enum": {
     "enum": [
      "pending",
@@ -4019,6 +4559,15 @@
     ],
     "type": "string",
     "description": "* `draft` - Черновик\n* `archived` - В архиве"
+   },
+   "TierEnum": {
+    "enum": [
+     "G1",
+     "G2",
+     "G3"
+    ],
+    "type": "string",
+    "description": "* `G1` - G1 · Лёгкий (низкая себестоимость)\n* `G2` - G2 · Средний\n* `G3` - G3 · Ценный (VIP)"
    },
    "TriggerTypeEnum": {
     "enum": [
