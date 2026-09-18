@@ -430,7 +430,19 @@ class GuestBirthdaysAPIView(APIView):
 
     Параметры:
       days_ahead   — горизонт вперёд в днях (0..365, по умолчанию 30)
-      include_past — 0|1 (по умолчанию 1) — включать ли уже прошедшие ДР этого года
+      include_past — включать ли уже прошедшие ДР (окно 30 дней назад).
+                     ⚠️ ПО УМОЛЧАНИЮ ВКЛЮЧЕНЫ: параметр не передан или пуст =
+                     то же, что `1`. Чтобы прошедшие СКРЫТЬ, нужно передать
+                     ровно `include_past=0` (понимаются `1|true|yes` как «да»,
+                     всё остальное — как «нет»). Пропуск параметра прошедшие
+                     НЕ скрывает.
+
+    Поля строки: vk_id (строкой), first_name, last_name, phone, phone_source,
+    branch_name, coins, segment_emoji, segment_name, birthday,
+    birthday_this_year, days_until, age_turning, is_loyal, greeting_status.
+    Телефон и сегмент резолвятся пачкой (по два запроса на всю выборку, не на
+    гостя); phone_source — 'vk' | 'vk_unverified' | 'review' | ''.
+    is_loyal пока всегда false — поле зарезервировано, смысла за ним нет.
 
     Группировка по уникальному vk_id (один гость может быть в нескольких точках —
     берём самый свежий ClientBranch). Сотрудники (is_employee=True) исключены.
@@ -487,6 +499,43 @@ class GuestBirthdaysAPIView(APIView):
         )
         coin_map = {r['client_id']: (r['income'] or 0) - (r['expense'] or 0) for r in coin_rows}
 
+        # Телефон гостя. В карточке гостя (GuestDetailAPIView) он резолвится
+        # «согласие через ВК (№78) → последний отзыв, где гость его указал»;
+        # здесь до 18.09 отдавалась пустая строка, из-за чего в кабинете
+        # CheckUp на экране «Дни рождения» колонка телефона всегда пустовала —
+        # а звонить поздравлять как раз по нему. Тот же резолв, но пачкой:
+        # два запроса на всю выборку вместо двух на каждого гостя.
+        review_phone: dict[int, str] = {}
+        segment_map: dict[int, tuple] = {}
+        if client_ids:
+            # conversation.client — это ClientBranch, поэтому сначала карта
+            # «все профили гостя → гость» (у гостя их столько, сколько точек).
+            cb_to_client = dict(
+                ClientBranch.objects
+                .filter(client_id__in=client_ids)
+                .values_list('id', 'client_id')
+            )
+            if cb_to_client:
+                rows = (
+                    TestimonialMessage.objects
+                    .filter(conversation__client_id__in=list(cb_to_client.keys()))
+                    .exclude(phone='')
+                    .order_by('-created_at')
+                    .values_list('conversation__client_id', 'phone')
+                )
+                for cb_id, ph in rows:
+                    cid = cb_to_client.get(cb_id)
+                    if cid is not None and cid not in review_phone:
+                        review_phone[cid] = ph      # первый = самый свежий
+
+            # RF-сегмент (эмодзи и название) — тоже одним запросом.
+            # GuestRFScore.client — FK на guest.Client, НЕ на ClientBranch.
+            from apps.tenant.analytics.models import GuestRFScore
+            for score in (GuestRFScore.objects
+                          .select_related('segment')
+                          .filter(client_id__in=client_ids, segment__isnull=False)):
+                segment_map[score.client_id] = (score.segment.emoji, score.segment.name)
+
         # Логи birthday-рассылок этого года — для greeting_status.
         from apps.tenant.senler.models import AutoBroadcastLog
         vk_id_to_client = {cb.client.vk_id: cb.client_id for cb in chosen.values()}
@@ -519,15 +568,25 @@ class GuestBirthdaysAPIView(APIView):
 
             age_turning = (this_year - bd.year) if bd.year and bd.year > 1900 else None
 
+            phone = cb.client.phone or review_phone.get(client_id, '')
+            if cb.client.phone:
+                phone_source = cb.client.phone_source or 'vk'
+            else:
+                phone_source = 'review' if phone else ''
+            segment = segment_map.get(client_id)
+
             birthdays.append({
                 'vk_id':              str(cb.client.vk_id),
                 'first_name':         cb.client.first_name or '',
                 'last_name':          cb.client.last_name or '',
-                'phone':              '',
+                'phone':              phone,
+                # Откуда телефон: 'vk' | 'vk_unverified' | 'review' | '' —
+                # как в карточке гостя, чтобы кабинет мог это показать.
+                'phone_source':       phone_source,
                 'branch_name':        cb.branch.name if cb.branch_id else '',
                 'coins':              coin_map.get(client_id, 0),
-                'segment_emoji':      '',
-                'segment_name':       '',
+                'segment_emoji':      segment[0] if segment else '',
+                'segment_name':       segment[1] if segment else '',
                 'birthday':           bd.isoformat(),
                 'birthday_this_year': bd_this.isoformat(),
                 'days_until':         days_until,
