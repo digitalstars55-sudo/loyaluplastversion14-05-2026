@@ -1,6 +1,6 @@
-# Контракт платформы CheckUp × LoyalUP — v1.4
+# Контракт платформы CheckUp × LoyalUP — v1.5
 
-**Дата:** 16 сентября 2026 (v1), правки v1.1 — тот же день вечером по ревью агента CheckUp, v1.2 — `guest_vk_id` в жалобе по запросу CheckUp, v1.3 — 17 сентября, №78 телефон гостя сделан, v1.4 — 18 сентября, обмен открыт LevOne, правило «client — только чужим id», фикстуры рассылок · **Статус:** согласован обеими сторонами с правками; подпись владельца · **Для кого:** команда (агент) CheckUp, строящая модуль «Гости → LoyalUP»; владелец платформы
+**Дата:** 16 сентября 2026 (v1), правки v1.1 — тот же день вечером по ревью агента CheckUp, v1.2 — `guest_vk_id` в жалобе по запросу CheckUp, v1.3 — 17 сентября, №78 телефон гостя сделан, v1.4 — 18 сентября, обмен открыт LevOne, правило «client — только чужим id», фикстуры рассылок, v1.5 — 18 сентября, старт волны 2 по слову владельца: раздел 3б, эталоны w2, срез схемы 18.09 · **Статус:** согласован обеими сторонами с правками; подпись владельца · **Для кого:** команда (агент) CheckUp, строящая модуль «Гости → LoyalUP»; владелец платформы
 
 Этот документ — граница между двумя системами. Всё, что CheckUp делает с лояльностью, он делает через описанные здесь ручки и правила. Всё, что здесь не описано, для CheckUp не существует: ни таблиц LoyalUP, ни админки, ни гостевых ручек мини-аппа.
 
@@ -46,6 +46,18 @@
 4. **Фикстуры дополнены**: `fixtures/w1/broadcasts_*.json` (черновик, права по точке, предпросмотр, отправка с `expected_count`, `409 audience_changed`, история запусков, отмена и аварийные действия) и `guest_card.json` перезаписан с `phone`, `phone_source`, `phone_consent_at`. Отправка в ВК при записи заглушена — цифры `sent/failed` синтетические.
 
 ---
+
+## Что изменилось в v1.5 (18.09, старт волны 2)
+
+Владелец сказал «давай волну 2». Сторона CheckUp сверила волну 1 на проде по v1.4 (совпало) и назвала, что нужно её экранам по №31 и №26/27; сторона LoyalUP пересверила карту по коду. Итог:
+
+1. **Раздел 3б «Ручки волны 2»** — 20 возможностей (15 из корзины A + 5 бывших «экспертных»): что уже есть, что добавляем и в каком порядке (31 → 26/27 → 28 → 23 → 29 → 52/56; 49/55 — только по отдельному слову владельца). Формы всех новых ручек (3б.1–3б.7) записаны по разведке кода 18.09 и ждут ревью CheckUp; оценка волны 2 на стороне LoyalUP ≈ 17 дней.
+2. **Эталоны для готовых ручек волны 2** записаны: `fixtures/w2/` (45 записей на `dev`, README там же). Формы новых ручек (3б.1 и далее) — сначала здесь, на ревью CheckUp, потом код; их эталоны появятся вместе с кодом.
+3. **Срез схемы перегенерирован 18.09** (`openapi_w1_2026-09-18.json`, `loyalup_w1_2026-09-18.d.ts`): добавлены `broadcasts/*` и карточка отзыва, лента и сообщения описаны объектами, query-параметры на месте. Причина дефекта 16.09 — декоратор схемы висел на `list`, а не на HTTP-методе; исправлено в коде.
+4. **№53 «Ссылки на карты» закрыт без новых ручек** — это поля `PATCH /api/v1/mobile/branches/{id}/` (`review_link_yandex`, `review_link_2gis`, `review_links_default`, `yandex_map`, `gis_map`), см. №15.
+5. **Шероховатости готовых ручек волны 2** дописаны в 3.2 (форма `{"error"}`, английские 404 DRF, `204` без тела, каталог/квесты/акции без прав по точкам).
+6. **QR-картинки в v1.5 не отдаём** — только `url`; CheckUp рисует QR на фронте (как админка LoyalUP). Ручка PNG/SVG — отдельный пункт после решения владельца о зависимости.
+7. **Попутно закрыта дыра** в веб-кабинете LoyalUP: детализация «Точек контакта» (`/analytics/contact-points/detail/?qr=`) не проверяла доступ к точке — сотрудник одной точки видел гостей чужой (нашла разведка №26/27; чужая точка → `404`).
 
 ## 1. Принципы
 
@@ -172,6 +184,143 @@ BFF CheckUp живёт в Django (мобилка CheckUp ходит только
 | `branch_id` в двух смыслах | в элементах `mobile/reviews/*`, карточке гостя (`recent_visits`), черновиках и запусках `broadcasts/*` поле `branch_id` — это **внутренний** `id` точки (FK); в `analytics/branches/`, в `branches` ответа обмена, в `branch_ids` запроса обмена, в QR и жалобах `branch_id` — **публичный** номер. Ориентир: если рядом в объекте есть `id`, то `branch_id` публичный; если `branch_id` один — внутренний. `dashboard/today` отдаёт оба: `branch_id` (внутренний) и `public_branch_id` | сводить точки по внутреннему `id` из `branches` обмена / `analytics/branches/`; по имени точки не сводить |
 | Пагинация | нет у гостей RF-ячейки (`analytics/rf/…`) и у сообщений треда (`…/messages/`) | показывать первые N и писать «показаны последние N» (п. 4.12); не тянуть циклами |
 | Внутренний `id` точки | с 18.09 в ответе обмена `branches: [{branch_id, id}]` у `client` (порядок = `branch_ids` запроса) и `branches: null` у `network_admin`; полный список с `branch_id` — `GET /analytics/branches/` (`[{id, branch_id, name}]`) | брать `id` для фильтров ручек раздела 3 из `branches`, `null` = все точки |
+| Ошибки готовых ручек волны 2 | у `catalog/*`, `quests/*`, `branch/promotions/*`, `branch/daily-codes/generate/`, `assistant/ask/` валидация — `{"error": "…"}` (400/404 «Точка не найдена»); `404` по неизвестному `id` в `PATCH/DELETE` — стандарт DRF по-английски (`{"detail": "No Product matches the given query."}`); `DELETE` → `204` без тела | тот же маппер ошибок (п. 1 таблицы); английские 404 переводить у себя |
+| Права по точкам у готовых ручек волны 2 | есть у кодов дня, дней рождения, вовлечённости (`*_client_scoped` в `fixtures/w2/`); **нет** у каталога, категорий, квестов и акций — роль `client` видит и правит всё по сети | до доделки LoyalUP (3б, «ограничение по точкам для client», ~0,5 дня) гейтить правами `loyalty.manage` и точками сотрудника у себя; после — снять дубль |
+| Лояльчик | `POST /api/v1/assistant/ask/` зовёт Claude на ключе прода — каждый вызов стоит кредитов; при отсутствии ключа `503`, при сбое `502` `{"error"}` | не дёргать автоматически, только по действию человека; в контрактных тестах — эталон `assistant_ask_200` (ответ при записи заглушен) |
+
+---
+
+## 3б. Ручки волны 2 (v1.5)
+
+Волна 2 по карте переезда — **20 возможностей**: №18–32 из корзины A и пять бывших «экспертных» (49, 52, 53, 55, 56). Порядок работ LoyalUP по новым ручкам: **31 → 26/27 → 28 → 23 → 29 → 52/56**; CheckUp начинает экраны с готовых ручек (18, 25, затем 19/20, 21/22, 24/30/32). Правила те же, что в разделе 3: JWT из обмена, `Host` сети, внутренний `id` точки в фильтрах, публичный `branch_id` рядом в объектах.
+
+| № | Возможность | Ручки LoyalUP (все под JWT) | Готовность | Что LoyalUP делает в волне 2 |
+|---|---|---|---|---|
+| 18 | Коды дня | `GET /api/v1/branch/daily-codes/` · `POST …/generate/` `{branch_id, purpose: BIRTHDAY\|SUPERPRIZE\|…}` | готово | эталоны `fixtures/w2/daily_codes_*` (значения кодов синтетические) |
+| 19 | Каталог подарков | `GET/POST /api/v1/catalog/products/` · `PATCH/DELETE …/{id}/` (картинка — multipart `image` на тот же URL; `assignments: [{branch_id, category_id, ordering, is_visible}]`) | готово | ограничение по точкам для роли `client` (см. 3.2); эталоны `catalog_products_*` |
+| 20 | Категории каталога | `GET/POST /api/v1/catalog/categories/?branch_ids=` · `PATCH/DELETE …/{id}/` | готово | то же; эталоны `catalog_categories_*` |
+| 21 | Акции и промо-баннеры | `GET/POST /api/v1/branch/promotions/` · `PATCH/DELETE …/{id}/` (`{branch_id, title, discount, dates}`, картинка multipart `image`) | готово | то же; эталоны `promotions_*` |
+| 22 | Квесты | `GET/POST /api/v1/quests/` · `PATCH/DELETE …/{id}/` (`{name, description, reward, branch_ids \| all_branches, is_active, ordering}`) | готово | то же; эталоны `quests_*` |
+| 23 | Механика «Игра через сториз» | нет (только админка, настройки в трёх местах) | нет | **добавить** `GET/PATCH /api/v1/settings/story/` (сеть) и `GET/PATCH /api/v1/mobile/branches/{id}/story/` (переопределение точки, `effective` + `source`) — формы в 3б.3 (2 дня) |
+| 24 | Аналитика вовлечённости | `GET /api/v1/analytics/engagement/?period_days=&branch_id=` | готово | эталоны `analytics_engagement*` |
+| 25 | Дни рождения гостей | `GET /api/v1/guests/birthdays/?days_ahead=&include_past=` | готово | эталоны `guests_birthdays*` (гости обезличены) |
+| 26 | Точки контакта (QR) и воронка | воронка — `GET /api/v1/analytics/contact-points/` (остаётся мобилке; `branch` там — имя строкой) | частично | **добавить** `/api/v1/contact-points/…` — список с воронкой и сканами, карточка с воронкой по дням, гости стадии, `POST/PATCH/DELETE`, `batch-tables` — формы в 3б.1 (в работе, ~2 дня на 26+27) |
+| 27 | Материалы для гостей: ссылки и QR | нет (change_form админки) | нет | **добавить** `GET /api/v1/mobile/branches/{id}/materials/` — готовые ссылки и списки QR по режимам; картинка QR — на фронте по `url` (3б.1) |
+| 28 | Отчёт по системе лояльности | `GET /api/v1/analytics/report/` · `POST …/report/generate-comment/`; PDF — HTML-страница по `?token=` | частично | **добавить** комментарии в базе (`…/report/comments/`, `…/report/sections/`), `comments` в JSON, PDF-версия под JWT (`…/report/print/`) — формы в 3б.4 (3 дня) |
+| 29 | AI-маркетолог: дайджест и посты | нет (экшены админки) | нет | **добавить** `/api/v1/marketer/settings/` (без токена стены), `/api/v1/marketer/posts/` + generate / publish (`confirm`) / reject / context — формы в 3б.5 (2,5 дня) |
+| 30 | AI-ассистент «Лояльчик» | `POST /api/v1/assistant/ask/` `{question, history?}` → `{answer, actions[]}` · `GET /api/v1/assistant/context/` | готово | эталоны `assistant_*` (см. 3.2 про кредиты) |
+| 31 | Авторассылки (правила по событиям) | `GET /api/v1/auto-broadcasts/` · `PATCH …/{id}/` (только `message_text`, `is_active`) · `GET …/{id}/preview/` | частично | **добавить** полный конструктор: справочник событий, создание, все поля, архив, A/B-варианты, preview с `count`, `activate/` с `expected_count`, лог, статистика, тест-отправка — формы в 3б.2 (4–5 дней) |
+| 32 | Связь с персональным менеджером | `GET /api/v1/support/chat/manager/` | готово | эталон `support_chat_manager` |
+| 49 | Каталог наград (пул призов RFM и авторассылок) | `GET /api/v1/analytics/rf/reward-catalog/` (чтение) | частично | CRUD — **только по отдельному слову владельца** и с предохранителями на бэке (пул призов = деньги сети) |
+| 52 | База знаний для ИИ | нет | нет | **добавить** `/api/v1/ai/knowledge/` (список, загрузка docx/txt, включение, текст «что видит ИИ») — 3б.7 (1–1,5 дня), после 29 |
+| 53 | Ссылки на карты (Яндекс / 2ГИС) точки | `PATCH /api/v1/mobile/branches/{id}/` (`review_link_yandex`, `review_link_2gis`, `review_links_default`, `yandex_map`, `gis_map`) | **готово** (закрыт 18.09 пересверкой) | — |
+| 55 | Подключение ВКонтакте | нет | нет | **не в v1.5**: токены сообществ — только по слову владельца, с предохранителями (ошибка = отключение рассылок сети) |
+| 56 | Флаги механик тенанта | часть в гостевой `GET /api/v1/company/<client_id>/` | частично | **добавить** `GET /api/v1/settings/features/` **только на чтение** по белому списку (3б.7, 1 день); запись — по слову владельца |
+
+### 3б.1. №26/27 — точки контакта (QR) и материалы (согласовано с CheckUp 18.09; код в работе)
+
+Новый модуль рядом со старой воронкой `/analytics/contact-points/` (её не меняем — на ней мобилка). Сущность — `QRCode` LoyalUP: `mode` **наш**: `cafe` (у CheckUp «hall»), `delivery`, `delivery_network` (сетевой QR доставки, точку выбирает код), `website`, `review` (стол; «table» у CheckUp) + `mode_label`; значения `story` нет — сториз не точка контакта, а источник подписки и вход по коду дня. `src` = ключ QR, генерируется LoyalUP, в запросах не принимается (на нём печать). Миграций нет.
+
+| Ручка | Запрос | Ответ |
+|---|---|---|
+| `GET /api/v1/contact-points/?branch_ids=&mode=&is_active=&q=&period\|start&end&limit&offset` | фильтры по внутренним `id` точек | `{total, limit, offset, results: [row], totals: {scans, guests, subscribed, played, activated, conversion}, meta: {start, end, branch_ids}}` — `totals` считаются **по показанной странице** (шапка сходится с таблицей; итоги по всему фильтру — по запросу CheckUp вторым полем); `row = {id, name, branch: {id, branch_id, name}, mode, mode_label, table_number, src, url, is_active, created_at, scans: {d7, d30, all}, funnel: {scans, guests, subscribed, played, activated, conversion}}` |
+| `GET /api/v1/contact-points/{id}/` | — | `row` + `funnel_by_day: [{date, scans, guests}]` (30 дней или `period`) |
+| `GET /api/v1/contact-points/{id}/guests/?stage=scan\|subscribe\|play\|activate&period&limit&offset` | стадия воронки (у CheckUp «scans» и «guests» в списке — одно множество, различие только в счётчиках) | `{total, limit, offset, stage, stage_label, results: [{guest_id, vk_id, name, at, segment: {code, name}\|null, branch: {id, branch_id, name}}], meta: {start, end}}` — строка на **гостя** (`guest_id` = id гостя сети, не профиля в точке: так `total` сходится с `funnel.guests`), `at` = время последнего события гостя на стадии |
+| `POST /api/v1/contact-points/` | `{branch_id, name, mode, table_number?}` (`table_number` обязателен при `mode=review`); поля `src`/`key` в теле → `400 invalid_payload` (метку задаёт только LoyalUP, молча не игнорируем) | `201 row` · `400 invalid_payload` / `table_required` · `404 not_found` (недоступная точка — тоже 404) |
+| `PATCH /api/v1/contact-points/{id}/` | `{name?, is_active?, mode?, branch_id?, table_number?}` | `row` (всегда с пересобранной `url`) · `409 has_scans` при смене `mode`/точки/стола после сканов · `404` |
+| `DELETE /api/v1/contact-points/{id}/` | — | `204` · `409 has_scans` (сканы или события есть — история воронки не удаляется) · `404` |
+| `POST /api/v1/contact-points/batch-tables/` | `{branch_id, from, to, name_template?}` (по умолчанию «Отзыв со стола {table}»; потолок 200 за вызов) | `201` (или `200`, если всё пропущено) `{created: [row], skipped: [{table_number, reason: already_exists}]}` — столы с активным `review`-QR пропускаются |
+| `GET /api/v1/mobile/branches/{id}/materials/` | — | `{branch: {id, branch_id, name}, links: {mini_app_vk, delivery, site\|null}, qr: {cafe: [{id, name, is_active, url}], delivery: […], delivery_network: […], website: […], review: [{id, name, is_active, table_number, url}]}, print_hint}` — `links.mini_app_vk` и `links.delivery` **без** метки `src` (в воронку не попадают — только переслать гостю, не печатать; об этом `print_hint`), `links.site` = `null`, пока у точки нет активного QR режима `website` (метка `web=<src>` там обязательна); `telegram` в v1.5 нет |
+
+Картинка QR (PNG/SVG) в v1.5 **не отдаётся**: CheckUp рисует по `url` на фронте (веб — qrcode, телефон — svg). Причины: в LoyalUP нет QR-библиотеки (зависимость = пересборка образа, решение владельца), а `<img src>` не носит `Authorization`. Ошибки — `{code, detail}`: `not_found`, `invalid_payload`, `table_required`, `has_scans`. Чужой QR или чужая точка — `404`, не `403`.
+
+### 3б.2. №31 — авторассылки: полный конструктор правил (формы на ревью CheckUp; код после «ок»)
+
+**Что есть.** Правило `AutoBroadcastRule`: событие (`event`, 10 штук — ДР за 7/1 дней и в день, через 3 ч после игры, подарок не забран, не приходил N дней, подписался N дней назад, догоняющее, RF-подарок сгорает, просьба поделиться номером), задержка `delay_days` (пусто = по умолчанию события; у `no_visit_days`/`subscribed_days` обязательна), окно отправки по МСК `send_hour_start/end` (9–21), период `active_from/to`, аудитория = точки (`branches`, пусто = все) + пол + RF-сегменты, текст (лимит ВК 4096) с плейсхолдерами `{имя} {баланс} {награда} {подарок} {дней_осталось} {адреса}`, подарочный шаг (`gift_tier` `G1`/`G1,G2`, `gift_lifetime_days`, `gift_fallback_text`), A/B-варианты с весами, догоняющее правило (`parent_rule` + условие `not_read`/`not_visited`), приоритет. Отправляет beat каждые 15 минут; получатели = резолвер события → общий лог дедупа (ключ менять нельзя, ~13k записей) → недельный кэп сети → RF-оркестратор. Сейчас API умеет только список без пагинации, `PATCH` текста и `is_active`, предпросмотр. Других фильтров аудитории (`first_visit_only`, `min_visits`, `days_since_visit`, `has_phone`) в модели **нет** — кабинет показывает те три, что есть; «задержка» — в днях (`delay_days`), не в минутах: событие «через 3 часа после игры» фиксировано.
+
+**Совместимость.** Пути те же, что у мобильного приложения LoyalUP (`/api/v1/auto-broadcasts/…`), ответы — **надмножество** старых (ключ списка `rules`, старые поля остаются), поэтому список с пагинацией отдаёт `{rules, total, limit, offset}` (без `limit` — полный список, как раньше), а не `results`. `PATCH is_active` остаётся без гейта для мобилки; **CheckUp включает правило только через `activate/`** с `expected_count` (см. 3б.6 «никогда»).
+
+| Ручка | Запрос | Ответ |
+|---|---|---|
+| `GET /api/v1/auto-broadcasts/events/` | — | `{events: [{code, label, description, dedup: year\|day\|entity, delay_unit: 'days', default_delay_days, delay_required, placeholders: ['{имя}', …]}], gender_filters: [{code, label}], follow_up_conditions: [{code, label}], gift_tiers: [{code, label}]}` — единый источник плейсхолдеров (сейчас четыре расходящихся списка сводятся в один) |
+| `GET /api/v1/auto-broadcasts/?limit&offset&event&is_active&q&include_archived` | фильтры; RBAC: правило без точек = сетевое, его видит только пользователь без ограничений по точкам; ограниченный видит правила, чьи точки ⊆ его | `{rules: [rule], total, limit, offset}` |
+| `GET /api/v1/auto-broadcasts/{id}/` | — | `rule` (карточка, ниже) · `404 not_found` |
+| `POST /api/v1/auto-broadcasts/` | `{name, event, delay_days?, send_hour_start?, send_hour_end?, active_from?, active_to?, priority?, audience: {branch_ids?, gender_filter?, rf_segment_ids?}, message_text, reward?: {gift_tier, gift_lifetime_days, gift_fallback_text}, follow_up?: {parent_rule_id, condition}, variants?: [{name, message_text, weight, is_active}]}` — создаётся **выключенным** | `201 rule` · `400 invalid_payload` / `event_unknown` / `delay_required` / `variant_weights_invalid` / `reward_invalid` · `404 not_found` (точка или сегмент недоступны) |
+| `PATCH /api/v1/auto-broadcasts/{id}/` | любые поля карточки: `audience` и `variants` — целиком (замена), `message_text`, `is_active` (для мобилки; CheckUp — только `false`) | `rule` · те же `400` · `409 archived` |
+| `DELETE /api/v1/auto-broadcasts/{id}/` | — | `204`: правило **архивируется** (`is_archived=true`, `is_active=false`), физически не удаляется — на нём история отправок; в списке только с `include_archived=1` |
+| `GET /api/v1/auto-broadcasts/{id}/preview/` | — | старые `{recipients, due_now, reason, sample_text, sample_names}` **+** `count` (= `recipients`, для `expected_count`), `by_branch: [{branch_id, name, count}]`, `sample_texts: [{variant_id, name, text}]`; `409 {code: preview_failed}` если расчёт упал |
+| `POST /api/v1/auto-broadcasts/{id}/activate/` | `{expected_count, confirm: true}` — `expected_count` = `count` из preview; допуск max(5, 10 %) в любую сторону, как у рассылок | `200 rule` · `400 expected_count_required` / `confirm_required` / `audience_empty` (count = 0) · `409 audience_changed {expected, actual}` / `already_active` / `archived` |
+| `POST /api/v1/auto-broadcasts/{id}/deactivate/` | — | `200 rule` |
+| `GET /api/v1/auto-broadcasts/{id}/log/?limit&offset&status` | лог получателей всех запусков правила | `{total, limit, offset, results: [{sent_at, vk_id, name, variant: {id, name}\|null, status: sent\|failed\|skipped\|pending, read_at, error}]}` — отсев дедупом/кэпом/окном в лог **не попадает** (он происходит до создания получателей), поэтому статусов `skipped_dedup`/`quiet_hours` нет |
+| `GET /api/v1/auto-broadcasts/{id}/stats/` | — | `{sent, read, failed, open_rate, sent_30d, last_run_at, variants: [{id, name, weight, is_active, sent, read, failed, open_rate}]}` |
+| `POST /api/v1/auto-broadcasts/{id}/variants/` · `PATCH/DELETE …/variants/{vid}/` | `{name, message_text, weight (≥1), is_active}` | `201/200 variant` · `204` · `409 has_sends` при удалении варианта с отправками (тогда `is_active=false`) |
+| `POST /api/v1/auto-broadcasts/{id}/test-send/` | `{vk_id}` — гость сети (обычно сам сотрудник) | `{ok, message_id}`: текст рендерится для этого гостя и уходит в ВК **без** записи в лог дедупа и статистику · `400 guest_not_found` / `not_subscribed` · `409 no_vk_token` (у точки гостя нет подключённого сообщества) |
+
+**Карточка `rule`:** `{id, name, event, event_label, is_active, is_archived, priority, delay_days, default_delay_days, send_hour_start, send_hour_end, active_from, active_to, audience: {branch_ids: [внутренние id; [] = все точки], gender_filter, rf_segments: [{id, code, name, emoji}]}, audience_summary, message_text, image: null, reward: {gift_tier, gift_lifetime_days, gift_fallback_text}, reward_summary, follow_up: {parent_rule_id, parent_rule_name, condition} \| null, variants: [{id, name, message_text, weight, is_active, sent, read, failed, open_rate}], stats: {sent, read, failed, open_rate, sent_30d, last_run_at}, created_at, updated_at}` + старые плоские поля мобилки (`branches_count`, `segments_count`, `sent_total`, `sent`, `read`, `failed`, `open_rate`, `parent_rule_name`). Картинка правила в v1.5 не поддержана (как у рассылок). Пожелания CheckUp, которых не будет: `dedup_note` (сколько отсеял дедуп — считается только внутри движка, наружу не выдаётся), `quiet_hours` сети (окно — свойство правила: `send_hour_*`).
+
+**Изменения в модели:** `AutoBroadcastRule.is_archived` (тенантная миграция senler, `db_default=False`, рестарт web и celery сразу после — урок 17.09). **Оценка: 4–5 дней** (карта считала 3: добавились активация с гейтом, лог, варианты, тест-отправка, справочник).
+
+### 3б.3. №23 — «Игра через сториз»: одна ручка сети + переопределение точки
+
+Три места настроек: сеть (`ClientConfig.story_*`, 11 полей, только суперадминка), точка (`BranchConfig.story_*`, 5 полей-переопределений, `null`/пусто = как в сети), подарки (товары с признаком «приз сториз», привязанные к точке, + картинка сториз точки). Резолв «точка → сеть → значение по умолчанию» уже есть в коде мини-аппа; сотруднику доступны только три текстовых поля через `PATCH /mobile/branches/{id}/`. Миграций в v1.5 **нет**: шесть полей (минуты активации, «нужен визит», срок и напоминание подарка, даты кампании) остаются только сетевыми — так и фиксируем.
+
+| Ручка | Запрос | Ответ |
+|---|---|---|
+| `GET /api/v1/settings/story/` | — (`client` — только чтение) | `{settings: {story_game_enabled, story_min_order_amount, story_activation_minutes, story_require_cafe_visit, story_cafe_address, story_activation_text, story_saved_text, story_gift_lifetime_days, story_gift_reminder_days, story_campaign_start, story_campaign_end}, placeholders: ['[адрес кафе]', '[сумма]', '[время]', '[название кафе]', '[название подарка]'], branch_override_fields: ['story_game_enabled', 'story_min_order_amount', 'story_cafe_address', 'story_activation_text', 'story_saved_text'], prizes: {network_count}}` |
+| `PATCH /api/v1/settings/story/` | любые поля `settings` (только `network_admin`) | `200` как GET · `400 invalid_payload` (с `editable`) · `403 role_not_allowed` |
+| `GET /api/v1/mobile/branches/{id}/story/` | — | `{overrides: {story_game_enabled: true\|false\|null, story_min_order_amount: int\|null, story_cafe_address, story_activation_text, story_saved_text}, effective: {все 11 полей после резолва}, source: {поле: 'branch'\|'network'\|'default'}, prizes: {count, story_image_url}, rendered: {activation_text, saved_text}}` — `rendered` = то, что увидит гость; `prizes.count = 0` при включённой игре = «включено, но подарков нет» |
+| `PATCH /api/v1/mobile/branches/{id}/story/` | поля `overrides`; `null` / `""` = наследовать от сети (только `network_admin`; RBAC по точке) | `200` как GET · `400 invalid_payload` · `404 not_found` |
+
+**Оценка: 2 дня** (без миграции; с расширением переопределений точки — +1,5 и тенантная миграция, отдельным решением).
+
+### 3б.4. №28 — отчёт по лояльности: комментарии в базе и PDF без `?token=`
+
+Сейчас `GET /api/v1/analytics/report/` отдаёт цифры 11 секций, `ai_summary` всегда пуст; AI-комментарии генерируются `POST …/report/generate-comment/` и живут **в localStorage браузера** (теряются на другом устройстве, в JSON не попадают); PDF — не серверный: страница `?format=pdf` рендерится в браузере (`window.print()` / jsPDF), а в чужом браузере открывается по `?token=<JWT>` — ровно то, чего контракт запрещает.
+
+| Ручка | Запрос | Ответ |
+|---|---|---|
+| `GET /api/v1/analytics/report/sections/` | — | `{sections: [{num, title, metric_keys}]}` (11 секций; сейчас список захардкожен в вебе и продублирован в JS) |
+| `GET /api/v1/analytics/report/comments/?period&start&end&branch_ids` | тот же период/точки, что у отчёта | `{period_key, comments: [{section_num, text, is_ai, author, updated_at}]}` |
+| `PUT /api/v1/analytics/report/comments/?…` | `{comments: [{section_num, text}]}` — сохраняет все секции периода | `200` как GET · `400 invalid_payload` |
+| `POST /api/v1/analytics/report/generate-comment/` | как сейчас (`section_num, section_title, metrics_json, draft`) **+** `save: true` и период/точки — сохраняет результат | `{text}` (как сейчас); ошибки ключа/Claude — `{code: ai_unavailable}` |
+| `GET /api/v1/analytics/report/?…` | как сейчас | **+** `comments: [{section_num, text, is_ai}]` (аддитивно; `ai_summary` остаётся `""`) |
+| `GET /api/v1/analytics/report/print/?period&start&end&branch_ids` | под JWT в заголовке (без `?token=`) | `text/html` — та же PDF-версия отчёта с комментариями из базы (не из localStorage); BFF CheckUp получает её сервер-сервер и отдаёт со своего домена, печать/скачивание PDF делает браузер, как сейчас. Серверного PDF нет (weasyprint не установлен — отдельное решение владельца) |
+
+**Модель:** `LoyaltyReportComment` (тенантная, новая таблица: период, точки, секция, текст, `is_ai`, автор; уникальность по периоду+точкам+секции). **Оценка: 3 дня.**
+
+### 3б.5. №29 — AI-маркетолог: настройки, лента постов, действия
+
+API нет совсем: есть модели `MarketerSettings` (одна на сеть: включён, автопостинг, дайджест по дням/часу, голос бренда, факты владельца, токен стены ВК — отдельный от токена рассылок) и `MarketerPost` (тип digest/insight/promo/custom, статус draft/published/rejected/failed, текст, снимок фактов, ошибка), задача генерации дайджеста по расписанию, публикация на стену через `wall.post`. Сущность сетевая, точек нет → RBAC по точкам неприменим: `client` — только чтение, `network_admin` — всё.
+
+| Ручка | Запрос | Ответ |
+|---|---|---|
+| `GET /api/v1/marketer/settings/` | — | `{is_enabled, autopost_enabled, digest_enabled, digest_weekday, digest_hour, last_digest_at, brand_voice, extra_facts, vk_group_id, vk_wall_token_set: bool}` — сам токен не отдаётся |
+| `PATCH /api/v1/marketer/settings/` | те же поля **кроме токена стены** (он остаётся в админке до отдельного слова владельца — №55) | `200` · `400 invalid_payload` · `403 role_not_allowed` |
+| `GET /api/v1/marketer/posts/?status&type&limit&offset` · `GET …/{id}/` | — | `{total, limit, offset, results: [{id, post_type, status, text, model_used, created_by, published_at, vk_post_id, vk_post_url, error, created_at, updated_at}]}` |
+| `POST /api/v1/marketer/posts/generate/` | `{}` (`network_admin`) | `202 {queued: true}` — как экшен админки «сгенерировать сейчас»; результат появится в ленте черновиком (или `failed` с ошибкой) · `409 marketer_disabled` |
+| `PATCH /api/v1/marketer/posts/{id}/` | `{text}` — только у `draft`/`failed` | `200 post` · `409 not_editable` |
+| `POST /api/v1/marketer/posts/{id}/publish/` | `{confirm: true}` — публикация необратима | `200 post` (`published` + `vk_post_url`) · `400 confirm_required` · `409 not_publishable` / `marketer_disabled` / `no_vk_token` · `502 vk_error {detail}` |
+| `POST /api/v1/marketer/posts/{id}/reject/` | — | `200 post` · `409 not_rejectable` |
+| `GET /api/v1/marketer/posts/{id}/context/` | — | `{context: {…снимок фактов, из которых написан пост}}` |
+
+**Оценка: 2,5 дня.**
+
+### 3б.7. №52 база знаний ИИ и №56 флаги механик (после 29)
+
+- **№52** `GET /api/v1/ai/knowledge/` → `{documents: [{id, title, is_active, filename, has_text, char_count, created_at, updated_at}]}` · `POST` (multipart `file` `.docx`/`.txt` + `title`) → `201` · `PATCH /{id}/` `{title, is_active}` · `DELETE /{id}/` → `204` · `GET /{id}/text/` → `{text}` («что видит ИИ»). Записывает только `network_admin`. PDF не извлекается (как сейчас). **1–1,5 дня.**
+- **№56** `GET /api/v1/settings/features/` — **только чтение**: `{flags: {<ключ>: {value, source: 'network'\|'default'}}}` по белому списку (`story_*`, `birthday_window_days`, `auto_broadcast_weekly_cap`, `rf_orchestrator_enabled`, `vk_catalog_enabled`, `vk_catalog_city`, `vk_review_branch_inference`, `vk_review_branch_inference_hours`, `web_entry_enabled`, `degrade_enabled`, `guest_phone_enabled`, `guest_phone_reward_coins`, `code_prompt_message`, `quest_show_message`, `brand_color`, `brand_color_secondary`). Касса и интеграции (`pos_type`, iiko, Dooglys, секреты) **не отдаются никогда**. Гостевая `GET /api/v1/company/<id>/` не меняется. Запись — по слову владельца. **1 день.**
+- **Права по точкам у каталога/квестов/акций** (доделка из 3.2): для пользователя с ограничением по точкам — акции и квесты только своих точек (список, запись), каталог и категории — чтение всё, запись `403 role_not_allowed` (сущности сетевые). **0,5 дня.**
+
+### 3б.6. Общие правила новых ручек волны 2
+
+- Форма ошибки `{code, detail}`; коды в таблицах выше. Валидация — `400 invalid_payload` (без новых `422`).
+- Чужой объект и недоступная точка — `404 not_found` (существование не раскрываем); `403` — только роль.
+- Пагинация `limit` (1..200, по умолчанию 50) / `offset` / `total`; фильтры — внутренние `id` точек; в объектах точка как `{id, branch_id, name}`.
+- Права по точкам — через `effective_branch_ids` (как `broadcasts/*`); `feature_access` API не проверяет — гейтит CheckUp (2.2).
+- Всё, что меняет деньги, призы или массовые отправки, — `expected_count` + `confirm: true` и `409` при расхождении (правило 3.1).
+- Каждая новая ручка приходит с тестами на моках и эталонами в `fixtures/w2/`; `@extend_schema` — сразу, чтобы срез схемы был честным.
+
+**«Никогда» волны 2 (дополнение к разделу 4):** включать правило авторассылки через `PATCH is_active=true` (только `activate/` с `expected_count`); записывать токены ВК (`vk_wall_token`, токены сообществ) через API; звать `assistant/ask/`, `report/generate-comment/`, `marketer/posts/generate/` автоматически или по расписанию — только по действию человека; удалять правила, варианты и документы физически там, где контракт говорит «архив»; открывать страницы LoyalUP в браузере сотрудника по `?token=`.
 
 ---
 
@@ -282,10 +431,11 @@ X-LoyalUP-Relay-Secret: <LOYALUP_RELAY_SECRET>
 | Вердикт `internal/complaints/verdict/` + статус в карточке отзыва (веб, мобилка, API) — **сделано 16.09** | 1 день |
 | Телефон гостя №78: гостевая ручка с проверкой подписи ВК, поля в карточке гостя, мини-апп — **сделано 17.09** (бэк 7898572…0d2849a, мини-апп собран, пилот dev + LevOne, политика конфиденциальности дополнена разделом о гостях) | 2 дня (бэк) + 1,5 (мини-апп) |
 | Пробелы API волны 1: ~~фильтры и пагинация отзывов (1), сводка тональностей и детализация метрик (1), дашборд дня (1), рассылки JSON-CRUD + отправка с `expected_count` (3), аварийные действия (1), точки `PATCH` (2), уведомления курсор (0,5) — всё сделано 16.09~~ | 9,5 дней |
-| OpenAPI-срез волны 1 + TypeScript-типы для BFF + пакет записанных ответов песочницы для контрактных тестов CheckUp — **сделано 16.09**: `docs/platform/openapi_w1_2026-09-16.json` (37 путей), `loyalup_w1_2026-09-16.d.ts`, `fixtures/w1/` (39 записей с обезличенными гостями, README) | 1 день |
+| OpenAPI-срез волны 1 + TypeScript-типы для BFF + пакет записанных ответов песочницы для контрактных тестов CheckUp — **сделано 16.09**: `docs/platform/openapi_w1_2026-09-18.json` (перегенерирован 18.09: + `broadcasts/*`, карточка отзыва, объектные ответы ленты/сообщений, query-параметры), `loyalup_w1_2026-09-18.d.ts`, `fixtures/w1/` (69 записей с обезличенными гостями, README) | 1 день |
 | Песочница `dev`: вторая точка, учётка, тихие тестовые отзывы (`seed_checkup_sandbox`) — **сделано 16.09** | 0,5 дня |
 | Фикстуры рассылок `broadcasts_*` и перезапись `guest_card` с телефоном; контракт v1.4 (правило client-id, раздел 3.2) — **сделано 18.09** | 0,5 дня |
-| **Итого** | **≈ 17 дней** (карта: 13,5 контракт + часть 18 дней бэка волны 1) |
+| **Волна 2 (v1.5, старт 18.09):** эталоны w2 (45 записей) — **сделано 18.09**; №26/27 точки контакта и материалы — в работе; №31 авторассылки (4–5), №28 отчёт (3), №23 сториз (2), №29 маркетолог (2,5), №52 база знаний (1–1,5), №56 флаги (чтение, 1), ограничение по точкам для `client` в каталоге/квестах/акциях (0,5) | ≈ 17 дней после разведки 18.09 (карта считала 15: №53 закрыт, но №31 вырос до 4–5 за счёт активации с гейтом, лога, вариантов и тест-отправки; №28 — 3 с комментариями в базе) |
+| **Итого** | **≈ 17 дней** волна 1 + **≈ 17 дней** волна 2 |
 
 Порядок: обмен токена и песочница первыми (без них CheckUp не может начать), затем вердикт и фильтры отзывов (первый экран), остальное параллельно экранам CheckUp.
 
@@ -336,7 +486,7 @@ X-LoyalUP-Relay-Secret: <LOYALUP_RELAY_SECRET>
 
 **Что не закрыто и почему:** (1) ~~«сотрудник одной точки не видит другую» через кабинет CheckUp~~ — **закрыто 18.09 01:03 (по слову владельца, сторона CheckUp):** в ОФИСе (`dev`) заведён пользователь CheckUp #517 «Приёмка LoyalUP (dev)» с ролью #120 «LoyalUP приёмка (dev, одна точка)» — единственное право `loyalty.view`, доступ по данным только к «Бухгалтерии» (branch 32 ↔ `990002`); вход — https://checkupapp.ru, организация ОФИС, логин по телефону `+70000000090`, пароль у владельца (файл на проде CheckUp). Через BFF под ней: обмен → `client`, `branch_ids [990002]`; `mobile/reviews/?period=all` → 6 тредов, все точки 3 (точка 2 не видна); `/mobile/reviews/13/` → `200`, `/12/` → `404 «Отзыв не найден»`; `POST …/reply/` → `403` «нужно loyalty.manage»; `PATCH mobile/branches/3/` → `403`. До этого — по прямому обмену (§7) и фикстурам `*_client_scoped`, `*_404_foreign`. (2) Пишущие проверки на `dev` **сделаны стороной CheckUp 18.09 01:04 (BFF, владелец как `network_admin`):** `POST mobile/reviews/13/reply/` → `201`, сообщение #18 `ADMIN_REPLY` в треде; `POST …/13/resolve/` → `200`, после — `is_replied true`, `has_unread false`; `403` для роли `client` на `reply` и `PATCH` точки — учёткой #517. **Не сделано — баллы гостю (`adjust-coins`):** в песочнице нет синтетического гостя, все четверо — настоящие люди; `seed_checkup_sandbox` заводит только треды. Решение владельца: заводить ли гостя-песочницу — таблица гостей общая на все сети, и «синтетический» `vk_id` вроде `990000010` может совпасть с настоящим пользователем ВК (номера ВК уже близко к миллиарду), поэтому либо резервный диапазон вне номеров ВК, либо проверка баллов на LevOne по слову владельца. На LevOne пишущих проверок (ответ гостю в ВК, баллы, рассылка, кампания, правка точки) не делали — по слову владельца на каждую, в его окне. (3) ~~«Токен не виден в браузере»~~ — **закрыто 18.09 (Playwright под владельцем, LevOne: `/loyalty`, `/loyalty/reviews`, `/loyalty/guests`, карточка 2937):** браузер ходил только на `checkupapp.ru`, VK ID SDK со страницы входа (`id.vk.ru`, `static.vk.ru`, `api.vk.ru`) и `unpkg.com`; ни одного обращения к `*.levelupapp.ru`; в 11 ответах `/api/v1/loyalty/*` нет JWT LoyalUP; `localStorage` — только `access_token` CheckUp и служебные ключи (`active_tenant_id`, `loyalty_tenant_v1`, `device_id`, `cu_nav_lastused`), `sessionStorage` пуст, cookies только `vk.ru`. Токен LoyalUP живёт в Redis BFF. (4) ~~Карточка отзыва `/loyalty/reviews/{id}` на LevOne~~ — **закрыто 18.09 01:15:** CheckUp подключил карточку к `GET /mobile/reviews/{id}/` (их коммит d252d777, веб выложен, смоук 12/12; телефон — OTA по слову владельца); снимок треда 2937 на LevOne под владельцем: шапка (тональность, гость, «ВК группа», дата), кнопки «Решено / Перегенерировать / Отклонить черновик», лента сообщений с цитатами, черновик ИИ в поле ответа, подпись «ответ уходит гостю в личные сообщения»; путь запросов `loyalty/tenants/ → …/mobile/reviews/2937/ → …/messages/`, ошибок 0. Точка и стол у сообщений на этом снимке не видны — тред из ВК-группы без точки (`branch = null`), проверить на треде из мини-аппа при пишущих проверках (п. 2).
 
-**Контрактные тесты вместо ревью кода.** Односторонний ревью агентами не масштабируется, тесты — да. LoyalUP публикует OpenAPI-срез волны 1 и пакет записанных ответов песочницы (JSON по роутам приёмки, включая ошибки 401/403/409/422) — с 16.09 лежат в репозитории LoyalUP: `backend/docs/platform/openapi_w1_2026-09-16.json`, `loyalup_w1_2026-09-16.d.ts`, `fixtures/w1/*.json` (см. README там же); CheckUp гоняет свой BFF против этих записей в CI. LoyalUP держит у себя тесты формы ответов тех же ручек — изменение формы ломает тест раньше, чем сломает CheckUp. Правило: форма ответа меняется только аддитивно, удаление поля — новая версия контракта.
+**Контрактные тесты вместо ревью кода.** Односторонний ревью агентами не масштабируется, тесты — да. LoyalUP публикует OpenAPI-срез волны 1 и пакет записанных ответов песочницы (JSON по роутам приёмки, включая ошибки 401/403/409/422) — с 16.09 лежат в репозитории LoyalUP: `backend/docs/platform/openapi_w1_2026-09-18.json`, `loyalup_w1_2026-09-18.d.ts`, `fixtures/w1/*.json` (см. README там же); CheckUp гоняет свой BFF против этих записей в CI. LoyalUP держит у себя тесты формы ответов тех же ручек — изменение формы ломает тест раньше, чем сломает CheckUp. Правило: форма ответа меняется только аддитивно, удаление поля — новая версия контракта.
 
 ---
 
