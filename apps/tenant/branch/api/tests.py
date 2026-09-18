@@ -14,7 +14,7 @@ from django.urls import reverse, resolve
 from rest_framework import status
 from rest_framework.test import APIRequestFactory
 
-from apps.tenant.branch.models import Branch, ClientBranch
+from apps.tenant.branch.models import Branch, ClientBranch, SubscriptionSource
 
 from .serializers import (
     BranchInfoSerializer,
@@ -83,6 +83,14 @@ def _branch_data(**overrides):
         'logotype_url': None, 'coin_icon_url': None,
         'vk_group_id': None, 'vk_group_name': None,
         'story_image_url': None,
+        # Поля появились в ответе ПОЗЖЕ этих тестов (кастомные тексты — LU-14,
+        # цвета бренда — brand_color_secondary). BranchInfoSerializer требует их
+        # без required=False, поэтому без них сериализация словаря падает
+        # KeyError, а не «просто не отдаёт поле».
+        'code_prompt_message': 'ЧТОБЫ ЗАБРАТЬ МОНЕТЫ, ПОПРОСИТЕ КОД ДНЯ У СОТРУДНИКА',
+        'quest_show_message': 'У ВАС ЕСТЬ 30 МИНУТ, ЧТОБЫ ВЫПОЛНИТЬ ЗАДАНИЕ И ПОКАЗАТЬ РЕЗУЛЬТАТ СОТРУДНИКУ.',
+        'brand_color': '#d3a9e5',
+        'brand_color_secondary': '#d6de23',
     }
     data.update(overrides)
     return data
@@ -316,6 +324,8 @@ class UpdateClientProfileTest(TestCase):
     @patch('apps.tenant.branch.api.services.get_client_profile')
     def test_marks_community_subscription_via_app(self, mock_get, mock_pqs, mock_vk):
         profile = MagicMock()
+        # Без явного exists() автомок правдив → источник уезжал в «доставку».
+        profile.activated_deliveries.filter.return_value.exists.return_value = False
         mock_get.return_value = profile
         vk_status = MagicMock()
         mock_vk.get_or_create.return_value = (vk_status, False)
@@ -323,7 +333,25 @@ class UpdateClientProfileTest(TestCase):
 
         update_client_profile(vk_id=1, branch_id=1, community_via_app=True)
 
-        vk_status.mark_subscribed.assert_called_once_with(community=True, newsletter=False)
+        vk_status.mark_subscribed.assert_called_once_with(
+            community=True, newsletter=False, source=SubscriptionSource.CAFE)
+
+    @patch('apps.tenant.branch.api.services.ClientVKStatus.objects')
+    @patch('apps.tenant.branch.api.services._profile_qs')
+    @patch('apps.tenant.branch.api.services.get_client_profile')
+    def test_marks_delivery_source_when_delivery_active(self, mock_get, mock_pqs, mock_vk):
+        """Подписка при живой доставке пишется источником «доставка» (аналитика источников)."""
+        profile = MagicMock()
+        profile.activated_deliveries.filter.return_value.exists.return_value = True
+        mock_get.return_value = profile
+        vk_status = MagicMock()
+        mock_vk.get_or_create.return_value = (vk_status, False)
+        mock_pqs.return_value.get.return_value = _profile_mock()
+
+        update_client_profile(vk_id=1, branch_id=1, community_via_app=True)
+
+        vk_status.mark_subscribed.assert_called_once_with(
+            community=True, newsletter=False, source=SubscriptionSource.DELIVERY)
 
 
 # ── Service: get_employees ────────────────────────────────────────────────────
@@ -836,11 +864,13 @@ class VkOauthExchangeTest(TestCase):
 
         vk_oauth_exchange('code', 'dev', 'verifier', 'https://x.com/cb', 'state')
 
-        self.assertEqual(mock_urlopen.call_count, 2)
-        first_url = mock_urlopen.call_args_list[0][0][0].full_url
-        second_url = mock_urlopen.call_args_list[1][0][0].full_url
-        self.assertIn('id.vk.ru/oauth2/auth', first_url)
-        self.assertIn('id.vk.ru/oauth2/user_info', second_url)
+        # Третий запрос штатный: user_info не отдал birthday (частичная дата
+        # без года), поэтому включается фолбэк на legacy users.get за bdate.
+        self.assertEqual(mock_urlopen.call_count, 3)
+        urls = [c[0][0].full_url for c in mock_urlopen.call_args_list]
+        self.assertIn('id.vk.ru/oauth2/auth', urls[0])
+        self.assertIn('id.vk.ru/oauth2/user_info', urls[1])
+        self.assertIn('users.get', urls[2])
 
     @patch('urllib.request.urlopen')
     @patch('apps.tenant.branch.api.services.settings')
@@ -1159,6 +1189,10 @@ class VKAuthViewTest(TestCase):
             state='STATE_STRING',
             branch_id=42,
             birth_date=None,
+            # Появились вместе с многоканальным входом: сетевые источники не
+            # пишут визит-скан, src — метка отслеживаемого QR.
+            source='restaurant',
+            src='',
         )
 
 
