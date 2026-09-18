@@ -201,6 +201,10 @@ def validate_payload(data) -> dict:
 
     display_name = str(data.get('display_name') or data.get('full_name') or '').strip()[:MAX_NAME]
     email = str(data.get('email') or '').strip()[:MAX_EMAIL]
+    # Признак платформы из тела (контракт v1.7, 3в.1): BFF ставит его по праву
+    # loyalty.platform, которое владелец выдаёт сам в CheckUp. Запрос подписан
+    # секретом и идёт с внутреннего адреса — полю можно верить. Строго `true`.
+    platform = data.get('platform') is True
 
     return {
         'checkup_user_id': cuid,
@@ -209,6 +213,7 @@ def validate_payload(data) -> dict:
         'branch_ids': branch_ids,
         'display_name': display_name,
         'email': email,
+        'platform': platform,
     }
 
 
@@ -300,7 +305,9 @@ def perform_exchange(data) -> dict:
     Всё, что не так, — ExchangeError со статусом для ответа.
     """
     p = validate_payload(data)
-    platform = is_platform_admin(p['checkup_user_id'])
+    # Платформа = поле в теле (право loyalty.platform в CheckUp) ИЛИ аварийный
+    # белый список в env (CHECKUP_PLATFORM_ADMINS).
+    platform = p['platform'] or is_platform_admin(p['checkup_user_id'])
     tenant = resolve_tenant(p['tenant_schema'], platform=platform)
     schema = p['tenant_schema']
     branch_pks = resolve_branch_pks(schema, p['branch_ids']) if p['role'] == ROLE_CLIENT else None

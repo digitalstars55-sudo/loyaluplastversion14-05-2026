@@ -404,6 +404,19 @@ class PlatformExchangeTest(TestCase):
             perform_exchange(_good())
         self.assertEqual((cm.exception.status, cm.exception.code), (403, 'tenant_not_allowed'))
 
+    @override_settings(CHECKUP_PLATFORM_ADMINS='')
+    def test_platform_field_in_body_grants_access(self):
+        result = perform_exchange(_good(platform=True))
+        self.assertTrue(result['platform'])
+        self.assertIs(decode_token(result['token'])['platform'], True)
+
+    @override_settings(CHECKUP_PLATFORM_ADMINS='')
+    def test_platform_field_must_be_strict_true(self):
+        for bad in ('true', 1, 'yes'):
+            with self.subTest(value=bad), self.assertRaises(ExchangeError) as cm:
+                perform_exchange(_good(platform=bad))
+            self.assertEqual(cm.exception.code, 'tenant_not_allowed')
+
     @override_settings(CHECKUP_PLATFORM_ADMINS='42')
     def test_inactive_tenant_still_404_for_platform(self):
         _tenant(schema='off_t', client_id=7702, active=False)
