@@ -343,3 +343,103 @@ class BranchesPayloadTest(SimpleTestCase):
     def test_no_query_to_the_tenant(self):
         # Чистая функция: если она полезет в базу, тест упадёт на SimpleTestCase.
         self.assertEqual(branches_payload([7], [70]), [{'branch_id': 7, 'id': 70}])
+
+
+# ── волна 3: платформенный доступ (контракт 3в) ──────────────────────────────
+
+from .services import is_platform_admin, list_platform_tenants, platform_admins, tenant_open  # noqa: E402
+from .views import InternalTenantsView  # noqa: E402
+
+
+class PlatformSettingsTest(SimpleTestCase):
+
+    @override_settings(CHECKUP_PLATFORM_ADMINS='1, 42 ,')
+    def test_platform_admins_parsed(self):
+        self.assertEqual(platform_admins(), {'1', '42'})
+        self.assertTrue(is_platform_admin(42))
+        self.assertTrue(is_platform_admin('1'))
+        self.assertFalse(is_platform_admin('7'))
+
+    @override_settings(CHECKUP_PLATFORM_ADMINS='')
+    def test_empty_whitelist(self):
+        self.assertEqual(platform_admins(), set())
+        self.assertFalse(is_platform_admin('1'))
+
+    @override_settings(CHECKUP_TOKEN_EXCHANGE_TENANTS=['dev'])
+    def test_tenant_open(self):
+        self.assertTrue(tenant_open('dev'))
+        self.assertFalse(tenant_open('levone'))
+
+    @override_settings(CHECKUP_TOKEN_EXCHANGE_TENANTS=[])
+    def test_tenant_open_when_list_empty(self):
+        self.assertTrue(tenant_open('levone'))
+
+    @override_settings(CHECKUP_TOKEN_EXCHANGE_MINUTES=60)
+    def test_platform_claim_only_when_asked(self):
+        fake = mock.Mock(pk=5, username='checkup-1-dev', role='network_admin')
+        plain, _ = issue_exchange_token(fake, 'dev')
+        platform, _ = issue_exchange_token(fake, 'dev', platform=True)
+        self.assertNotIn('platform', decode_token(plain))
+        self.assertIs(decode_token(platform)['platform'], True)
+
+
+@override_settings(CHECKUP_TOKEN_EXCHANGE_SECRET=SECRET, CHECKUP_TOKEN_EXCHANGE_TENANTS=['dev'],
+                   CHECKUP_TOKEN_EXCHANGE_MINUTES=60)
+class PlatformExchangeTest(TestCase):
+
+    def setUp(self):
+        self.tenant = _tenant()   # sandbox_t — НЕ в списке открытых сетей
+
+    @override_settings(CHECKUP_PLATFORM_ADMINS='42')
+    def test_whitelisted_user_gets_any_live_tenant_and_platform_claim(self):
+        result = perform_exchange(_good())
+        self.assertTrue(result['platform'])
+        self.assertFalse(result['tenant_open'], 'sandbox_t не в CHECKUP_TOKEN_EXCHANGE_TENANTS')
+        self.assertIs(decode_token(result['token'])['platform'], True)
+        self.assertEqual(result['user'].username, 'checkup-42-sandbox_t')
+
+    @override_settings(CHECKUP_PLATFORM_ADMINS='1')
+    def test_other_user_still_403(self):
+        with self.assertRaises(ExchangeError) as cm:
+            perform_exchange(_good())
+        self.assertEqual((cm.exception.status, cm.exception.code), (403, 'tenant_not_allowed'))
+
+    @override_settings(CHECKUP_PLATFORM_ADMINS='42')
+    def test_inactive_tenant_still_404_for_platform(self):
+        _tenant(schema='off_t', client_id=7702, active=False)
+        with self.assertRaises(ExchangeError) as cm:
+            perform_exchange(_good(tenant_schema='off_t'))
+        self.assertEqual(cm.exception.status, 404)
+
+    @override_settings(CHECKUP_PLATFORM_ADMINS='42')
+    def test_exchange_view_returns_platform_and_tenant_open(self):
+        resp = _post(_good(), secret=SECRET)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        body = json.loads(resp.content)
+        self.assertIs(body['platform'], True)
+        self.assertIs(body['tenant_open'], False)
+
+    def test_tenants_list_view(self):
+        _tenant(schema='off_t', client_id=7702, active=False)
+        request = RequestFactory().get('/api/v1/internal/tenants/', REMOTE_ADDR='127.0.0.1',
+                                       HTTP_X_LOYALUP_EXCHANGE_SECRET=SECRET)
+        resp = InternalTenantsView.as_view()(request)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        rows = json.loads(resp.content)['tenants']
+        schemas = [r['schema'] for r in rows]
+        self.assertIn('sandbox_t', schemas)
+        self.assertNotIn('off_t', schemas, 'выключенные сети не отдаём')
+        row = next(r for r in rows if r['schema'] == 'sandbox_t')
+        self.assertEqual(set(row), {'schema', 'name', 'client_id', 'domain', 'is_active', 'paid_until', 'exchange_open'})
+        self.assertFalse(row['exchange_open'])
+        self.assertEqual(row['paid_until'], '2030-01-01')
+
+    def test_tenants_list_requires_secret(self):
+        request = RequestFactory().get('/api/v1/internal/tenants/', REMOTE_ADDR='127.0.0.1',
+                                       HTTP_X_LOYALUP_EXCHANGE_SECRET='wrong')
+        self.assertEqual(InternalTenantsView.as_view()(request).status_code, 401)
+
+    def test_tenants_list_only_internal(self):
+        request = RequestFactory().get('/api/v1/internal/tenants/', REMOTE_ADDR='8.8.8.8',
+                                       HTTP_X_LOYALUP_EXCHANGE_SECRET=SECRET)
+        self.assertEqual(InternalTenantsView.as_view()(request).status_code, 403)

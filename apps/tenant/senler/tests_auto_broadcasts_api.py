@@ -609,8 +609,9 @@ class PreviewTest(_AutoBroadcastCase):
         ]
         resp = self._preview()
         self.assertEqual(resp.status_code, 200)
-        for key in ('recipients', 'due_now', 'reason', 'sample_text', 'sample_names'):
+        for key in ('recipients', 'due_now', 'reason', 'sample_text', 'sample_names', 'explanation'):
             self.assertIn(key, resp.data)
+        self.assertIn('Кому:', resp.data['explanation'])
         self.assertEqual(resp.data['count'], 3)
         self.assertEqual(resp.data['by_branch'],
                          [{'branch_id': 1, 'name': 'Точка 1', 'count': 2},
@@ -841,3 +842,38 @@ class TestSendTest(_AutoBroadcastCase):
         resp = self._send()
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data['code'], 'not_subscribed')
+
+
+# ── волна 3: предпросмотр словами (контракт 3в.4) ────────────────────────────
+
+class ExplainPreviewTest(SimpleTestCase):
+
+    def _spec(self, **over):
+        base = dict(label='Не приходил N дней (реактивация)', dedup='year', default_delay_days=None)
+        base.update(over)
+        return SimpleNamespace(**base)
+
+    def test_full_sentence_set(self):
+        from apps.tenant.senler.api.auto_broadcasts_serializers import explain_preview
+        rule = _rule_mock()
+        rule.event = 'no_visit_days'
+        rule.delay_days = 30
+        rule.active_from = None
+        rule.active_to = None
+        text = explain_preview(rule, self._spec(), False, 'inactive', 12, weekly_cap=3, orchestrator=True)
+        for piece in ('Событие «Не приходил N дней (реактивация)», задержка 30 дн.', 'Кому: точки: 1',
+                      'не чаще раза в год', 'не больше 3 авто-сообщений', 'RF-оркестратор',
+                      'с 9:00 до 21:00 по МСК', 'Правило выключено', '12 получателям'):
+            with self.subTest(piece=piece):
+                self.assertIn(piece, text)
+
+    def test_due_now_and_default_delay(self):
+        from apps.tenant.senler.api.auto_broadcasts_serializers import explain_preview
+        rule = _rule_mock()
+        rule.delay_days = None
+        text = explain_preview(rule, self._spec(label='Подарок не забран', dedup='entity', default_delay_days=10),
+                               True, '', 0)
+        self.assertIn('(задержка по умолчанию 10 дн.)', text)
+        self.assertIn('по каждому подарку один раз', text)
+        self.assertIn('Сейчас правило отправило бы 0 получателям', text)
+        self.assertNotIn('Лимит сети', text)

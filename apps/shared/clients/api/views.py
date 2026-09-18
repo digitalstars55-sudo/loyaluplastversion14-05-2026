@@ -8,6 +8,23 @@ from .serializers import TenantDomainResponseSerializer
 from .services import CompanyExpired, CompanyInactive, CompanyNotFound, get_tenant_domain
 
 
+def _is_platform(request) -> bool:
+    """JWT из обмена CheckUp с признаком platform: true (контракт 3в.1)."""
+    token = getattr(request, 'auth', None)
+    if not isinstance(token, str) or not token:
+        return False
+    try:
+        from apps.shared.users.auth import decode_token
+        return decode_token(token).get('platform') is True
+    except Exception:
+        return False
+
+
+def _may_see_platform(request) -> bool:
+    u = request.user
+    return bool(u.is_superuser or getattr(u, 'role', None) == 'superadmin' or _is_platform(request))
+
+
 class CrossTenantOverviewView(APIView):
     """
     GET /api/v1/overview/stats/?period=30d   (или ?start=&end=)
@@ -19,7 +36,7 @@ class CrossTenantOverviewView(APIView):
 
     def get(self, request: Request) -> Response:
         u = request.user
-        is_super = u.is_superuser or getattr(u, 'role', None) == 'superadmin'
+        is_super = _may_see_platform(request)
         if not is_super:
             return Response({'detail': 'Только для суперадмина.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -27,7 +44,13 @@ class CrossTenantOverviewView(APIView):
             get_cross_tenant_overview, parse_overview_period, OVERVIEW_PERIODS,
         )
         start, end, active_period = parse_overview_period(request)
-        data = get_cross_tenant_overview(start, end)
+        # Расчёт идёт по всем схемам — кэш 5 минут на период (контракт 3в.3).
+        from django.core.cache import cache
+        cache_key = f'overview:stats:{start.isoformat()}:{end.isoformat()}'
+        data = cache.get(cache_key)
+        if data is None:
+            data = get_cross_tenant_overview(start, end)
+            cache.set(cache_key, data, 300)
         return Response({
             'period': active_period,
             'start': start.isoformat(),
@@ -51,7 +74,7 @@ class CrossTenantReviewsView(APIView):
 
     def get(self, request: Request) -> Response:
         u = request.user
-        if not (u.is_superuser or getattr(u, 'role', None) == 'superadmin'):
+        if not _may_see_platform(request):
             return Response({'detail': 'Только для суперадмина.'}, status=status.HTTP_403_FORBIDDEN)
 
         from django.core.paginator import Paginator
@@ -62,11 +85,12 @@ class CrossTenantReviewsView(APIView):
         sentiment = request.GET.get('sentiment', 'all')
         if sentiment not in dict(SENTIMENT_FILTERS):
             sentiment = 'all'
-        reviews = get_cross_tenant_reviews(start, end, sentiment)
+        schema = (request.GET.get('schema') or '').strip().lower() or None   # одна сеть (3в.3)
+        reviews = get_cross_tenant_reviews(start, end, sentiment, schema=schema)
         paginator = Paginator(reviews, 30)
         page_obj = paginator.get_page(request.GET.get('page'))
         return Response({
-            'period': active_period, 'sentiment': sentiment,
+            'period': active_period, 'sentiment': sentiment, 'schema': schema,
             'start': start.isoformat(), 'end': end.isoformat(),
             'total': paginator.count, 'page': page_obj.number, 'num_pages': paginator.num_pages,
             'results': [

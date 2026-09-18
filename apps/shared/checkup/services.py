@@ -96,6 +96,49 @@ def allowed_tenants() -> list[str]:
     return [s.strip().lower() for s in raw if s and s.strip()]
 
 
+def platform_admins() -> set[str]:
+    """checkup_user_id с платформенным доступом (CHECKUP_PLATFORM_ADMINS, через запятую)."""
+    raw = getattr(settings, 'CHECKUP_PLATFORM_ADMINS', None) or ''
+    items = raw if isinstance(raw, (list, tuple)) else str(raw).split(',')
+    return {str(x).strip() for x in items if str(x).strip()}
+
+
+def is_platform_admin(checkup_user_id) -> bool:
+    return str(checkup_user_id).strip() in platform_admins()
+
+
+def tenant_open(schema: str) -> bool:
+    """Открыта ли сеть обычным пользователям CheckUp (список пуст = все)."""
+    allowed = allowed_tenants()
+    return not allowed or schema in allowed
+
+
+def list_platform_tenants() -> list[dict]:
+    """
+    GET /api/v1/internal/tenants/ (контракт 3в.2): живые сети платформы для
+    переключателя платформенного пользователя. Без секретов и настроек.
+    """
+    Tenant = get_tenant_model()
+    allowed = allowed_tenants()
+    out = []
+    qs = (Tenant.objects.exclude(schema_name='public').filter(is_active=True)
+          .prefetch_related('domains').order_by('name'))
+    for t in qs:
+        domains = list(t.domains.all())
+        primary = next((d for d in domains if d.is_primary), None) or (domains[0] if domains else None)
+        paid_until = getattr(t, 'paid_until', None)
+        out.append({
+            'schema': t.schema_name,
+            'name': t.name,
+            'client_id': getattr(t, 'client_id', None),
+            'domain': primary.domain if primary else '',
+            'is_active': bool(t.is_active),
+            'paid_until': paid_until.isoformat() if paid_until else None,
+            'exchange_open': not allowed or t.schema_name in allowed,
+        })
+    return out
+
+
 def token_minutes() -> int:
     try:
         minutes = int(getattr(settings, 'CHECKUP_TOKEN_EXCHANGE_MINUTES', DEFAULT_TOKEN_MINUTES) or DEFAULT_TOKEN_MINUTES)
@@ -171,15 +214,17 @@ def validate_payload(data) -> dict:
 
 # ── разрешение сети и точек ──────────────────────────────────────────────────
 
-def resolve_tenant(schema: str):
+def resolve_tenant(schema: str, platform: bool = False):
     Tenant = get_tenant_model()
     tenant = Tenant.objects.filter(schema_name=schema).first()
     if tenant is None:
         raise ExchangeError(404, 'tenant_not_found', f'сети {schema} нет')
     if not tenant.is_active:
         raise ExchangeError(404, 'tenant_inactive', f'сеть {schema} выключена')
+    # Платформенный пользователь (белый список) видит любую живую сеть — как
+    # суперадминка LoyalUP; остальным — только открытые (контракт 3в.1).
     allowed = allowed_tenants()
-    if allowed and schema not in allowed:
+    if not platform and allowed and schema not in allowed:
         raise ExchangeError(403, 'tenant_not_allowed', f'обмен для сети {schema} ещё не включён')
     return tenant
 
@@ -222,7 +267,7 @@ def username_for(checkup_user_id: str, schema: str) -> str:
 
 # ── токен ────────────────────────────────────────────────────────────────────
 
-def issue_exchange_token(user, schema: str) -> tuple[str, datetime.datetime]:
+def issue_exchange_token(user, schema: str, platform: bool = False) -> tuple[str, datetime.datetime]:
     """
     Тот же формат, что access-токен мобилки (его принимает JWTAuthentication),
     но живёт token_minutes() и помечен via=checkup / tenant=<schema>.
@@ -241,6 +286,8 @@ def issue_exchange_token(user, schema: str) -> tuple[str, datetime.datetime]:
         'via': 'checkup',
         'tenant': schema,
     }
+    if platform:
+        payload['platform'] = True   # сводная по всем клиентам (контракт 3в.3)
     return jwt.encode(payload, _jwt_secret(), algorithm=JWT_ALGORITHM), expires_at
 
 
@@ -253,7 +300,8 @@ def perform_exchange(data) -> dict:
     Всё, что не так, — ExchangeError со статусом для ответа.
     """
     p = validate_payload(data)
-    tenant = resolve_tenant(p['tenant_schema'])
+    platform = is_platform_admin(p['checkup_user_id'])
+    tenant = resolve_tenant(p['tenant_schema'], platform=platform)
     schema = p['tenant_schema']
     branch_pks = resolve_branch_pks(schema, p['branch_ids']) if p['role'] == ROLE_CLIENT else None
 
@@ -303,9 +351,10 @@ def perform_exchange(data) -> dict:
         identity.last_exchanged_at = timezone.now()
         identity.save()
 
-    token, expires_at = issue_exchange_token(user, schema)
-    log.info('exchange: %s checkup=%s tenant=%s role=%s branches=%s',
-             'создан' if created else 'обновлён', p['checkup_user_id'], schema, p['role'], p['branch_ids'])
+    token, expires_at = issue_exchange_token(user, schema, platform=platform)
+    log.info('exchange: %s checkup=%s tenant=%s role=%s branches=%s platform=%s',
+             'создан' if created else 'обновлён', p['checkup_user_id'], schema, p['role'], p['branch_ids'], platform)
     return {'user': user, 'identity': identity, 'tenant': tenant,
             'token': token, 'expires_at': expires_at, 'created': created,
-            'branches': branches_payload(p['branch_ids'], branch_pks)}
+            'branches': branches_payload(p['branch_ids'], branch_pks),
+            'platform': platform, 'tenant_open': tenant_open(schema)}

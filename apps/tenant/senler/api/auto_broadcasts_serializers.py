@@ -314,3 +314,60 @@ def log_row_to_dict(recipient) -> dict:
         'read_at': iso(recipient.read_at),
         'error':   recipient.error or '',
     }
+
+
+# ── Предпросмотр словами (контракт 3в.4, для маркетолога) ────────────────────
+
+DEDUP_TEXT = {
+    'year':   'каждому гостю не чаще раза в год',
+    'day':    'каждому гостю не чаще раза в день',
+    'entity': 'по каждому подарку один раз',
+}
+REASON_TEXT = {
+    'inactive':            'Правило выключено — после включения',
+    'not_started':         'Период ещё не начался — с его начала',
+    'finished':            'Период закончился — сейчас не отправит; если продлить период',
+    'outside_send_window': 'Сейчас вне окна отправки — в ближайшее окно',
+}
+
+
+def explain_preview(rule, spec, due: bool, reason: str, count: int,
+                    weekly_cap: int = 0, orchestrator: bool = False) -> str:
+    """
+    «Кто получит и почему» — 3–5 предложений для человека без админки:
+    событие и задержка словами, кому, повторы (дедуп), лимиты сети, окно, и
+    что будет сейчас. Цифр отсева нет — движок их не выдаёт.
+    """
+    label = (getattr(spec, 'label', '') or getattr(rule, 'event', '') or '').strip()
+    delay = getattr(rule, 'delay_days', None)
+    default_delay = getattr(spec, 'default_delay_days', None)
+    if delay is not None:
+        event_part = f'Событие «{label}», задержка {int(delay)} дн.'
+    elif default_delay is not None:
+        event_part = f'Событие «{label}» (задержка по умолчанию {int(default_delay)} дн.)'
+    else:
+        event_part = f'Событие «{label}».'
+    branch_ids = [int(b.pk) for b in rule.branches.all()] if hasattr(rule, 'branches') else []
+    segments = [{'code': getattr(sg, 'code', ''), 'name': getattr(sg, 'name', '')}
+                for sg in (rule.rf_segments.all() if hasattr(rule, 'rf_segments') else [])]
+    who = audience_summary(branch_ids, getattr(rule, 'gender_filter', 'all'), segments)
+    parts = [event_part, f'Кому: {who}.']
+    dedup = DEDUP_TEXT.get(getattr(spec, 'dedup', ''), '')
+    if dedup:
+        parts.append(f'Повторы: {dedup}.')
+    if weekly_cap:
+        parts.append(f'Лимит сети: не больше {int(weekly_cap)} авто-сообщений гостю за 7 дней (дни рождения не считаются).')
+    if orchestrator:
+        parts.append('RF-оркестратор: не чаще одного RF-события гостю за 72 часа и не рядом с днём рождения.')
+    start, end = getattr(rule, 'send_hour_start', 9), getattr(rule, 'send_hour_end', 21)
+    window = f'Отправка с {int(start)}:00 до {int(end)}:00 по МСК'
+    a_from, a_to = getattr(rule, 'active_from', None), getattr(rule, 'active_to', None)
+    if a_from or a_to:
+        window += f', период {iso(a_from) or "…"} — {iso(a_to) or "…"}'
+    parts.append(window + '.')
+    if due:
+        parts.append(f'Сейчас правило отправило бы {int(count)} получателям.')
+    else:
+        prefix = REASON_TEXT.get(reason or '', 'Сейчас не отправит; когда сработает')
+        parts.append(f'{prefix} — {int(count)} получателям.')
+    return ' '.join(parts)

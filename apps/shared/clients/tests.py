@@ -562,3 +562,35 @@ class BeatTenantsQuerysetTest(TestCase):
         self.assertIn('is_active', where)
         self.assertIn('paid_until', where)
         self.assertIn('public', where)
+
+
+# ── волна 3: сводная под платформенным JWT (контракт 3в.3) ───────────────────
+
+from types import SimpleNamespace as _NS  # noqa: E402
+from unittest import mock as _mock  # noqa: E402
+from django.test import SimpleTestCase as _SimpleTestCase, override_settings as _override  # noqa: E402
+
+
+class PlatformGateTest(_SimpleTestCase):
+
+    def _request(self, token, superuser=False, role='client'):
+        return _NS(auth=token, user=_NS(is_superuser=superuser, role=role))
+
+    @_override(CHECKUP_TOKEN_EXCHANGE_MINUTES=60)
+    def test_platform_token_passes_gate(self):
+        from apps.shared.checkup.services import issue_exchange_token
+        from apps.shared.clients.api.views import _is_platform, _may_see_platform
+        fake = _mock.Mock(pk=5, username='checkup-1-dev', role='network_admin')
+        platform_token, _ = issue_exchange_token(fake, 'dev', platform=True)
+        plain_token, _ = issue_exchange_token(fake, 'dev')
+        self.assertTrue(_is_platform(self._request(platform_token)))
+        self.assertFalse(_is_platform(self._request(plain_token)))
+        self.assertTrue(_may_see_platform(self._request(platform_token)))
+        self.assertFalse(_may_see_platform(self._request(plain_token)))
+        self.assertTrue(_may_see_platform(self._request(plain_token, superuser=True)))
+        self.assertTrue(_may_see_platform(self._request(plain_token, role='superadmin')))
+
+    def test_garbage_token_is_not_platform(self):
+        from apps.shared.clients.api.views import _is_platform
+        self.assertFalse(_is_platform(self._request('not-a-jwt')))
+        self.assertFalse(_is_platform(self._request(None)))

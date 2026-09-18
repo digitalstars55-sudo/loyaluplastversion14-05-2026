@@ -375,7 +375,7 @@ CheckUp принял 3б.1–3б.7 и прислал 11 блокеров и 26 �
 Новая роль не вводится. У LoyalUP появляется белый список `CHECKUP_PLATFORM_ADMINS` (env, `checkup_user_id` через запятую; владелец = `1`, Антон — по его id). Для этих id обмен (2.1):
 - принимает **любую живую сеть** (`Company.is_active`), независимо от `CHECKUP_TOKEN_EXCHANGE_TENANTS` — то есть и сети, которые ещё не переехали (оговорка владельцу передана: это те же права, что у суперадминки LoyalUP);
 - роль по-прежнему присылает CheckUp (`network_admin`; `client` с `branch_ids` тоже допустим), личность на пару `(id, сеть)` как сейчас — `checkup-<id>-<schema>`;
-- в JWT добавляется признак `platform: true`, в ответ обмена — поле `platform: true`.
+- в JWT добавляется признак `platform: true`, в ответ обмена — поля `platform: bool` и `tenant_open: bool` (сеть в списке открытых обычным пользователям; `false` = плашка «сеть ещё не переехала»).
 Для всех остальных id — как раньше: `403 tenant_not_allowed` вне списка открытых сетей. Белый список меняет только владелец (env + пересоздание web), через API не читается и не пишется.
 
 ### 3в.2. Список сетей платформы
@@ -384,7 +384,7 @@ CheckUp принял 3б.1–3б.7 и прислал 11 блокеров и 26 �
 |---|---|---|
 | `GET /api/v1/internal/tenants/` | `Host: levelupapp.ru`, `X-LoyalUP-Exchange-Secret`, только с внутреннего адреса (правило 2.1) | `{tenants: [{schema, name, client_id, domain, is_active, paid_until, exchange_open}]}` — только живые сети; `domain` — основной домен (`<schema>.levelupapp.ru`); `exchange_open` = сеть в `CHECKUP_TOKEN_EXCHANGE_TENANTS` (или список пуст); секретов интеграций и настроек нет · `401 bad_secret` · `403 not_internal` |
 
-Переключатель сетей в CheckUp: для платформенного пользователя — весь список; для остальных — как сейчас, по `LoyalupTenantMap` организации.
+Переключатель сетей в CheckUp: для платформенного пользователя — весь список; для остальных — как сейчас, по `LoyalupTenantMap` организации. Точки сети, которой нет в `LoyalupBranchMap`, CheckUp берёт через обмен на эту сеть + `GET /api/v1/mobile/branches/` (там `id`, публичный `branch_id`, название) — отдельной ручки точек в списке сетей нет.
 
 ### 3в.3. Сводная по всем клиентам (№35, №34) и отзывы всех клиентов (№36)
 
@@ -393,7 +393,7 @@ CheckUp принял 3б.1–3б.7 и прислал 11 блокеров и 26 �
 | Ручка | Запрос | Ответ |
 |---|---|---|
 | `GET /api/v1/overview/stats/?period=today\|yesterday\|7d\|30d\|…\|all` или `?start&end` | платформенный JWT | `{period, start, end, period_choices: [{code, label}], client_count, totals: {total_scans, new_community, new_newsletter, stories, reviews, qr_scans, pos_guests, …}, rows: [{name, schema, client_id, domain, logo, total_scans, new_community, new_newsletter, stories, reviews, scan_index, qr_scans, pos_guests, gift_cost, service_cost, total_cost, gift_breakdown: [{name, qty, total}], gift_breakdown_title, no_cost_products, sub_contacts, unique_digitized, cost_per_contact, cost_per_unique, ok}], feed: [...]}` — экономика клиента (№34: себестоимость подарков, стоимость обслуживания, цена контакта/уникального) внутри строк; CSV-выгрузка и «синхронизировать себестоимость» остаются админке · обычный JWT → `403 {detail}` |
-| `GET /api/v1/overview/reviews/?period=&sentiment=all\|…&page=` | платформенный JWT; страница = 30 | `{period, sentiment, start, end, total, page, num_pages, results: [{client, schema, client_id, logo, domain, conversation_id, text, created_at, sentiment_label, sentiment_class, review_link_yandex, review_link_2gis, …}]}` — в строку добавляются `schema` и `client_id` (для перехода в сеть) |
+| `GET /api/v1/overview/reviews/?period=&sentiment=all\|…&schema=&page=` | платформенный JWT; страница = 30; `schema` — одна сеть | `{period, sentiment, start, end, total, page, num_pages, results: [{client, schema, client_id, logo, domain, conversation_id, text, created_at, sentiment_label, sentiment_class, review_link_yandex, review_link_2gis, …}]}` — в строку добавляются `schema`, `client_id`, `branch_id` (внутренний id точки отзыва) и `branch_name` (для перехода в карточку `/loyalty/reviews/{conversation_id}` с сетью); в ответе — `schema` фильтра |
 | Ответ на чужой отзыв | обмен на сеть отзыва (`tenant_schema = row.schema`, платформенный id может обменять любую сеть) → `POST /api/v1/mobile/reviews/{conversation_id}/reply/` на `Host: <schema>.levelupapp.ru` | как в разделе 3 (№1); новых пишущих ручек нет |
 
 Сводная считается по всем схемам и тяжёлая: LoyalUP кэширует ответ по периоду на 5 минут; CheckUp не дёргает её чаще раза в минуту и не строит на ней автообновление.
@@ -410,7 +410,7 @@ CheckUp принял 3б.1–3б.7 и прислал 11 блокеров и 26 �
 | `GET /api/v1/internal/tenants/` | 0,5 дня |
 | Гейт сводной и ленты по `platform: true`, `schema`/`client_id` в строках отзывов, кэш 5 минут, тесты | 1 день |
 | `preview.explanation` у авторассылок | 0,5 дня |
-| **Итого волна 3 (первый срез)** | **≈ 3 дня** |
+| **Итого волна 3 (первый срез)** | **≈ 3 дня** — **сделано 19.09** (код в main, ждёт выкладки: `CHECKUP_PLATFORM_ADMINS=1` в env + пересоздание web; миграций нет) |
 
 «Никогда» (дополнение к разделу 4): платформенный JWT в браузер не отдаётся (как любой); белый список не расширяется по просьбе из CheckUp — только владельцем; сводную не звать по расписанию.
 

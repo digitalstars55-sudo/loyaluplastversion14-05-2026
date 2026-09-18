@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import include, path
+
+from apps.shared.checkup.views import InternalTenantsView
 from django.views.generic import TemplateView
 
 from drf_spectacular.views import SpectacularAPIView
@@ -29,6 +31,7 @@ urlpatterns = [
     path('api/v1/internal/support/', include('apps.shared.relay.urls')),
     # Обмен токена CheckUp → LoyalUP (контракт платформы 2.1): тот же контур, что релей.
     path('api/v1/internal/auth/', include('apps.shared.checkup.urls')),
+    path('api/v1/internal/tenants/', InternalTenantsView.as_view(), name='checkup-internal-tenants'),  # сети платформы (контракт 3в.2)
     # Вердикт по жалобе CheckUp → LoyalUP (контракт 5.2): на публичном хосте сеть — в теле.
     path('api/v1/internal/complaints/', include('apps.shared.relay.complaints_urls')),
 

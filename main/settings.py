@@ -423,6 +423,10 @@ CHECKUP_TOKEN_EXCHANGE_TENANTS = [
 ]
 # Сколько живёт JWT из обмена (refresh не выдаётся — BFF меняет заново).
 CHECKUP_TOKEN_EXCHANGE_MINUTES = int(os.getenv("CHECKUP_TOKEN_EXCHANGE_MINUTES", "60") or 60)
+# Платформенный доступ (контракт 3в.1): checkup_user_id через запятую (владелец = 1).
+# Для них обмен принимает ЛЮБУЮ живую сеть независимо от CHECKUP_TOKEN_EXCHANGE_TENANTS
+# и ставит platform: true в JWT (сводная по всем клиентам). Меняет только владелец.
+CHECKUP_PLATFORM_ADMINS = os.getenv("CHECKUP_PLATFORM_ADMINS", "")
 
 # Мониторинг платформы (apps.shared.monitoring): сертификаты, домены, оплата
 # сетей, callback ВК, доступность входа. Выключен, пока не задано

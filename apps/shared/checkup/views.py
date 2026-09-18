@@ -20,7 +20,9 @@ from django.views.decorators.csrf import csrf_exempt
 # (docker-мост 172.x), без X-Forwarded-For. Через публичный nginx сюда не попасть.
 from apps.shared.relay.views import _is_internal_request
 
-from .services import ExchangeError, exchange_enabled, perform_exchange, secret_matches
+from .services import (
+    ExchangeError, exchange_enabled, list_platform_tenants, perform_exchange, secret_matches,
+)
 
 log = logging.getLogger(__name__)
 
@@ -82,5 +84,30 @@ class TokenExchangeView(View):
             # Пары «публичный branch_id → внутренний id» точек сотрудника;
             # null у network_admin = все точки сети (см. branches_payload).
             'branches': result['branches'],
+            # Контракт 3в.1: платформенный доступ и «сеть ещё не переехала».
+            'platform': result['platform'],
+            'tenant_open': result['tenant_open'],
             'profile': profile,
         })
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class InternalTenantsView(View):
+    """
+    GET /api/v1/internal/tenants/ — живые сети платформы (контракт 3в.2).
+
+    Те же три проверки, что у обмена: внутренний адрес → включено → секрет.
+    Нужна переключателю сетей платформенного пользователя CheckUp; секретов
+    интеграций и настроек не отдаёт.
+    """
+    http_method_names = ['get']
+
+    def get(self, request):
+        if not _is_internal_request(request):
+            return JsonResponse({'code': 'forbidden', 'detail': 'только с внутреннего адреса сервера'}, status=403)
+        if not exchange_enabled():
+            return JsonResponse({'code': 'exchange_disabled',
+                                 'detail': 'обмен токена выключен (CHECKUP_TOKEN_EXCHANGE_SECRET пуст)'}, status=503)
+        if not secret_matches(request.headers.get(SECRET_HEADER, '')):
+            return JsonResponse({'code': 'bad_secret', 'detail': f'неверный {SECRET_HEADER}'}, status=401)
+        return JsonResponse({'tenants': list_platform_tenants()})

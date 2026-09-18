@@ -365,7 +365,8 @@ def get_cross_tenant_overview(start: date, end: date) -> dict:
     return {'rows': rows, 'totals': totals, 'client_count': len(rows), 'feed': feed}
 
 
-def get_cross_tenant_reviews(start: date, end: date, sentiment_filter: str = 'all') -> list:
+def get_cross_tenant_reviews(start: date, end: date, sentiment_filter: str = 'all',
+                             schema: str | None = None) -> list:
     """
     ПОЛНЫЙ список отзывов со всех клиентов за период (для страницы «Все отзывы»),
     отфильтрованный по типу тональности, новые сверху. Сразу по всем клиентам.
@@ -382,6 +383,8 @@ def get_cross_tenant_reviews(start: date, end: date, sentiment_filter: str = 'al
         .prefetch_related('domains')
         .order_by('name')
     )
+    if schema:
+        companies = companies.filter(schema_name=schema)
     sents = _sentiment_in(sentiment_filter)
     out = []
     for c in companies:
@@ -405,8 +408,13 @@ def get_cross_tenant_reviews(start: date, end: date, sentiment_filter: str = 'al
                     if not (m.text or '').strip():
                         continue
                     meta = _SENTIMENT_FEED.get(m.conversation.sentiment, ('Без оценки', 'neu'))
+                    conv = m.conversation
                     out.append({
                         'client': c.name, 'logo': logo, 'domain': domain,
+                        # Сеть и точка отзыва — для перехода в карточку из сводной (3в.3).
+                        'schema': c.schema_name, 'client_id': c.client_id,
+                        'branch_id': conv.branch_id,
+                        'branch_name': (conv.branch.name if conv.branch_id else ''),
                         'conversation_id': m.conversation_id, 'text': m.text.strip(),
                         'created_at': m.created_at, 'rating': m.rating,
                         'sentiment_label': meta[0], 'sentiment_class': meta[1],

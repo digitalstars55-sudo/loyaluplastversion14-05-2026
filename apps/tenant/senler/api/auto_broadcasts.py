@@ -66,7 +66,7 @@ from apps.tenant.senler.services import send_vk_message
 from . import auto_broadcasts_schema as api_schema  # только OpenAPI, на поведение не влияет
 from .auto_broadcasts_serializers import (
     DELAY_REQUIRED_EVENTS, EMPTY_STATS, GIFT_TIER_CODES, MAX_NAME_LEN, MAX_TEXT_LEN, MAX_VARIANT_NAME_LEN,
-    event_to_dict, gift_tiers, log_row_to_dict, rule_to_dict, variant_to_dict,
+    event_to_dict, explain_preview, gift_tiers, log_row_to_dict, rule_to_dict, variant_to_dict,
 )
 from .guard import audience_changed
 
@@ -812,12 +812,24 @@ class AutoBroadcastRulePreviewAPIView(APIView):
                 'count':        len(candidates),
                 'by_branch':    _by_branch(candidates),
                 'sample_texts': _sample_texts(rule, candidates),
+                'explanation':  _explanation(rule, due, reason, len(candidates)),
             }
         except Exception as exc:
             logger.warning('auto-broadcast preview failed rule=%s: %s', pk, exc)
             return _error('preview_failed', f'Не удалось посчитать: {exc}',
                           http_status.HTTP_409_CONFLICT)
         return Response(data)
+
+
+def _explanation(rule, due: bool, reason: str, count: int) -> str:
+    """Текст «кто получит и почему» (контракт 3в.4); лимиты сети — из движка, ошибки не валят preview."""
+    try:
+        from apps.tenant.senler import engine as _engine
+        cap = int(_engine._weekly_cap() or 0)
+        orchestrator = bool(_engine._orchestrator_enabled())
+    except Exception:
+        cap, orchestrator = 0, False
+    return explain_preview(rule, _events().get(rule.event), due, reason, count, cap, orchestrator)
 
 
 def _candidate_name(candidate) -> str:
