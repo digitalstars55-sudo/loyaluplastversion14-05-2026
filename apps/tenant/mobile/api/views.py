@@ -2225,6 +2225,41 @@ def _serialize_category(c) -> dict:
     }
 
 
+# ── Права по точкам у каталога, квестов и акций (контракт 3б.7, м34) ──────────
+#
+# Сотрудник, ограниченный точками, до 18.09.2026 видел и правил каталог,
+# квесты и акции ВСЕЙ сети: RBAC применялся в аналитике и отзывах, а эти
+# восемь вьюх его не спрашивали. Правило контракта:
+#   • акции и квесты — только свои точки (чужая точка → 404, существование не
+#     раскрываем, как в остальных ручках кабинета);
+#   • каталог и категории — сетевые сущности: читать можно всё, а запись
+#     ограниченному сотруднику запрещена (403 role_not_allowed).
+# Для НЕограниченного пользователя (`None`) не меняется ничего.
+
+
+def _branch_limit(request):
+    """Точки сотрудника: `None` — ограничений нет; иначе список внутренних id."""
+    from apps.shared.users.access import current_schema_name, effective_branch_ids
+    return effective_branch_ids(request.user, current_schema_name(), None)
+
+
+def _not_found():
+    return Response({'code': 'not_found', 'detail': 'Не найдено'}, status=404)
+
+
+def _quest_visible(quest, allowed) -> bool:
+    """Квест сетевой по природе: сотруднику он виден, если задействует его точку."""
+    if allowed is None:
+        return True
+    return quest.branch_assignments.filter(branch_id__in=allowed).exists()
+
+
+def _network_write_forbidden():
+    return Response({'code': 'role_not_allowed',
+                     'detail': 'каталог и категории — сетевые: их правит администратор сети'},
+                    status=403)
+
+
 class ProductCategoryListCreateAPIView(APIView):
     """GET /api/v1/catalog/categories/?branch_ids= ; POST same URL."""
     permission_classes = [IsAuthenticated]
@@ -2244,6 +2279,8 @@ class ProductCategoryListCreateAPIView(APIView):
         return Response({'categories': [_serialize_category(c) for c in qs]})
 
     def post(self, request):
+        if _branch_limit(request) is not None:
+            return _network_write_forbidden()
         from apps.tenant.catalog.models import ProductCategory
         from apps.tenant.branch.models import Branch
         try:
@@ -2268,6 +2305,8 @@ class ProductCategoryDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def patch(self, request, pk: int):
+        if _branch_limit(request) is not None:
+            return _network_write_forbidden()
         from apps.tenant.catalog.models import ProductCategory
         c = get_object_or_404(ProductCategory, pk=pk)
         if 'name' in request.data:
@@ -2281,6 +2320,8 @@ class ProductCategoryDetailAPIView(APIView):
         return Response(_serialize_category(c))
 
     def delete(self, request, pk: int):
+        if _branch_limit(request) is not None:
+            return _network_write_forbidden()
         from apps.tenant.catalog.models import ProductCategory
         c = get_object_or_404(ProductCategory, pk=pk)
         c.delete()
@@ -2375,6 +2416,8 @@ class ProductListCreateAPIView(APIView):
         return Response({'products': [_serialize_product(p) for p in qs]})
 
     def post(self, request):
+        if _branch_limit(request) is not None:
+            return _network_write_forbidden()
         from apps.tenant.catalog.models import Product
         d = request.data
         name = (d.get('name') or '').strip()
@@ -2411,6 +2454,8 @@ class ProductDetailAPIView(APIView):
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def patch(self, request, pk: int):
+        if _branch_limit(request) is not None:
+            return _network_write_forbidden()
         from apps.tenant.catalog.models import Product
         p = get_object_or_404(Product, pk=pk)
         d = request.data
@@ -2443,6 +2488,8 @@ class ProductDetailAPIView(APIView):
         return Response(_serialize_product(p))
 
     def delete(self, request, pk: int):
+        if _branch_limit(request) is not None:
+            return _network_write_forbidden()
         from apps.tenant.catalog.models import Product
         p = get_object_or_404(Product, pk=pk)
         p.delete()
@@ -2479,6 +2526,10 @@ class QuestListCreateAPIView(APIView):
         from django.db.models import Count
         from apps.tenant.quest.models import Quest
         qs = Quest.objects.annotate(submits_count=Count('submits')).order_by('ordering', 'name')
+        allowed = _branch_limit(request)
+        if allowed is not None:
+            # Ограниченный сотрудник видит только квесты своих точек.
+            qs = qs.filter(branch_assignments__branch_id__in=allowed).distinct()
         return Response({'quests': [_serialize_quest(q) for q in qs]})
 
     def post(self, request):
@@ -2502,6 +2553,10 @@ class QuestListCreateAPIView(APIView):
                 return Response({'error': 'branch_ids должен быть массивом id'}, status=400)
         elif all_branches:
             branch_ids = list(Branch.objects.filter(is_active=True).values_list('pk', flat=True))
+            allowed_for_all = _branch_limit(request)
+            if allowed_for_all is not None:
+                # «Все точки» у ограниченного сотрудника — это все ЕГО точки.
+                branch_ids = [b for b in branch_ids if b in set(allowed_for_all)]
         elif legacy_id is not None:
             try:
                 branch_ids = [int(legacy_id)]
@@ -2512,6 +2567,11 @@ class QuestListCreateAPIView(APIView):
 
         if not branch_ids:
             return Response({'error': 'нет активных точек'}, status=400)
+
+        allowed = _branch_limit(request)
+        if allowed is not None and set(branch_ids) - {int(b) for b in allowed}:
+            # Чужая точка — 404, существование не раскрываем (правило кабинета).
+            return _not_found()
 
         existing = set(Branch.objects.filter(pk__in=branch_ids).values_list('pk', flat=True))
         missing = [b for b in branch_ids if b not in existing]
@@ -2545,6 +2605,8 @@ class QuestDetailAPIView(APIView):
     def patch(self, request, pk: int):
         from apps.tenant.quest.models import Quest
         q = get_object_or_404(Quest, pk=pk)
+        if not _quest_visible(q, _branch_limit(request)):
+            return _not_found()
         d = request.data
         if 'name' in d:
             q.name = (d['name'] or q.name)[:255]
@@ -2590,6 +2652,8 @@ class QuestDetailAPIView(APIView):
     def delete(self, request, pk: int):
         from apps.tenant.quest.models import Quest
         q = get_object_or_404(Quest, pk=pk)
+        if not _quest_visible(q, _branch_limit(request)):
+            return _not_found()
         q.delete()
         return Response(status=204)
 
@@ -2625,6 +2689,9 @@ class PromotionListCreateAPIView(APIView):
     def get(self, request):
         from apps.tenant.branch.models import Promotions
         qs = Promotions.objects.select_related('branch').order_by('-created_at')
+        allowed = _branch_limit(request)
+        if allowed is not None:
+            qs = qs.filter(branch_id__in=allowed)
         return Response({'promotions': [_serialize_promotion(p) for p in qs]})
 
     def post(self, request):
@@ -2634,6 +2701,10 @@ class PromotionListCreateAPIView(APIView):
             branch_id = int(d.get('branch_id'))
         except (TypeError, ValueError):
             return Response({'error': 'branch_id обязателен'}, status=400)
+        allowed = _branch_limit(request)
+        if allowed is not None and branch_id not in {int(b) for b in allowed}:
+            # Чужая точка — 404, как в остальных ручках кабинета.
+            return _not_found()
         if not Branch.objects.filter(pk=branch_id).exists():
             return Response({'error': 'Точка не найдена'}, status=404)
         title = (d.get('title') or '').strip()
@@ -2662,6 +2733,9 @@ class PromotionDetailAPIView(APIView):
     def patch(self, request, pk: int):
         from apps.tenant.branch.models import Promotions
         p = get_object_or_404(Promotions, pk=pk)
+        allowed = _branch_limit(request)
+        if allowed is not None and p.branch_id not in {int(b) for b in allowed}:
+            return _not_found()
         d = request.data
         if 'title' in d:
             p.title = (d['title'] or p.title)[:100]
@@ -2677,6 +2751,9 @@ class PromotionDetailAPIView(APIView):
     def delete(self, request, pk: int):
         from apps.tenant.branch.models import Promotions
         p = get_object_or_404(Promotions, pk=pk)
+        allowed = _branch_limit(request)
+        if allowed is not None and p.branch_id not in {int(b) for b in allowed}:
+            return _not_found()
         p.delete()
         return Response(status=204)
 
