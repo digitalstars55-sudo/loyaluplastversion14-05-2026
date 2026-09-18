@@ -1,0 +1,26 @@
+{
+ "name": "ab_create_400_event_unknown",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/auto-broadcasts/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "x",
+   "event": "moon_phase",
+   "message_text": "x"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "event_unknown",
+   "detail": "event: неизвестное событие «moon_phase»"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

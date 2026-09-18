@@ -1,0 +1,24 @@
+{
+ "name": "story_network_patch_403_client",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/settings/story/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "story_game_enabled": false
+  }
+ },
+ "response": {
+  "status": 403,
+  "body": {
+   "code": "role_not_allowed",
+   "detail": "менять настройки сети может только администратор сети"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

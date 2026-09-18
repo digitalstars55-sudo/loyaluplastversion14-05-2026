@@ -1,0 +1,22 @@
+{
+ "name": "branch_materials_404_foreign_client",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/mobile/branches/2/materials/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 404,
+  "body": {
+   "code": "not_found",
+   "detail": "Точка не найдена"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

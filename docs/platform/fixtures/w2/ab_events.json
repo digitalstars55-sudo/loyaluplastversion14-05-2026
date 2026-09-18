@@ -1,0 +1,197 @@
+{
+ "name": "ab_events",
+ "note": "single source of placeholders; delay_required only for no_visit_days/subscribed_days",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/auto-broadcasts/events/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "events": [
+    {
+     "code": "birthday_7d",
+     "label": "За 7 дней до дня рождения",
+     "description": "Уходит за 7 дней до дня рождения гостя. Раз в год на гостя.",
+     "dedup": "year",
+     "delay_unit": "days",
+     "default_delay_days": null,
+     "delay_required": false,
+     "placeholders": [
+      "{имя}"
+     ]
+    },
+    {
+     "code": "birthday_1d",
+     "label": "За 1 день до дня рождения",
+     "description": "Уходит за 1 день до дня рождения гостя. Раз в год на гостя.",
+     "dedup": "year",
+     "delay_unit": "days",
+     "default_delay_days": null,
+     "delay_required": false,
+     "placeholders": [
+      "{имя}"
+     ]
+    },
+    {
+     "code": "birthday",
+     "label": "День рождения",
+     "description": "Уходит в день рождения гостя. Раз в год на гостя.",
+     "dedup": "year",
+     "delay_unit": "days",
+     "default_delay_days": null,
+     "delay_required": false,
+     "placeholders": [
+      "{имя}"
+     ]
+    },
+    {
+     "code": "after_game_3h",
+     "label": "Через 3 часа после игры",
+     "description": "Через 3 часа после игры (вечерние игры добираются утром). Раз в сутки на гостя.",
+     "dedup": "day",
+     "delay_unit": "days",
+     "default_delay_days": null,
+     "delay_required": false,
+     "placeholders": [
+      "{имя}",
+      "{адреса}"
+     ]
+    },
+    {
+     "code": "gift_not_claimed",
+     "label": "Подарок из сториз/сайта не забран",
+     "description": "Подарок из сториз/сайта не забран N дней. Одно напоминание на подарок.",
+     "dedup": "entity",
+     "delay_unit": "days",
+     "default_delay_days": 10,
+     "delay_required": false,
+     "placeholders": [
+      "{имя}",
+      "{подарок}",
+      "{дней_осталось}",
+      "{адреса}"
+     ]
+    },
+    {
+     "code": "no_visit_days",
+     "label": "Не приходил N дней (реактивация)",
+     "description": "Гость не приходил N дней — реактивация. Задержка обязательна.",
+     "dedup": "day",
+     "delay_unit": "days",
+     "default_delay_days": null,
+     "delay_required": true,
+     "placeholders": [
+      "{имя}",
+      "{адреса}",
+      "{баланс}"
+     ]
+    },
+    {
+     "code": "subscribed_days",
+     "label": "Подписался N дней назад (welcome)",
+     "description": "Гость подписался N дней назад — welcome. Задержка обязательна.",
+     "dedup": "day",
+     "delay_unit": "days",
+     "default_delay_days": null,
+     "delay_required": true,
+     "placeholders": [
+      "{имя}",
+      "{адреса}",
+      "{баланс}"
+     ]
+    },
+    {
+     "code": "follow_up",
+     "label": "Догоняющее (не отреагировал на другое правило)",
+     "description": "Догоняющее: кому отправило другое правило и кто не отреагировал. Нужен parent_rule_id.",
+     "dedup": "entity",
+     "delay_unit": "days",
+     "default_delay_days": null,
+     "delay_required": false,
+     "placeholders": [
+      "{имя}",
+      "{адреса}",
+      "{баланс}"
+     ]
+    },
+    {
+     "code": "rf_gift_expiring",
+     "label": "RF-подарок скоро сгорит (напоминание)",
+     "description": "RF-подарок сгорает через N дней. Одно напоминание на подарок.",
+     "dedup": "entity",
+     "delay_unit": "days",
+     "default_delay_days": 2,
+     "delay_required": false,
+     "placeholders": [
+      "{имя}",
+      "{подарок}",
+      "{дней_осталось}",
+      "{адреса}",
+      "{баланс}"
+     ]
+    },
+    {
+     "code": "phone_request",
+     "label": "Просьба поделиться номером (через N дней после визита)",
+     "description": "Просьба поделиться номером через N дней после визита. Одно напоминание на гостя.",
+     "dedup": "entity",
+     "delay_unit": "days",
+     "default_delay_days": 1,
+     "delay_required": false,
+     "placeholders": [
+      "{имя}",
+      "{адреса}",
+      "{баланс}",
+      "{награда}"
+     ]
+    }
+   ],
+   "gender_filters": [
+    {
+     "code": "all",
+     "label": "Все"
+    },
+    {
+     "code": "m",
+     "label": "Мужчины"
+    },
+    {
+     "code": "f",
+     "label": "Женщины"
+    }
+   ],
+   "follow_up_conditions": [
+    {
+     "code": "not_read",
+     "label": "Не прочитал сообщение"
+    },
+    {
+     "code": "not_visited",
+     "label": "Не пришёл в кафе после сообщения"
+    }
+   ],
+   "gift_tiers": [
+    {
+     "code": "",
+     "label": "Без подарка"
+    },
+    {
+     "code": "G1",
+     "label": "G1 — обычный подарок"
+    },
+    {
+     "code": "G1,G2",
+     "label": "G1 или G2 — обычный либо средний"
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

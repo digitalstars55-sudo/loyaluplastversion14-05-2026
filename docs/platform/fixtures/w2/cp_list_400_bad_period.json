@@ -1,0 +1,22 @@
+{
+ "name": "cp_list_400_bad_period",
+ "note": "period is a preset string (today|7d|30d|90d|year|all), not days",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/contact-points/?period=30",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "параметры периода: {'period': [ErrorDetail(string='Значения 30 нет среди допустимых вариантов.', code='invalid_choice')]}"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,24 @@
+{
+ "name": "report_print_html",
+ "note": "text/html, self-contained, no <script>; body here is a summary of the HTML",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/report/print/?period=30d",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "_content_type": "text/html; charset=utf-8",
+   "_length": 7733,
+   "_has_script_tag": false,
+   "_head": "<!DOCTYPE html>\n<html lang=\"ru\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Отчёт по системе лояльности · КОНФЕРЕНЦИЯ АВТОСУШИ АВТОПИЦЦА · 20.08.2026 — 18.09.2026</title>\n<style>\n  :root { --brand:#6a1b9a; --lime:#a3e635; --navy:#1a2744; --ink:#1f2937;\n          --tm:#6b7280; --line:#e5e7eb; --soft:#f5ecfb; }\n  * { box-sizing: border-b"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

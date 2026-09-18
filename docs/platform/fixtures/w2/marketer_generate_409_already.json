@@ -1,0 +1,23 @@
+{
+ "name": "marketer_generate_409_already",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/marketer/posts/generate/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {}
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "already_generating",
+   "detail": "генерация уже идёт — черновик появится в ленте в течение минуты",
+   "retry_after": 300
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

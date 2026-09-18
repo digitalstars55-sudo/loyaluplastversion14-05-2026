@@ -1,0 +1,24 @@
+{
+ "name": "ab_patch_400_use_activate",
+ "note": "checkup identity must use activate/",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/auto-broadcasts/2/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "is_active": true
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "use_activate",
+   "detail": "Включать правило можно только через POST …/activate/ с expected_count"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

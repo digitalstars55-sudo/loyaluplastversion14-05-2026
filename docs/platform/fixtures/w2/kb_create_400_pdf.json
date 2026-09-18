@@ -1,0 +1,26 @@
+{
+ "name": "kb_create_400_pdf",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/ai/knowledge/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "_multipart": [
+    "file"
+   ]
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "file: принимаем только .docx и .txt — из других форматов мы не умеем извлекать текст, и ИИ получил бы пустой документ"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,22 @@
+{
+ "name": "cp_guests_400_bad_stage",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/contact-points/1/guests/?stage=visits",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "stage: scan | subscribe | play | activate"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

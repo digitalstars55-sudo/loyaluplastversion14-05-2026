@@ -1,0 +1,51 @@
+{
+ "name": "cp_create_201_other_point",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/contact-points/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "branch_id": 2,
+   "name": "Другая точка (эталон)",
+   "mode": "website"
+  }
+ },
+ "response": {
+  "status": 201,
+  "body": {
+   "id": 3,
+   "name": "Другая точка (эталон)",
+   "branch": {
+    "id": 2,
+    "branch_id": 239014483,
+    "name": "Конференция \"Автосуши Автопицца\""
+   },
+   "mode": "website",
+   "mode_label": "С сайта (сетевой подарок)",
+   "table_number": null,
+   "src": "Uxpa3w99",
+   "url": "https://vk.com/app53418653/#/?company=100&branch=239014483&web=Uxpa3w99&src=Uxpa3w99",
+   "is_active": true,
+   "created_at": "2026-09-18T17:20:00.099145+00:00",
+   "scans": {
+    "d7": 0,
+    "d30": 0,
+    "all": 0
+   },
+   "funnel": {
+    "scans": 0,
+    "guests": 0,
+    "subscribed": 0,
+    "played": 0,
+    "activated": 0,
+    "conversion": 0
+   }
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

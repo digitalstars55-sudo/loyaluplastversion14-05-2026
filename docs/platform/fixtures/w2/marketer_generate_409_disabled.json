@@ -1,0 +1,22 @@
+{
+ "name": "marketer_generate_409_disabled",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/marketer/posts/generate/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {}
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "marketer_disabled",
+   "detail": "AI-маркетолог выключен в настройках"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,38 @@
+{
+ "name": "marketer_post_patch_200",
+ "note": "created_by stays ai",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/marketer/posts/1/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "text": "Эталон: черновик после правки."
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "id": 1,
+   "post_type": "digest",
+   "post_type_label": "Дайджест «Что нового?»",
+   "status": "draft",
+   "status_label": "Черновик",
+   "text": "Эталон: черновик после правки.",
+   "model_used": "stub",
+   "created_by": "ai",
+   "created_by_label": "ИИ",
+   "published_at": null,
+   "vk_post_id": "",
+   "vk_post_url": "",
+   "error": "",
+   "is_editable": true,
+   "created_at": "2026-09-18T17:20:01.465337+00:00",
+   "updated_at": "2026-09-18T17:20:01.519324+00:00"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

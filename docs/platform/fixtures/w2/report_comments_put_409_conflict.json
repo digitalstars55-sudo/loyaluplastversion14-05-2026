@@ -1,0 +1,36 @@
+{
+ "name": "report_comments_put_409_conflict",
+ "note": "stale updated_at -> conflict",
+ "request": {
+  "method": "PUT",
+  "path": "/api/v1/analytics/report/comments/?period=30d",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "comments": [
+    {
+     "section_num": 1,
+     "text": "моя версия",
+     "updated_at": "2026-01-01T00:00:00+00:00"
+    }
+   ]
+  }
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "conflict",
+   "detail": "эти разделы кто-то сохранил раньше вас — перечитайте и повторите",
+   "conflicts": [
+    {
+     "section_num": 1,
+     "updated_at": "2026-09-18T17:20:00.400606+00:00"
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,30 @@
+{
+ "name": "cp_guests_scan",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/contact-points/1/guests/?stage=scan&limit=5",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "total": 0,
+   "limit": 5,
+   "offset": 0,
+   "stage": "scan",
+   "stage_label": "Сканировали",
+   "results": [],
+   "meta": {
+    "start": "2026-08-20",
+    "end": "2026-09-18"
+   }
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

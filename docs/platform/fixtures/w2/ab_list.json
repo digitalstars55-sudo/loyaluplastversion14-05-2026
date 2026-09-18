@@ -1,0 +1,75 @@
+{
+ "name": "ab_list",
+ "note": "key rules (mobile compat) + total/limit/offset",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/auto-broadcasts/?limit=5&offset=0",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "rules": [
+    {
+     "id": 1,
+     "name": "Номер телефона: на следующий день после визита",
+     "event": "phone_request",
+     "event_label": "Просьба поделиться номером (через N дней после визита)",
+     "is_active": true,
+     "is_archived": false,
+     "priority": 0,
+     "delay_days": 1,
+     "default_delay_days": 1,
+     "send_hour_start": 12,
+     "send_hour_end": 15,
+     "active_from": null,
+     "active_to": null,
+     "audience": {
+      "branch_ids": [],
+      "gender_filter": "all",
+      "rf_segments": []
+     },
+     "audience_summary": "все точки",
+     "message_text": "{имя}, привет! Спасибо, что заглянули к нам вчера 💜\n\nОставьте номер телефона — если по заказу или отзыву что-то пойдёт не так, мы сможем быстро с вами связаться. А в благодарность сразу начислим {награда} баллов на вашу карту.\n\nНомер никуда не передаём, рекламу по SMS не шлём, убрать его можно в любой момент в профиле. Нажмите кнопку ниже 👇",
+     "image": null,
+     "reward": {
+      "gift_tier": "",
+      "gift_lifetime_days": 0,
+      "gift_fallback_text": ""
+     },
+     "reward_summary": "без подарка",
+     "follow_up": null,
+     "variants": [],
+     "stats": {
+      "sent": 0,
+      "read": 0,
+      "failed": 0,
+      "open_rate": 0.0,
+      "sent_30d": 0,
+      "last_run_at": null
+     },
+     "created_at": "2026-09-17T07:19:19.474037+00:00",
+     "updated_at": "2026-09-17T07:19:19.474075+00:00",
+     "branches_count": 0,
+     "gender_filter": "all",
+     "segments_count": 0,
+     "sent_total": 0,
+     "sent": 0,
+     "read": 0,
+     "failed": 0,
+     "open_rate": 0.0,
+     "parent_rule_name": null
+    }
+   ],
+   "total": 1,
+   "limit": 5,
+   "offset": 0
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

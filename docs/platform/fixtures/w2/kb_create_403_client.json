@@ -1,0 +1,26 @@
+{
+ "name": "kb_create_403_client",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/ai/knowledge/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "_multipart": [
+    "file"
+   ]
+  }
+ },
+ "response": {
+  "status": 403,
+  "body": {
+   "code": "role_not_allowed",
+   "detail": "загружать документы может только администратор сети"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

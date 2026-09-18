@@ -1,0 +1,71 @@
+{
+ "name": "story_branch_patch_200_zero_inherits",
+ "note": "0 / \"\" = inherit: overrides null, source network",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/mobile/branches/3/story/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "story_min_order_amount": 0,
+   "story_activation_text": ""
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "branch": {
+    "id": 3,
+    "branch_id": 990002,
+    "name": "Песочница CheckUp · Точка 2"
+   },
+   "overrides": {
+    "story_game_enabled": null,
+    "story_min_order_amount": null,
+    "story_cafe_address": null,
+    "story_activation_text": null,
+    "story_saved_text": null
+   },
+   "effective": {
+    "story_game_enabled": false,
+    "story_min_order_amount": 700,
+    "story_activation_minutes": 40,
+    "story_require_cafe_visit": true,
+    "story_cafe_address": "",
+    "story_activation_text": "Чтобы активировать подарок «[название подарка]», приходите в «[название кафе]» (адрес: [адрес кафе]). Сделайте заказ от [сумма] ₽, попросите у сотрудника код дня, отсканируйте QR ЛоялАпп и активируйте подарок здесь, в разделе «Мои подарки». После активации он будет действовать [время] минут.",
+    "story_saved_text": "Подарок «[название подарка]» сохранён в разделе «Мои подарки». Заберите его в кафе!",
+    "story_gift_lifetime_days": 14,
+    "story_gift_reminder_days": 10,
+    "story_campaign_start": null,
+    "story_campaign_end": null
+   },
+   "source": {
+    "story_game_enabled": "branch",
+    "story_min_order_amount": "network",
+    "story_activation_minutes": "network",
+    "story_require_cafe_visit": "network",
+    "story_cafe_address": "default",
+    "story_activation_text": "default",
+    "story_saved_text": "default",
+    "story_gift_lifetime_days": "network",
+    "story_gift_reminder_days": "network",
+    "story_campaign_start": "default",
+    "story_campaign_end": "default"
+   },
+   "prizes": {
+    "count": 0,
+    "pool": [],
+    "first": null,
+    "story_image_url": null
+   },
+   "rendered": {
+    "activation_text": "Чтобы активировать подарок «[название подарка]», приходите в «Песочница CheckUp · Точка 2» (адрес: ). Сделайте заказ от 700 ₽, попросите у сотрудника код дня, отсканируйте QR ЛоялАпп и активируйте подарок здесь, в разделе «Мои подарки». После активации он будет действовать 40 минут.",
+    "saved_text": "Подарок «[название подарка]» сохранён в разделе «Мои подарки». Заберите его в кафе!"
+   }
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

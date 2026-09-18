@@ -1,0 +1,24 @@
+{
+ "name": "ab_patch_409_archived",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/auto-broadcasts/2/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "x"
+  }
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "archived",
+   "detail": "Правило в архиве — восстановите его перед правкой"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

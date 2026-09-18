@@ -1,0 +1,50 @@
+{
+ "name": "ab_stats",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/auto-broadcasts/2/stats/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "sent": 0,
+   "read": 0,
+   "failed": 0,
+   "open_rate": 0.0,
+   "sent_30d": 0,
+   "last_run_at": null,
+   "variants": [
+    {
+     "id": 1,
+     "name": "А",
+     "message_text": "{имя}, давно не виделись!",
+     "weight": 1,
+     "is_active": true,
+     "sent": 0,
+     "read": 0,
+     "failed": 0,
+     "open_rate": 0.0
+    },
+    {
+     "id": 2,
+     "name": "Б",
+     "message_text": "{имя}, ждём вас снова.",
+     "weight": 1,
+     "is_active": true,
+     "sent": 0,
+     "read": 0,
+     "failed": 0,
+     "open_rate": 0.0
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

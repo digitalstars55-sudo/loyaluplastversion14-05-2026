@@ -1,0 +1,41 @@
+{
+ "name": "marketer_settings_get",
+ "note": "vk_wall_token never returned; vk_wall_token_set instead",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/marketer/settings/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "is_enabled": false,
+   "vk_group_id": null,
+   "vk_wall_token_set": false,
+   "autopost_enabled": false,
+   "digest_enabled": true,
+   "digest_weekday": 0,
+   "digest_weekday_label": "Понедельник",
+   "digest_hour": 12,
+   "last_digest_at": null,
+   "brand_voice": "",
+   "extra_facts": "",
+   "editable": [
+    "is_enabled",
+    "vk_group_id",
+    "autopost_enabled",
+    "digest_enabled",
+    "digest_weekday",
+    "digest_hour",
+    "brand_voice",
+    "extra_facts"
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,37 @@
+{
+ "name": "story_network_patch_400_foreign_field",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/settings/story/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "brand_color": "#fff"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "нельзя менять здесь: brand_color",
+   "editable": [
+    "story_game_enabled",
+    "story_min_order_amount",
+    "story_activation_minutes",
+    "story_require_cafe_visit",
+    "story_cafe_address",
+    "story_activation_text",
+    "story_saved_text",
+    "story_gift_lifetime_days",
+    "story_gift_reminder_days",
+    "story_campaign_start",
+    "story_campaign_end"
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

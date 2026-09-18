@@ -1,0 +1,105 @@
+{
+ "name": "report_sections",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/report/sections/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "sections": [
+    {
+     "num": 1,
+     "title": "Ключевые метрики",
+     "metric_keys": [
+      "stats"
+     ]
+    },
+    {
+     "num": 2,
+     "title": "Рост клиентской базы",
+     "metric_keys": [
+      "stats"
+     ]
+    },
+    {
+     "num": 3,
+     "title": "Индекс оцифровки",
+     "metric_keys": [
+      "stats"
+     ]
+    },
+    {
+     "num": 4,
+     "title": "Источники подключения (cafe / доставка)",
+     "metric_keys": [
+      "sources",
+      "stats"
+     ]
+    },
+    {
+     "num": 5,
+     "title": "Вовлечение гостей",
+     "metric_keys": [
+      "stats"
+     ]
+    },
+    {
+     "num": 6,
+     "title": "Коммуникации с гостями",
+     "metric_keys": [
+      "stats"
+     ]
+    },
+    {
+     "num": 7,
+     "title": "Отзывы гостей",
+     "metric_keys": [
+      "reviews"
+     ]
+    },
+    {
+     "num": 8,
+     "title": "RF-матрица",
+     "metric_keys": [
+      "rf_summary",
+      "segment_counts"
+     ]
+    },
+    {
+     "num": 9,
+     "title": "Миграция сегментов",
+     "metric_keys": [
+      "migration"
+     ]
+    },
+    {
+     "num": 10,
+     "title": "Итоговые выводы",
+     "metric_keys": [
+      "stats",
+      "reviews",
+      "rf_summary"
+     ]
+    },
+    {
+     "num": 11,
+     "title": "Рекомендации",
+     "metric_keys": [
+      "stats",
+      "reviews",
+      "migration"
+     ]
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

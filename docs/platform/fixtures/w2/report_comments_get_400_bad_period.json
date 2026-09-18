@@ -1,0 +1,22 @@
+{
+ "name": "report_comments_get_400_bad_period",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/report/comments/?period=30",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "параметры периода: {'period': [ErrorDetail(string='Значения 30 нет среди допустимых вариантов.', code='invalid_choice')]}"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

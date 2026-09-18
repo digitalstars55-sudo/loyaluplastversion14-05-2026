@@ -1,0 +1,24 @@
+{
+ "name": "marketer_settings_patch_403_client",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/marketer/settings/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "brand_voice": "x"
+  }
+ },
+ "response": {
+  "status": 403,
+  "body": {
+   "code": "role_not_allowed",
+   "detail": "менять настройки может только администратор сети"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,35 @@
+{
+ "name": "kb_list_include_archived",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/ai/knowledge/?include_archived=1&limit=5",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "total": 1,
+   "limit": 5,
+   "offset": 0,
+   "documents": [
+    {
+     "id": 1,
+     "title": "Эталон: FAQ (переименован)",
+     "is_active": false,
+     "filename": "faq_etalon.txt",
+     "has_text": true,
+     "char_count": 38,
+     "created_at": "2026-09-18T17:20:02.390047+00:00",
+     "updated_at": "2026-09-18T17:20:02.426745+00:00"
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

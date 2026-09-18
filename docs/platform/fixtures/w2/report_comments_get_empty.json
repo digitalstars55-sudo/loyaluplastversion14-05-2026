@@ -1,0 +1,27 @@
+{
+ "name": "report_comments_get_empty",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/report/comments/?period=30d",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "period_key": "2026-08-20_2026-09-18_all",
+   "comments": [],
+   "meta": {
+    "start": "2026-08-20",
+    "end": "2026-09-18",
+    "branch_ids": []
+   }
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

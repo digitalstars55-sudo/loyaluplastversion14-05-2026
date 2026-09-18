@@ -1,0 +1,43 @@
+{
+ "name": "marketer_posts_list",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/marketer/posts/?limit=5&post_type=digest",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "total": 1,
+   "limit": 5,
+   "offset": 0,
+   "results": [
+    {
+     "id": 1,
+     "post_type": "digest",
+     "post_type_label": "Дайджест «Что нового?»",
+     "status": "draft",
+     "status_label": "Черновик",
+     "text": "Эталон: черновик дайджеста недели.",
+     "model_used": "stub",
+     "created_by": "ai",
+     "created_by_label": "ИИ",
+     "published_at": null,
+     "vk_post_id": "",
+     "vk_post_url": "",
+     "error": "",
+     "is_editable": true,
+     "created_at": "2026-09-18T17:20:01.465337+00:00",
+     "updated_at": "2026-09-18T17:20:01.465356+00:00"
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

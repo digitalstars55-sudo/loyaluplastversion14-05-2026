@@ -1,0 +1,24 @@
+{
+ "name": "ab_test_send",
+ "note": "VK send stubbed; sandbox guest may be absent -> guest_not_found, or no_vk_token",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/auto-broadcasts/2/test-send/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "vk_id": 990000001
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "guest_not_found",
+   "detail": "Гость с таким VK ID не найден в доступных точках"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

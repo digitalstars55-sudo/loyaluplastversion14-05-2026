@@ -1,0 +1,45 @@
+{
+ "name": "marketer_settings_patch_200",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/marketer/settings/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "is_enabled": true,
+   "digest_enabled": true,
+   "brand_voice": "дружелюбно, коротко"
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "is_enabled": true,
+   "vk_group_id": null,
+   "vk_wall_token_set": false,
+   "autopost_enabled": false,
+   "digest_enabled": true,
+   "digest_weekday": 0,
+   "digest_weekday_label": "Понедельник",
+   "digest_hour": 12,
+   "last_digest_at": null,
+   "brand_voice": "дружелюбно, коротко",
+   "extra_facts": "",
+   "editable": [
+    "is_enabled",
+    "vk_group_id",
+    "autopost_enabled",
+    "digest_enabled",
+    "digest_weekday",
+    "digest_hour",
+    "brand_voice",
+    "extra_facts"
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

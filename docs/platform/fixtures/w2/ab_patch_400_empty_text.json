@@ -1,0 +1,24 @@
+{
+ "name": "ab_patch_400_empty_text",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/auto-broadcasts/2/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "message_text": "  "
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "message_text: не может быть пустым"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

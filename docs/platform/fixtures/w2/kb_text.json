@@ -1,0 +1,23 @@
+{
+ "name": "kb_text",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/ai/knowledge/1/text/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "text": "Часы работы: 10–22. Доставка от 800 ₽.",
+   "truncated": false,
+   "char_count": 38
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

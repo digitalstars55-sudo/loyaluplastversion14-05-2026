@@ -1,0 +1,27 @@
+{
+ "name": "cp_create_400_src_rejected",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/contact-points/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "branch_id": 3,
+   "name": "x",
+   "mode": "cafe",
+   "src": "mine"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "src задаёт сервер: метка печатается на QR и менять её нельзя"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

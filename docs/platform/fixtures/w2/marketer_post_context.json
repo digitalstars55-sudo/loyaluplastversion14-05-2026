@@ -1,0 +1,24 @@
+{
+ "name": "marketer_post_context",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/marketer/posts/1/context/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "id": 1,
+   "context": {
+    "week": "эталон"
+   }
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

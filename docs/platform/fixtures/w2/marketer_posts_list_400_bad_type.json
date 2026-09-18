@@ -1,0 +1,22 @@
+{
+ "name": "marketer_posts_list_400_bad_type",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/marketer/posts/?post_type=tweet",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "post_type: digest | insight | promo | custom"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

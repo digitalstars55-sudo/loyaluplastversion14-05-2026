@@ -1,0 +1,31 @@
+{
+ "name": "ab_create_400_delay_required",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/auto-broadcasts/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "x",
+   "event": "no_visit_days",
+   "message_text": "x",
+   "audience": {
+    "branch_ids": [
+     3
+    ]
+   }
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "delay_required",
+   "detail": "delay_days: для события «no_visit_days» задержка обязательна"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

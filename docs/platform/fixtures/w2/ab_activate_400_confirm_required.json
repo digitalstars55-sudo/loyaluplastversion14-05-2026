@@ -1,0 +1,24 @@
+{
+ "name": "ab_activate_400_confirm_required",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/auto-broadcasts/2/activate/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "expected_count": 0
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "confirm_required",
+   "detail": "Нужно подтверждение: confirm=true"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

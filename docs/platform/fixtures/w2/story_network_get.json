@@ -1,0 +1,50 @@
+{
+ "name": "story_network_get",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/settings/story/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "settings": {
+    "story_game_enabled": true,
+    "story_min_order_amount": 600,
+    "story_activation_minutes": 40,
+    "story_require_cafe_visit": true,
+    "story_cafe_address": "",
+    "story_activation_text": "",
+    "story_saved_text": "",
+    "story_gift_lifetime_days": 14,
+    "story_gift_reminder_days": 10,
+    "story_campaign_start": null,
+    "story_campaign_end": null
+   },
+   "placeholders": [
+    "[адрес кафе]",
+    "[сумма]",
+    "[время]",
+    "[название кафе]",
+    "[название подарка]"
+   ],
+   "branch_override_fields": [
+    "story_game_enabled",
+    "story_min_order_amount",
+    "story_cafe_address",
+    "story_activation_text",
+    "story_saved_text"
+   ],
+   "prizes": {
+    "network_count": 0
+   }
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

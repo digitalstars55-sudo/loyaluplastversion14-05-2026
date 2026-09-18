@@ -1,0 +1,24 @@
+{
+ "name": "kb_detail_404",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/ai/knowledge/99999999/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "title": "x"
+  }
+ },
+ "response": {
+  "status": 404,
+  "body": {
+   "code": "not_found",
+   "detail": "Документ не найден"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

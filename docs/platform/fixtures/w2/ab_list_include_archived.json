@@ -1,0 +1,150 @@
+{
+ "name": "ab_list_include_archived",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/auto-broadcasts/?include_archived=1&limit=5",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "rules": [
+    {
+     "id": 2,
+     "name": "Эталон: реактивация 30 дней",
+     "event": "no_visit_days",
+     "event_label": "Не приходил N дней (реактивация)",
+     "is_active": false,
+     "is_archived": true,
+     "priority": 5,
+     "delay_days": 30,
+     "default_delay_days": null,
+     "send_hour_start": 11,
+     "send_hour_end": 20,
+     "active_from": null,
+     "active_to": null,
+     "audience": {
+      "branch_ids": [
+       3
+      ],
+      "gender_filter": "all",
+      "rf_segments": []
+     },
+     "audience_summary": "точки: 1",
+     "message_text": "{имя}, мы соскучились! Баланс: {баланс} баллов.",
+     "image": null,
+     "reward": {
+      "gift_tier": "G1",
+      "gift_lifetime_days": 7,
+      "gift_fallback_text": "Заходите просто так"
+     },
+     "reward_summary": "подарок G1, сгорает через 7 дн., есть запасной текст",
+     "follow_up": null,
+     "variants": [
+      {
+       "id": 1,
+       "name": "А",
+       "message_text": "{имя}, давно не виделись!",
+       "weight": 1,
+       "is_active": true,
+       "sent": 0,
+       "read": 0,
+       "failed": 0,
+       "open_rate": 0.0
+      },
+      {
+       "id": 2,
+       "name": "Б",
+       "message_text": "{имя}, ждём вас снова.",
+       "weight": 1,
+       "is_active": true,
+       "sent": 0,
+       "read": 0,
+       "failed": 0,
+       "open_rate": 0.0
+      }
+     ],
+     "stats": {
+      "sent": 0,
+      "read": 0,
+      "failed": 0,
+      "open_rate": 0.0,
+      "sent_30d": 0,
+      "last_run_at": null
+     },
+     "created_at": "2026-09-18T17:20:01.684338+00:00",
+     "updated_at": "2026-09-18T17:20:02.298991+00:00",
+     "branches_count": 1,
+     "gender_filter": "all",
+     "segments_count": 0,
+     "sent_total": 0,
+     "sent": 0,
+     "read": 0,
+     "failed": 0,
+     "open_rate": 0.0,
+     "parent_rule_name": null
+    },
+    {
+     "id": 1,
+     "name": "Номер телефона: на следующий день после визита",
+     "event": "phone_request",
+     "event_label": "Просьба поделиться номером (через N дней после визита)",
+     "is_active": true,
+     "is_archived": false,
+     "priority": 0,
+     "delay_days": 1,
+     "default_delay_days": 1,
+     "send_hour_start": 12,
+     "send_hour_end": 15,
+     "active_from": null,
+     "active_to": null,
+     "audience": {
+      "branch_ids": [],
+      "gender_filter": "all",
+      "rf_segments": []
+     },
+     "audience_summary": "все точки",
+     "message_text": "{имя}, привет! Спасибо, что заглянули к нам вчера 💜\n\nОставьте номер телефона — если по заказу или отзыву что-то пойдёт не так, мы сможем быстро с вами связаться. А в благодарность сразу начислим {награда} баллов на вашу карту.\n\nНомер никуда не передаём, рекламу по SMS не шлём, убрать его можно в любой момент в профиле. Нажмите кнопку ниже 👇",
+     "image": null,
+     "reward": {
+      "gift_tier": "",
+      "gift_lifetime_days": 0,
+      "gift_fallback_text": ""
+     },
+     "reward_summary": "без подарка",
+     "follow_up": null,
+     "variants": [],
+     "stats": {
+      "sent": 0,
+      "read": 0,
+      "failed": 0,
+      "open_rate": 0.0,
+      "sent_30d": 0,
+      "last_run_at": null
+     },
+     "created_at": "2026-09-17T07:19:19.474037+00:00",
+     "updated_at": "2026-09-17T07:19:19.474075+00:00",
+     "branches_count": 0,
+     "gender_filter": "all",
+     "segments_count": 0,
+     "sent_total": 0,
+     "sent": 0,
+     "read": 0,
+     "failed": 0,
+     "open_rate": 0.0,
+     "parent_rule_name": null
+    }
+   ],
+   "total": 2,
+   "limit": 5,
+   "offset": 0
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,19 @@
+{
+ "name": "ab_delete_204_archive",
+ "note": "",
+ "request": {
+  "method": "DELETE",
+  "path": "/api/v1/auto-broadcasts/2/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 204,
+  "body": null
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

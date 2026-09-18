@@ -1,0 +1,26 @@
+{
+ "name": "ab_create_400_client_needs_branches",
+ "note": "restricted role must pass audience.branch_ids",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/auto-broadcasts/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "name": "x",
+   "event": "birthday",
+   "message_text": "x"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "branch_ids обязательны для роли с ограничением по точкам"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

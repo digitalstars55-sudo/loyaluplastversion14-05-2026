@@ -1,0 +1,106 @@
+{
+ "name": "cp_list_client_scoped",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/contact-points/?limit=5",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "total": 2,
+   "limit": 5,
+   "offset": 0,
+   "results": [
+    {
+     "id": 2,
+     "name": "Стол 7 (эталон)",
+     "branch": {
+      "id": 3,
+      "branch_id": 990002,
+      "name": "Песочница CheckUp · Точка 2"
+     },
+     "mode": "review",
+     "mode_label": "Отзыв со стола",
+     "table_number": 7,
+     "src": "dP-6P1rL",
+     "url": "https://vk.com/app53418653/#/review?company=100&branch=990002&table=7&src=dP-6P1rL",
+     "is_active": true,
+     "created_at": "2026-09-18T17:19:59.895266+00:00",
+     "scans": {
+      "d7": 0,
+      "d30": 0,
+      "all": 0
+     },
+     "funnel": {
+      "scans": 0,
+      "guests": 0,
+      "subscribed": 0,
+      "played": 0,
+      "activated": 0,
+      "conversion": 0
+     }
+    },
+    {
+     "id": 1,
+     "name": "Флаер у кассы (эталон)",
+     "branch": {
+      "id": 3,
+      "branch_id": 990002,
+      "name": "Песочница CheckUp · Точка 2"
+     },
+     "mode": "cafe",
+     "mode_label": "В кафе (на месте)",
+     "table_number": null,
+     "src": "NtkVcQNS",
+     "url": "https://vk.com/app53418653/#/?company=100&branch=990002&src=NtkVcQNS",
+     "is_active": true,
+     "created_at": "2026-09-18T17:19:59.885400+00:00",
+     "scans": {
+      "d7": 0,
+      "d30": 0,
+      "all": 0
+     },
+     "funnel": {
+      "scans": 0,
+      "guests": 0,
+      "subscribed": 0,
+      "played": 0,
+      "activated": 0,
+      "conversion": 0
+     }
+    }
+   ],
+   "totals": {
+    "scans": 0,
+    "guests": 0,
+    "subscribed": 0,
+    "played": 0,
+    "activated": 0,
+    "conversion": 0
+   },
+   "totals_filtered": {
+    "scans": 0,
+    "guests": 0,
+    "subscribed": 0,
+    "played": 0,
+    "activated": 0,
+    "conversion": 0
+   },
+   "meta": {
+    "start": "2026-08-20",
+    "end": "2026-09-18",
+    "branch_ids": [
+     3
+    ]
+   }
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,27 @@
+{
+ "name": "cp_patch_409_has_scans",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/contact-points/1/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "mode": "cafe"
+  }
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "has_scans",
+   "detail": "По этой точке контакта уже есть сканы: режим, точку и стол менять нельзя — напечатанный QR уведёт гостя не туда. Выключите её (is_active=false) и создайте новую.",
+   "fields": [
+    "mode"
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

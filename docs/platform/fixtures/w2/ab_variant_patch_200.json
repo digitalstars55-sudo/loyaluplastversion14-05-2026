@@ -1,0 +1,32 @@
+{
+ "name": "ab_variant_patch_200",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/auto-broadcasts/2/variants/3/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "weight": 3,
+   "is_active": false
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "id": 3,
+   "name": "В",
+   "message_text": "{имя}, третий вариант",
+   "weight": 3,
+   "is_active": false,
+   "sent": 0,
+   "read": 0,
+   "failed": 0,
+   "open_rate": 0.0
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

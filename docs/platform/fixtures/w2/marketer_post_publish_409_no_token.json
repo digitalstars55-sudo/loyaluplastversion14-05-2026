@@ -1,0 +1,24 @@
+{
+ "name": "marketer_post_publish_409_no_token",
+ "note": "sandbox has no wall token -> config checked before publisher",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/marketer/posts/1/publish/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "confirm": true
+  }
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "no_vk_token",
+   "detail": "не задан токен стены (задаётся в админке LoyalUP)"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

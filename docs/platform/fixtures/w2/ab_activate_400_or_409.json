@@ -1,0 +1,25 @@
+{
+ "name": "ab_activate_400_or_409",
+ "note": "sandbox audience is empty -> audience_empty; with recipients -> 200 or 409 audience_changed",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/auto-broadcasts/2/activate/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "expected_count": 0,
+   "confirm": true
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "audience_empty",
+   "detail": "Сейчас правило никому не отправит"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

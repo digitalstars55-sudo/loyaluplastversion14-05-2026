@@ -1,0 +1,25 @@
+{
+ "name": "marketer_post_patch_409_not_editable",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/marketer/posts/1/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "text": "x"
+  }
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "not_editable",
+   "detail": "пост в статусе «Отклонён» — текст менять нельзя",
+   "status": "rejected"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

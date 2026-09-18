@@ -1,0 +1,26 @@
+{
+ "name": "cp_create_404_foreign_branch_client",
+ "note": "client of 990002 cannot create on another point -> 404",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/contact-points/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "branch_id": 2,
+   "name": "x",
+   "mode": "cafe"
+  }
+ },
+ "response": {
+  "status": 404,
+  "body": {
+   "code": "not_found",
+   "detail": "Точка не найдена"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

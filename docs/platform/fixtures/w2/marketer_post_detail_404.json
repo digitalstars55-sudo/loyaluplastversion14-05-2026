@@ -1,0 +1,22 @@
+{
+ "name": "marketer_post_detail_404",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/marketer/posts/99999999/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 404,
+  "body": {
+   "code": "not_found",
+   "detail": "Пост не найден"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

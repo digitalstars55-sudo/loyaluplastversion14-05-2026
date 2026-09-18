@@ -1,0 +1,29 @@
+{
+ "name": "report_comments_generate_200_save",
+ "note": "Claude stubbed while recording",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/analytics/report/comments/generate/?period=30d",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "section_num": 3,
+   "section_title": "Источники гостей",
+   "metrics_json": "{\"from_cafe\": 90, \"from_delivery\": 30}",
+   "draft": "",
+   "save": true
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "text": "Сканов стало больше на треть, подписки растут. Стоит закрепить результат акцией для новых гостей.",
+   "saved": true,
+   "period_key": "2026-08-20_2026-09-18_all"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

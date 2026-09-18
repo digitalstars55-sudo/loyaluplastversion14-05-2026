@@ -1,0 +1,180 @@
+{
+ "name": "report_with_comments",
+ "note": "comments key is additive",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/report/?period=30d",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "stats": {
+    "qr_scans": 3,
+    "cafe_scans": 6,
+    "delivery_scans": 0,
+    "total_scans": 6,
+    "game_reached": 5,
+    "community_subs_cafe": 0,
+    "community_subs_delivery": 0,
+    "community_subs_story": 0,
+    "community_subs_website": 0,
+    "community_subs_other": 0,
+    "newsletter_subs_cafe": 1,
+    "newsletter_subs_delivery": 0,
+    "newsletter_subs_story": 0,
+    "newsletter_subs_website": 0,
+    "newsletter_subs_other": 0,
+    "total_vk_subscribers": 1,
+    "new_group_with_gift": 1,
+    "repeat_game_players": 1,
+    "coin_purchasers": 0,
+    "new_community_subscribers": 0,
+    "new_newsletter_subscribers": 1,
+    "gift_cost_rub": 0.0,
+    "gift_cost_breakdown": [],
+    "unique_digitized_guests": 1,
+    "first_gift_receivers": 2,
+    "gift_activators": 0,
+    "birthday_greetings_sent": 0,
+    "birthday_celebrants": 0,
+    "message_open_rate": 0.0,
+    "message_total_sent": 0,
+    "message_total_read": 0,
+    "message_trackable": 0,
+    "vk_stories_publishers": 1,
+    "stories_referrals": 0,
+    "story_gift_receivers": 0,
+    "story_gift_activators": 0,
+    "story_gift_expired": 0,
+    "website_gift_players": 0,
+    "website_gift_receivers": 0,
+    "website_gift_activators": 0,
+    "website_gift_expired": 0,
+    "pos_guests": 0,
+    "scan_index": 0.0,
+    "pos_data_days": 0,
+    "period_label": "20.08–18.09.2026"
+   },
+   "reviews": {
+    "positive": 6,
+    "negative": 4,
+    "partial": 0,
+    "neutral": 2,
+    "spam": 0,
+    "total": 12
+   },
+   "rf_summary": {
+    "total": 3,
+    "active_r3": 3,
+    "at_risk_r1": 0,
+    "lost_r0": 0
+   },
+   "segment_counts": {
+    "—": 3
+   },
+   "migration": {
+    "promoted": 0,
+    "demoted": 0,
+    "new_users": 0,
+    "lost_users": 0
+   },
+   "sources": {
+    "from_cafe": 6,
+    "from_delivery": 0
+   },
+   "contact_points": [
+    {
+     "id": 1,
+     "name": "Флаер у кассы (переименован)",
+     "branch": "Песочница CheckUp · Точка 2",
+     "mode": "Доставка",
+     "is_active": false,
+     "scans": 1,
+     "guests": 1,
+     "subscribed": 0,
+     "played": 0,
+     "activated": 0,
+     "conversion": 0
+    },
+    {
+     "id": 6,
+     "name": "Отзыв со стола 3",
+     "branch": "Песочница CheckUp · Точка 2",
+     "mode": "Отзыв со стола",
+     "is_active": true,
+     "scans": 0,
+     "guests": 0,
+     "subscribed": 0,
+     "played": 0,
+     "activated": 0,
+     "conversion": 0
+    },
+    {
+     "id": 5,
+     "name": "Отзыв со стола 2",
+     "branch": "Песочница CheckUp · Точка 2",
+     "mode": "Отзыв со стола",
+     "is_active": true,
+     "scans": 0,
+     "guests": 0,
+     "subscribed": 0,
+     "played": 0,
+     "activated": 0,
+     "conversion": 0
+    },
+    {
+     "id": 4,
+     "name": "Отзыв со стола 1",
+     "branch": "Песочница CheckUp · Точка 2",
+     "mode": "Отзыв со стола",
+     "is_active": true,
+     "scans": 0,
+     "guests": 0,
+     "subscribed": 0,
+     "played": 0,
+     "activated": 0,
+     "conversion": 0
+    },
+    {
+     "id": 2,
+     "name": "Стол 7 (эталон)",
+     "branch": "Песочница CheckUp · Точка 2",
+     "mode": "Отзыв со стола",
+     "is_active": true,
+     "scans": 0,
+     "guests": 0,
+     "subscribed": 0,
+     "played": 0,
+     "activated": 0,
+     "conversion": 0
+    }
+   ],
+   "comments": [
+    {
+     "section_num": 1,
+     "section_title": "Ключевые метрики",
+     "text": "Эталон: комментарий к разделу 1",
+     "is_ai": false,
+     "author": "checkup-fx-admin-dev",
+     "updated_at": "2026-09-18T17:20:00.400606+00:00"
+    },
+    {
+     "section_num": 3,
+     "section_title": "Индекс оцифровки",
+     "text": "Сканов стало больше на треть, подписки растут. Стоит закрепить результат акцией для новых гостей.",
+     "is_ai": true,
+     "author": "checkup-fx-admin-dev",
+     "updated_at": "2026-09-18T17:20:01.033119+00:00"
+    }
+   ],
+   "ai_summary": ""
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

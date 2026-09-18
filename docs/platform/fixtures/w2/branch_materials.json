@@ -1,0 +1,74 @@
+{
+ "name": "branch_materials",
+ "note": "links without src (not for print); qr by mode",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/mobile/branches/3/materials/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "branch": {
+    "id": 3,
+    "branch_id": 990002,
+    "name": "Песочница CheckUp · Точка 2"
+   },
+   "links": {
+    "mini_app_vk": "https://vk.com/app53418653/#/?company=100&branch=990002",
+    "delivery": "https://vk.com/app53418653/#/?company=100&branch=990002&delivery=true",
+    "site": null
+   },
+   "qr": {
+    "cafe": [],
+    "delivery": [
+     {
+      "id": 1,
+      "name": "Флаер у кассы (переименован)",
+      "is_active": false,
+      "url": "https://vk.com/app53418653/#/?company=100&branch=990002&delivery=true&src=NtkVcQNS"
+     }
+    ],
+    "delivery_network": [],
+    "website": [],
+    "review": [
+     {
+      "id": 6,
+      "name": "Отзыв со стола 3",
+      "is_active": true,
+      "url": "https://vk.com/app53418653/#/review?company=100&branch=990002&table=3&src=JYgoRGMB",
+      "table_number": 3
+     },
+     {
+      "id": 5,
+      "name": "Отзыв со стола 2",
+      "is_active": true,
+      "url": "https://vk.com/app53418653/#/review?company=100&branch=990002&table=2&src=fwcA4MMD",
+      "table_number": 2
+     },
+     {
+      "id": 4,
+      "name": "Отзыв со стола 1",
+      "is_active": true,
+      "url": "https://vk.com/app53418653/#/review?company=100&branch=990002&table=1&src=s46FbG5Q",
+      "table_number": 1
+     },
+     {
+      "id": 2,
+      "name": "Стол 7 (эталон)",
+      "is_active": true,
+      "url": "https://vk.com/app53418653/#/review?company=100&branch=990002&table=7&src=dP-6P1rL",
+      "table_number": 7
+     }
+    ]
+   },
+   "print_hint": "Для печати берите ссылку из раздела «qr» — в ней есть метка src, по которой считаются сканы и воронка размещения. Ссылки из «links» годятся, чтобы просто переслать гостю: статистику по ним не увидите."
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

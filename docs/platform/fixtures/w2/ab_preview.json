@@ -1,0 +1,40 @@
+{
+ "name": "ab_preview",
+ "note": "count for expected_count; sample_texts per variant",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/auto-broadcasts/2/preview/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "recipients": 0,
+   "due_now": false,
+   "reason": "inactive",
+   "sample_text": "{имя}, мы соскучились! Баланс: {баланс} баллов.",
+   "sample_names": [],
+   "count": 0,
+   "by_branch": [],
+   "sample_texts": [
+    {
+     "variant_id": 1,
+     "name": "А",
+     "text": "{имя}, давно не виделись!"
+    },
+    {
+     "variant_id": 2,
+     "name": "Б",
+     "text": "{имя}, ждём вас снова."
+    }
+   ],
+   "explanation": "Событие «Не приходил N дней (реактивация)», задержка 30 дн. Кому: точки: 1. Повторы: каждому гостю не чаще раза в день. Отправка с 11:00 до 20:00 по МСК. Правило выключено — после включения — 0 получателям."
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

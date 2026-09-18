@@ -1,0 +1,127 @@
+{
+ "name": "settings_features",
+ "note": "read-only whitelist; source network|default",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/settings/features/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "flags": {
+    "story_game_enabled": {
+     "value": true,
+     "source": "network"
+    },
+    "story_min_order_amount": {
+     "value": 700,
+     "source": "network"
+    },
+    "story_activation_minutes": {
+     "value": 40,
+     "source": "default"
+    },
+    "story_require_cafe_visit": {
+     "value": true,
+     "source": "default"
+    },
+    "story_cafe_address": {
+     "value": "",
+     "source": "default"
+    },
+    "story_activation_text": {
+     "value": "",
+     "source": "default"
+    },
+    "story_saved_text": {
+     "value": "",
+     "source": "default"
+    },
+    "story_gift_lifetime_days": {
+     "value": 14,
+     "source": "default"
+    },
+    "story_gift_reminder_days": {
+     "value": 10,
+     "source": "default"
+    },
+    "story_campaign_start": {
+     "value": null,
+     "source": "default"
+    },
+    "story_campaign_end": {
+     "value": null,
+     "source": "default"
+    },
+    "birthday_window_days": {
+     "value": 5,
+     "source": "default"
+    },
+    "auto_broadcast_weekly_cap": {
+     "value": 0,
+     "source": "default"
+    },
+    "rf_orchestrator_enabled": {
+     "value": false,
+     "source": "default"
+    },
+    "vk_catalog_enabled": {
+     "value": false,
+     "source": "default"
+    },
+    "vk_catalog_city": {
+     "value": "",
+     "source": "default"
+    },
+    "vk_review_branch_inference": {
+     "value": false,
+     "source": "default"
+    },
+    "vk_review_branch_inference_hours": {
+     "value": 24,
+     "source": "default"
+    },
+    "web_entry_enabled": {
+     "value": false,
+     "source": "default"
+    },
+    "degrade_enabled": {
+     "value": false,
+     "source": "default"
+    },
+    "guest_phone_enabled": {
+     "value": true,
+     "source": "network"
+    },
+    "guest_phone_reward_coins": {
+     "value": 50,
+     "source": "network"
+    },
+    "code_prompt_message": {
+     "value": "ЧТОБЫ ЗАБРАТЬ МОНЕТЫ, ПОПРОСИТЕ КОД ДНЯ У СОТРУДНИКА",
+     "source": "default"
+    },
+    "quest_show_message": {
+     "value": "У ВАС ЕСТЬ 30 МИНУТ, ЧТОБЫ ВЫПОЛНИТЬ ЗАДАНИЕ И ПОКАЗАТЬ РЕЗУЛЬТАТ СОТРУДНИКУ.",
+     "source": "default"
+    },
+    "brand_color": {
+     "value": "#FF6A1A",
+     "source": "network"
+    },
+    "brand_color_secondary": {
+     "value": "#66b14c",
+     "source": "network"
+    }
+   },
+   "read_only": true
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

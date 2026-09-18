@@ -1,0 +1,24 @@
+{
+ "name": "ab_log",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/auto-broadcasts/2/log/?limit=5",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "total": 0,
+   "limit": 5,
+   "offset": 0,
+   "results": []
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}
