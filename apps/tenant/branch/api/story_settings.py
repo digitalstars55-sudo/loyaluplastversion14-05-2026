@@ -31,6 +31,7 @@
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 
 from django.db import transaction
 from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
@@ -256,22 +257,40 @@ def _network_domain() -> str:
     return domain.domain if domain else ''
 
 
+POOL_LIMIT = 50
+
+
 def _prizes(branch):
-    """Призы точки: сколько их, первый (им подставлен текст) и картинка сториса."""
+    """Призы точки: полный размер пула, первые POOL_LIMIT штук и картинка сториса.
+
+    Порядок — тот же, что видит гость (`story_gifts_for_branch`), поэтому
+    `pool[0]` и есть подарок, которым подставлен `rendered`.
+
+    ⚠️ `story_image` живёт на самой `Branch` (models.py:63), а НЕ на
+    `BranchConfig`: у гостя эта же картинка берётся как
+    `_image_url(branch.story_image)` (branch/api/services.py:632).
+    """
     qs = story_gifts_for_branch(branch)
-    gifts = list(qs[:1])
-    first = gifts[0] if gifts else None
-    image = getattr(getattr(branch, 'config', None), 'story_image', None)
+    pool = [{'id': p.pk, 'name': p.name, 'emoji': getattr(p, 'emoji', '') or '',
+             'price': getattr(p, 'price', 0)} for p in qs[:POOL_LIMIT]]
+    first = None
+    if pool:
+        first = SimpleNamespace(pk=pool[0]['id'], name=pool[0]['name'])
+    image = getattr(branch, 'story_image', None)
     url = None
-    if image:
+    if image and getattr(image, 'name', ''):
         try:
             domain = _network_domain()
+            # Гостю мини-апп отдаёт относительный путь и склеивает его сам;
+            # кабинету CheckUp нужен полный адрес — тот же файл, просто
+            # с доменом сети (★5 ревью).
             url = f'https://{domain}{image.url}' if domain else image.url
         except Exception:  # картинка не повод отдать 500
             url = None
     return {
         'count': qs.count(),
-        'first': ({'id': first.pk, 'name': first.name} if first else None),
+        'pool': pool,
+        'first': ({'id': pool[0]['id'], 'name': pool[0]['name']} if pool else None),
         'story_image_url': url,
     }, first
 

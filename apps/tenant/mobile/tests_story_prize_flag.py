@@ -21,6 +21,7 @@ from apps.tenant.mobile.api import views as V
 def _product(**over):
     values = dict(pk=5, name='Кофе', description='', emoji='', price=0,
                   is_super_prize=False, is_birthday_prize=False, is_story_prize=True,
+                  is_vk_catalog_welcome=False,
                   image=None, created_at=None, updated_at=None)
     values.update(over)
     product = SimpleNamespace(**values)
@@ -33,20 +34,24 @@ def _product(**over):
 
 class StoryPrizeFlagTest(SimpleTestCase):
 
-    def test_serializer_returns_the_flag(self):
-        data = V._serialize_product(_product())
+    def test_serializer_returns_both_flags(self):
+        data = V._serialize_product(_product(is_vk_catalog_welcome=True))
         self.assertIn('is_story_prize', data)
         self.assertTrue(data['is_story_prize'])
+        self.assertTrue(data['is_vk_catalog_welcome'])
 
     def test_flag_is_off_by_default_in_output(self):
         self.assertFalse(V._serialize_product(_product(is_story_prize=False))['is_story_prize'])
 
-    def test_create_accepts_the_flag(self):
+    def test_create_accepts_both_flags(self):
         source = inspect.getsource(V.ProductListCreateAPIView.post)
-        self.assertIn('is_story_prize', source)
-        # Тем же разбором, что у соседних признаков призов.
-        self.assertIn("str(d.get('is_story_prize', '')).lower() in ('1', 'true', 'yes')", source)
+        for flag in ('is_story_prize', 'is_vk_catalog_welcome'):
+            with self.subTest(flag=flag):
+                # Тем же разбором, что у соседних признаков призов.
+                self.assertIn(f"str(d.get('{flag}', '')).lower() in ('1', 'true', 'yes')", source)
 
-    def test_update_accepts_the_flag(self):
+    def test_update_accepts_both_flags(self):
         source = inspect.getsource(V.ProductDetailAPIView.patch)
-        self.assertIn("if 'is_story_prize' in d:", source)
+        for flag in ('is_story_prize', 'is_vk_catalog_welcome'):
+            with self.subTest(flag=flag):
+                self.assertIn(f"if '{flag}' in d:", source)

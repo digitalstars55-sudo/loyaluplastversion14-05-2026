@@ -54,14 +54,15 @@ def _branch_cfg(**over):
         'story_cafe_address': '',
         'story_activation_text': '',
         'story_saved_text': '',
-        'story_image': None,
     }
     values.update(over)
     return SimpleNamespace(**values)
 
 
-def _branch(cfg=None, pk=3, branch_id=202, name='Институтская'):
+def _branch(cfg=None, pk=3, branch_id=202, name='Институтская', story_image=None):
+    # story_image — поле САМОЙ Branch (models.py:63), не BranchConfig.
     return SimpleNamespace(pk=pk, id=pk, branch_id=branch_id, name=name,
+                           story_image=story_image,
                            config=cfg if cfg is not None else _branch_cfg())
 
 
@@ -353,7 +354,8 @@ class BranchStoryViewTest(SimpleTestCase):
         self.assertEqual(set(payload['overrides']), set(ST.OVERRIDE_FIELDS))
         self.assertIsNone(payload['overrides']['story_min_order_amount'], 'ненастроенное = null')
         self.assertEqual(payload['source']['story_cafe_address'], 'branch_address')
-        self.assertEqual(payload['prizes'], {'count': 0, 'first': None, 'story_image_url': None})
+        self.assertEqual(payload['prizes'],
+                         {'count': 0, 'pool': [], 'first': None, 'story_image_url': None})
         # Пул пуст → подстановка остаётся видимой, чтобы сотрудник это заметил.
         self.assertIn('[название подарка]', payload['rendered']['activation_text'])
 
@@ -387,8 +389,8 @@ class StoryImageUrlTest(SimpleTestCase):
     """
 
     def test_url_is_built_from_network_domain(self):
-        image = SimpleNamespace(url='/media/branch/stories/x.png')
-        branch = _branch(_branch_cfg(story_image=image))
+        image = SimpleNamespace(url='/media/branch/stories/x.png', name='branch/stories/x.png')
+        branch = _branch(story_image=image)
         with patch(STP + '_network_domain', return_value='levone.levelupapp.ru'), \
              patch(STP + 'story_gifts_for_branch') as gifts:
             qs = MagicMock()
@@ -405,8 +407,8 @@ class StoryImageUrlTest(SimpleTestCase):
 
     def test_payload_has_no_request_host(self):
         import json
-        image = SimpleNamespace(url='/media/branch/stories/x.png')
-        branch = _branch(_branch_cfg(story_image=image, address='Институтская 5'))
+        image = SimpleNamespace(url='/media/branch/stories/x.png', name='branch/stories/x.png')
+        branch = _branch(_branch_cfg(address='Институтская 5'), story_image=image)
         with patch(STP + '_network_config', return_value=_net()), \
              patch(SSP + '_network_config', return_value=_net()), \
              patch(STP + '_network_domain', return_value='levone.levelupapp.ru'), \
@@ -466,3 +468,71 @@ class ZeroMeansInheritTest(SimpleTestCase):
         """Ограничение должно быть видно в докстринге ручки, а не только в контракте."""
         doc = ST.BranchStorySettingsAPIView.__doc__ or ''
         self.assertIn('0 ₽', doc)
+
+
+class PrizesPoolTest(SimpleTestCase):
+    """`prizes.pool` — первые 50 подарков в порядке гостя, `count` — весь пул."""
+
+    @staticmethod
+    def _product(pk, name, emoji='🎁', price=0):
+        return SimpleNamespace(pk=pk, name=name, emoji=emoji, price=price)
+
+    def _prizes_with(self, products, total):
+        qs = MagicMock()
+        qs.count.return_value = total
+        qs.__getitem__ = lambda self_, item: products[item]
+        with patch(STP + 'story_gifts_for_branch', return_value=qs):
+            return ST._prizes(_branch())
+
+    def test_pool_keeps_guest_order_and_first_matches(self):
+        products = [self._product(1, 'Кофе'), self._product(2, 'Десерт', price=300)]
+        prizes, first = self._prizes_with(products, 2)
+        self.assertEqual([p['name'] for p in prizes['pool']], ['Кофе', 'Десерт'])
+        self.assertEqual(prizes['pool'][1], {'id': 2, 'name': 'Десерт', 'emoji': '🎁', 'price': 300})
+        self.assertEqual(prizes['first'], {'id': 1, 'name': 'Кофе'})
+        self.assertEqual(first.name, 'Кофе', 'им же подставляется rendered')
+
+    def test_pool_is_capped_but_count_is_full(self):
+        products = [self._product(i, f'Подарок {i}') for i in range(1, 61)]
+        prizes, _ = self._prizes_with(products, 60)
+        self.assertEqual(len(prizes['pool']), ST.POOL_LIMIT)
+        self.assertEqual(prizes['count'], 60, 'count — полный размер пула, а не длина pool')
+
+    def test_empty_pool(self):
+        prizes, first = self._prizes_with([], 0)
+        self.assertEqual(prizes['pool'], [])
+        self.assertIsNone(prizes['first'])
+        self.assertIsNone(first)
+
+
+class StoryImageLivesOnBranchTest(SimpleTestCase):
+    """
+    Регресс: `story_image` — поле Branch (models.py:63), а НЕ BranchConfig.
+
+    Первая версия ручки читала его с `branch.config` и всегда отдавала `null`;
+    у гостя та же картинка берётся как `_image_url(branch.story_image)`
+    (branch/api/services.py:632).
+    """
+
+    def _url_for(self, branch):
+        qs = MagicMock()
+        qs.count.return_value = 0
+        qs.__getitem__ = lambda self_, item: []
+        with patch(STP + 'story_gifts_for_branch', return_value=qs), \
+             patch(STP + '_network_domain', return_value='levone.levelupapp.ru'):
+            prizes, _ = ST._prizes(branch)
+        return prizes['story_image_url']
+
+    def test_image_on_branch_is_used(self):
+        image = SimpleNamespace(url='/media/branch/stories/x.png', name='branch/stories/x.png')
+        self.assertEqual(self._url_for(_branch(story_image=image)),
+                         'https://levone.levelupapp.ru/media/branch/stories/x.png')
+
+    def test_image_on_config_is_ignored(self):
+        cfg = _branch_cfg()
+        cfg.story_image = SimpleNamespace(url='/media/wrong.png', name='wrong.png')
+        self.assertIsNone(self._url_for(_branch(cfg)), 'картинка с config не должна подхватываться')
+
+    def test_empty_file_field_gives_none(self):
+        empty = SimpleNamespace(url='', name='')
+        self.assertIsNone(self._url_for(_branch(story_image=empty)))
