@@ -88,6 +88,118 @@ def _vk_call(method: str, params: dict, timeout: int = 10) -> dict:
     return resp.json()
 
 
+# ── Проверка подключения сообщества (ручки «подключение ВКонтакте», №55) ──────
+#
+# Токен сообщества в SenlerConfig обслуживает ВСЁ сразу: рассылки
+# (send_vk_message ниже), ответы на отзывы и автоответ ИИ
+# (branch/api/services.py), опрос сообщений (branch/tasks.py) и кнопку
+# «поделиться номером» (branch/api/vk_message_event.py). Поэтому кабинет
+# обязан уметь ПРОВЕРИТЬ токен ДО записи — иначе одна опечатка тихо валит
+# четыре механики сразу. Функции ниже только читают, ничего не пишут.
+
+VK_CONNECT_API_VERSION = '5.131'
+VK_CONNECT_TIMEOUT = 10
+
+
+class VkApiError(Exception):
+    """
+    Отказ ВК при проверке подключения.
+
+    `code` — числовой `error_code` из ответа ВК (5 = невалидный токен,
+    15 = доступ запрещён, 27 = ключ доступа сообщества недействителен).
+    `code is None` означает «до ВК не достучались»: таймаут, обрыв сети,
+    нечитаемый ответ — вызывающая ручка отвечает на это 504, а не 424.
+    """
+
+    def __init__(self, code, msg: str):
+        super().__init__(msg)
+        self.code = code
+        self.msg = msg
+
+
+def _vk_read(method: str, params: dict):
+    """
+    Читающий вызов ВК с единым разбором ошибок → `VkApiError`.
+
+    Отдельно от `_vk_call` намеренно: тот отдаёт сырой JSON, и все его
+    вызывающие сами смотрят в `data['error']`. Здесь ошибка обязана стать
+    исключением, иначе «невалидный токен» доедет до кабинета как 200 с пустым
+    телом.
+    """
+    try:
+        data = _vk_call(method, {**params, 'v': VK_CONNECT_API_VERSION},
+                        timeout=VK_CONNECT_TIMEOUT)
+    except Exception as exc:  # таймаут, DNS, 5xx у ВК, битый JSON
+        raise VkApiError(None, f'{method}: ВК не ответил ({exc})') from exc
+    if not isinstance(data, dict):
+        raise VkApiError(None, f'{method}: неожиданный ответ ВК')
+    if 'error' in data:
+        err = data.get('error') or {}
+        raise VkApiError(err.get('error_code'),
+                         err.get('error_msg') or 'VK API error')
+    return data.get('response')
+
+
+def vk_group_info(token: str, group_id=None) -> dict:
+    """
+    `groups.getById` → `{id, name, screen_name, photo}` группы.
+
+    `group_id=None` — спрашиваем группу САМОГО токена (для community-токена
+    ВК возвращает его сообщество). Именно так проверяется «токен от той ли
+    группы»: сверять нечего, если не знать, чей это токен.
+    """
+    params = {'access_token': token, 'fields': 'name,screen_name,photo_100'}
+    if group_id not in (None, ''):
+        params['group_ids'] = str(group_id)
+    resp = _vk_read('groups.getById', params)
+    # v5.131 отдаёт список, v5.199+ — {'groups': [...]}. Принимаем оба.
+    items = resp.get('groups') if isinstance(resp, dict) else resp
+    if not items:
+        raise VkApiError(None, 'groups.getById: ВК не вернул сообщество')
+    item = items[0] or {}
+    return {
+        'id': item.get('id') or item.get('group_id'),
+        'name': item.get('name') or '',
+        'screen_name': item.get('screen_name') or '',
+        'photo': item.get('photo_100') or item.get('photo_200') or '',
+    }
+
+
+def vk_token_permissions(token: str) -> list[str]:
+    """
+    `groups.getTokenPermissions` → отсортированный список прав токена.
+
+    Нам нужны `messages` (писать гостю) и `manage` (читать/чинить callback).
+    Имена прав, а не битовая маска: маску кабинету не показать человеку.
+    """
+    resp = _vk_read('groups.getTokenPermissions', {'access_token': token})
+    if not isinstance(resp, dict):
+        return []
+    items = resp.get('permissions') or resp.get('settings') or []
+    names = set()
+    for item in items:
+        if isinstance(item, dict) and item.get('name'):
+            names.add(str(item['name']))
+        elif isinstance(item, str):
+            names.add(item)
+    return sorted(names)
+
+
+def vk_callback_confirmation_code(token: str, group_id) -> str:
+    """
+    `groups.getCallbackConfirmationCode` → строка подтверждения Callback API.
+
+    Её ВК ждёт в ответ на событие `confirmation`; у нас она лежит в
+    `SenlerConfig.vk_callback_confirmation` и отдаётся из
+    `handle_vk_callback` (branch/api/services.py). Требует права `manage`.
+    """
+    resp = _vk_read('groups.getCallbackConfirmationCode',
+                    {'group_id': str(group_id), 'access_token': token})
+    if not isinstance(resp, dict):
+        return ''
+    return str(resp.get('code') or '')
+
+
 def upload_vk_photo(config: SenlerConfig, image_field) -> tuple[str | None, str]:
     """
     Uploads an image to VK for use as a message attachment.
