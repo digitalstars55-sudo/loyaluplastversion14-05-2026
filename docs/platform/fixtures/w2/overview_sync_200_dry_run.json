@@ -1,0 +1,30 @@
+{
+ "name": "overview_sync_200_dry_run",
+ "note": "sync dry-run for one schema (no writes)",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/overview/sync-gift-costs/",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "Authorization": "Bearer <platform jwt>"
+  },
+  "body": {
+   "dry_run": true,
+   "schema": "dev"
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "dry_run": true,
+   "inventory": 0,
+   "story": 0,
+   "refilled_zeros": 0,
+   "commit": false,
+   "schema": "dev",
+   "output_tail": "DRY-RUN (ничего не записано): всего inventory +0, story +0, обновлено нулевых 0\n"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

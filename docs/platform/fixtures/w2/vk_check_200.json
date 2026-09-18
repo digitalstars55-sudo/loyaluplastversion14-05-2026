@@ -1,0 +1,48 @@
+{
+ "name": "vk_check_200",
+ "note": "VK stubbed: token ok, group matches, our callback server present",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/mobile/branches/3/vk/check/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "vk_group_id": 12345,
+   "vk_community_token": "vk1.a.fixture-token-000"
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "ok": true,
+   "group": {
+    "id": 12345,
+    "name": "Песочница CheckUp",
+    "screen_name": "sandbox",
+    "photo": ""
+   },
+   "permissions": [
+    "messages",
+    "manage",
+    "photos"
+   ],
+   "missing_permissions": [],
+   "group_matches": true,
+   "callback_servers": [
+    {
+     "id": 1,
+     "title": "LoyalUP",
+     "url": "https://dev.levelupapp.ru/api/v1/vk/callback/",
+     "status": "ok",
+     "ours": true
+    }
+   ],
+   "callback_servers_error": null,
+   "can_save": true
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

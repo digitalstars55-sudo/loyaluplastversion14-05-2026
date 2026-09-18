@@ -46,3 +46,21 @@
 | №56 флаги механик | `settings_features*` | get (admin и client) — только чтение |
 
 Шероховатость записи: `cp_detail_200_client_own_point` — client точки 990002 видит QR своей точки (200); чужая точка — `cp_detail_404_foreign`.
+
+## Дополнение 19.09.2026 — добивка карты v1.8: №49, №55, №56, №34 (46 записей)
+
+Записаны 19.09 00:18 МСК на `dev` сразу после выкладки пачки `c404620`, в одной транзакции с откатом, под теми же токенами обмена
+(`fx-admin` = `network_admin`, `fx-client` = `client` точки 990002 = `Branch.id` 3; первая точка — id 2) и под токеном с признаком
+платформы (`platform: true` в теле обмена, контракт 3в) для `overview/*`. Вызовы ВК и celery **заглушены**. Скрипт: `record_fixtures_w2d.py`.
+Гостей в записях нет. Секреты не возвращаются никогда — только `token_set` / `token_last4` / `secret_set`; в записях токены
+синтетические (`vk1.a.fixture-token-*`, `fixture-secret`), хвост живого токена первой точки dev заменён на `x9Qz`.
+
+| Модуль | Префикс | Что записано |
+|---|---|---|
+| №49 каталог наград (запись) | `rc_*` | list (ключ `items` сохранён + `total/limit/offset/tiers`), `list_catalog_mode` (`?include_inactive=1&include_archived=1&limit=`), `list_include_archived`; create 201 (`{product_id, tier, name, weight, default_lifetime_days, activation_limit, branch_id…}`) / 400 `product_required` / `tier_invalid` / `period_invalid` / 403 `role_not_allowed` (client на сетевую позицию); detail / 404; patch 200 / 400 `issued_count` только чтение / 409 `limit_below_issued`; delete = **архив**, 200 `{id, is_archived: true, is_active: false}` (не 204) |
+| №55 подключение ВК | `vk_*` | `settings/vk/` сводка по сети до и после подключения (`branches[]`, `groups[]` с `secrets_consistent`); карточка точки get (пусто / подключено) / 404 чужая точка под client; `check/` 200 (группа, права, `missing_permissions`, `callback_servers[].ours`, `can_save`) / 403 client / **424** `vk_error` / **504** `vk_timeout`; patch: первое подключение без `confirm` (`vk_patch_201_connect` — ответ **200**, имя оставлено как записано), 400 `confirm_required` при смене токена, 400 неизвестное поле, 403 client, 409 `group_mismatch` (токен другой группы даже с `confirm`) |
+| №56 флаги механик (запись) | `features_*` | get с `editable` / `readonly` / `branch_overridable`; patch сети 200; patch точки 200 (`branch_id` в теле: `birthday_window_days: 0` — настоящий ноль, сториз `0`/`""` — наследовать сеть); 400 `no_branch_override` / `readonly_flag` / `invalid_value` (тип) / `unknown_flag`; 403 client. `features_patch_404_foreign_branch_client` — на деле **403** `role_not_allowed`: client не пишет флаги вовсе, до проверки точки дело не доходит |
+| №34 сводная по сетям | `overview_*` | `export/?period=7d` — CSV описан сводкой (`_content_type`, `_disposition`, `_length`, `_has_bom`, `_head` = заголовок 21 колонки + **синтетическая** строка данных); `sync-gift-costs/` 202 (`queued, task_id, scope, started_at, lock_seconds`) / 200 `dry_run` (`inventory, story, refilled_zeros, output_tail`) / 400 `confirm_required` / 409 `already_running` (`started_at`); `status/` (`running, last_run`); 403 `role_not_allowed` без признака платформы для export и sync |
+
+Шероховатость записи: `rc_detail_404_foreign_client` — позиция точки 990002 **видна** её client'у (200); 404 под client даёт только позиция чужой точки
+(в песочнице такой не заводили). `overview/*` живут на публичном urlconf и в срез `openapi_w2_2026-09-18.json` не попадают — форма только здесь и в контракте 3г.

@@ -1,0 +1,22 @@
+{
+ "name": "overview_export_403_plain",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/overview/export/?period=7d",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "Authorization": "Bearer <platform jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 403,
+  "body": {
+   "code": "role_not_allowed",
+   "detail": "Только для платформенного доступа."
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

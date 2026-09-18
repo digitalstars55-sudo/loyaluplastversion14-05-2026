@@ -1,0 +1,53 @@
+{
+ "name": "features_patch_400_readonly",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/settings/features/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "web_entry_enabled": true
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "readonly_flag",
+   "detail": "web_entry_enabled: только чтение — включает оператор платформы",
+   "editable": [
+    "story_game_enabled",
+    "story_min_order_amount",
+    "story_activation_minutes",
+    "story_require_cafe_visit",
+    "story_cafe_address",
+    "story_activation_text",
+    "story_saved_text",
+    "story_gift_lifetime_days",
+    "story_gift_reminder_days",
+    "story_campaign_start",
+    "story_campaign_end",
+    "birthday_window_days",
+    "auto_broadcast_weekly_cap",
+    "rf_orchestrator_enabled",
+    "guest_phone_reward_coins",
+    "code_prompt_message",
+    "quest_show_message",
+    "brand_color",
+    "brand_color_secondary"
+   ],
+   "branch_overridable": [
+    "story_game_enabled",
+    "story_min_order_amount",
+    "story_cafe_address",
+    "story_activation_text",
+    "story_saved_text",
+    "birthday_window_days"
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

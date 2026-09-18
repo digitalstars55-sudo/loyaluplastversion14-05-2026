@@ -1,0 +1,50 @@
+{
+ "name": "vk_patch_201_connect",
+ "note": "first connection: no confirm needed; secret applied to all configs of the group (applied_to)",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/mobile/branches/3/vk/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "vk_group_id": 12345,
+   "vk_community_token": "vk1.a.fixture-token-000",
+   "vk_callback_secret": "fixture-secret",
+   "vk_callback_confirmation": "abc123"
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "branch": {
+    "id": 3,
+    "branch_id": 990002,
+    "name": "Песочница CheckUp · Точка 2"
+   },
+   "connected": true,
+   "is_active": true,
+   "vk_group_id": 12345,
+   "token_set": true,
+   "token_last4": "-000",
+   "confirmation_set": true,
+   "secret_set": true,
+   "callback_url": "https://dev.levelupapp.ru/api/v1/vk/callback/",
+   "notes": "",
+   "group_shared_with": [],
+   "updated_at": "2026-09-18T21:18:48.901369+00:00",
+   "changed": [
+    "vk_callback_confirmation",
+    "vk_callback_secret",
+    "vk_community_token",
+    "vk_group_id"
+   ],
+   "applied_to": [
+    990002
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

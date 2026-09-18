@@ -1,0 +1,26 @@
+{
+ "name": "vk_check_424_vk_error",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/mobile/branches/3/vk/check/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "vk_community_token": "bad"
+  }
+ },
+ "response": {
+  "status": 424,
+  "body": {
+   "code": "vk_error",
+   "detail": "ВКонтакте отклонил запрос: User authorization failed: invalid access_token",
+   "vk_error_code": 5,
+   "vk_error_msg": "User authorization failed: invalid access_token"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

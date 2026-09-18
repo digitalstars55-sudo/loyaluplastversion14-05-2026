@@ -1,0 +1,24 @@
+{
+ "name": "vk_patch_403_client",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/mobile/branches/3/vk/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "notes": "x"
+  }
+ },
+ "response": {
+  "status": 403,
+  "body": {
+   "code": "role_not_allowed",
+   "detail": "подключение ВКонтакте меняет только администратор сети"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

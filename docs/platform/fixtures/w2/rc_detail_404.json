@@ -1,0 +1,22 @@
+{
+ "name": "rc_detail_404",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/rf/reward-catalog/99999999/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 404,
+  "body": {
+   "code": "not_found",
+   "detail": "Позиция каталога не найдена"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,24 @@
+{
+ "name": "overview_sync_403_plain",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/overview/sync-gift-costs/",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "Authorization": "Bearer <platform jwt>"
+  },
+  "body": {
+   "confirm": true
+  }
+ },
+ "response": {
+  "status": 403,
+  "body": {
+   "code": "role_not_allowed",
+   "detail": "Только для платформенного доступа."
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

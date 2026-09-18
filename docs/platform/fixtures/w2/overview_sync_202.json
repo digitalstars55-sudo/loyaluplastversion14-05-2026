@@ -1,0 +1,28 @@
+{
+ "name": "overview_sync_202",
+ "note": "celery stubbed while recording",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/overview/sync-gift-costs/",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "Authorization": "Bearer <platform jwt>"
+  },
+  "body": {
+   "confirm": true,
+   "schema": "dev"
+  }
+ },
+ "response": {
+  "status": 202,
+  "body": {
+   "queued": true,
+   "task_id": "fixture-task-1",
+   "scope": "dev",
+   "started_at": "2026-09-18T21:18:50.784034+00:00",
+   "lock_seconds": 1800
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

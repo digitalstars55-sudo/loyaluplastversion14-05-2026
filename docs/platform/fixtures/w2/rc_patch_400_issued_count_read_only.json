@@ -1,0 +1,45 @@
+{
+ "name": "rc_patch_400_issued_count_read_only",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/analytics/rf/reward-catalog/1/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "issued_count": 5
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "эти поля считает система: issued_count",
+   "read_only": [
+    "issued_count"
+   ],
+   "editable": [
+    "product_id",
+    "tier",
+    "name",
+    "internal_code",
+    "description",
+    "cost_price",
+    "min_order_amount",
+    "weight",
+    "default_lifetime_days",
+    "activation_limit",
+    "available_from",
+    "available_to",
+    "branch_id",
+    "available_for_rfm",
+    "is_active",
+    "is_archived"
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

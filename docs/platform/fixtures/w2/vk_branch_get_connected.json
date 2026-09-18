@@ -1,0 +1,36 @@
+{
+ "name": "vk_branch_get_connected",
+ "note": "after connect: token_set true, last4 only",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/mobile/branches/3/vk/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "branch": {
+    "id": 3,
+    "branch_id": 990002,
+    "name": "Песочница CheckUp · Точка 2"
+   },
+   "connected": true,
+   "is_active": true,
+   "vk_group_id": 12345,
+   "token_set": true,
+   "token_last4": "-000",
+   "confirmation_set": true,
+   "secret_set": true,
+   "callback_url": "https://dev.levelupapp.ru/api/v1/vk/callback/",
+   "notes": "",
+   "group_shared_with": [],
+   "updated_at": "2026-09-18T21:18:48.901369+00:00"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

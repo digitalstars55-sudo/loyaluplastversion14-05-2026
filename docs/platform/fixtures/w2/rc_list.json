@@ -1,0 +1,38 @@
+{
+ "name": "rc_list",
+ "note": "legacy key items kept + total/limit/offset/tiers",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/analytics/rf/reward-catalog/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "items": [],
+   "total": 0,
+   "limit": 0,
+   "offset": 0,
+   "tiers": [
+    {
+     "code": "G1",
+     "label": "G1 · Лёгкий (низкая себестоимость)"
+    },
+    {
+     "code": "G2",
+     "label": "G2 · Средний"
+    },
+    {
+     "code": "G3",
+     "label": "G3 · Ценный (VIP)"
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,25 @@
+{
+ "name": "rc_patch_409_limit_below_issued",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/analytics/rf/reward-catalog/1/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "activation_limit": 2
+  }
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "limit_below_issued",
+   "detail": "activation_limit: уже выдано 4 — лимит не может быть меньше",
+   "issued_count": 4
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

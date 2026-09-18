@@ -1,0 +1,25 @@
+{
+ "name": "rc_create_400_product_required",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/analytics/rf/reward-catalog/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "tier": "G1",
+   "name": "x"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "product_required",
+   "detail": "product_id: выберите подарок — без него гостю нечего показать в «Моих подарках»"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,57 @@
+{
+ "name": "vk_network_summary",
+ "note": "no VK calls; secrets never returned",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/settings/vk/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "branches": [
+    {
+     "id": 2,
+     "branch_id": 239014483,
+     "name": "Конференция \"Автосуши Автопицца\"",
+     "connected": true,
+     "is_active": true,
+     "vk_group_id": 241077127,
+     "token_set": true,
+     "token_last4": "x9Qz",
+     "confirmation_set": true,
+     "secret_set": true,
+     "callback_url": "https://dev.levelupapp.ru/api/v1/vk/callback/"
+    },
+    {
+     "id": 3,
+     "branch_id": 990002,
+     "name": "Песочница CheckUp · Точка 2",
+     "connected": false,
+     "is_active": false,
+     "vk_group_id": null,
+     "token_set": false,
+     "token_last4": null,
+     "confirmation_set": false,
+     "secret_set": false,
+     "callback_url": "https://dev.levelupapp.ru/api/v1/vk/callback/"
+    }
+   ],
+   "groups": [
+    {
+     "vk_group_id": 241077127,
+     "branches": [
+      2
+     ],
+     "secrets_consistent": true
+    }
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

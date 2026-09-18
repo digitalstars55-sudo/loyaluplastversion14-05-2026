@@ -1,0 +1,25 @@
+{
+ "name": "overview_export_csv",
+ "note": "CSV summary only (BOM, ;, 21 columns); body is a summary of the file; строка данных в _head заменена синтетической (живые цифры сети не публикуем), заголовок 21 колонки живой",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/overview/export/?period=7d",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "Authorization": "Bearer <platform jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "_content_type": "text/csv; charset=utf-8",
+   "_disposition": "attachment; filename=\"loyalup-overview-2026-09-13-2026-09-19.csv\"",
+   "_length": 6739,
+   "_has_bom": true,
+   "_head": "﻿Сводная по клиентам 2026-09-13 — 2026-09-19\r\nКлиент;Сеть;client_id;Домен;Сканы;Сканы QR;Гости POS;Индекс сканирования, %;Новые в сообществе;Новые подписки на рассылку;Сториз;Отзывы;Себестоимость подарков, ₽;Обслуживание, ₽;Итого затраты, ₽;Контакты;Уникальных оцифровано;Цена контакта, ₽;Цена уникального, ₽;Подарков без себестоимости;Подарки за период\r\nСеть-эталон;fixture;99;fixture.levelupapp.ru;10;5;"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

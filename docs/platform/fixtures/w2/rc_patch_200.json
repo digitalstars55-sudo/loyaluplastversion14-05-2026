@@ -1,0 +1,60 @@
+{
+ "name": "rc_patch_200",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/analytics/rf/reward-catalog/1/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "weight": 3,
+   "description": "Эталон: описание"
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "id": 1,
+   "name": "Эталон: приз G1",
+   "tier": "G1",
+   "tier_label": "G1 · Лёгкий (низкая себестоимость)",
+   "product": {
+    "id": 2,
+    "name": "Скидка 5% для действующих клиентов!"
+   },
+   "product_id": 2,
+   "internal_code": "",
+   "description": "Эталон: описание",
+   "image_url": "https://dev.levelupapp.ru/media/catalog/products/1111111111111111111.png",
+   "cost_price": 0.0,
+   "min_order_amount": 0.0,
+   "weight": 3,
+   "default_lifetime_days": 7,
+   "activation_limit": 10,
+   "issued_count": 0,
+   "remaining_issues": 10,
+   "available_from": null,
+   "available_to": null,
+   "branch_id": 3,
+   "branch": "Песочница CheckUp · Точка 2",
+   "is_active": true,
+   "is_archived": false,
+   "available_for_rfm": true,
+   "is_available_now": true,
+   "in_use": {
+    "campaigns": 0,
+    "live_gifts": 0
+   },
+   "created_at": "2026-09-18T21:18:48.672421+00:00",
+   "updated_at": "2026-09-18T21:18:48.770203+00:00",
+   "changed": [
+    "description",
+    "weight"
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

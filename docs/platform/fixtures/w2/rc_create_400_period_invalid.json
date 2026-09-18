@@ -1,0 +1,27 @@
+{
+ "name": "rc_create_400_period_invalid",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/analytics/rf/reward-catalog/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "product_id": 2,
+   "tier": "G2",
+   "available_from": "2026-10-10",
+   "available_to": "2026-10-01"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "period_invalid",
+   "detail": "available_from не может быть позже available_to"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,27 @@
+{
+ "name": "vk_patch_400_confirm_required",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/mobile/branches/3/vk/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "vk_community_token": "vk1.a.fixture-token-111"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "confirm_required",
+   "detail": "Этот токен обслуживает рассылки, ответы на отзывы, автоответ ИИ и опрос сообщений сразу. Ошибка выключит их все разом. Повторите запрос с confirm: true, если уверены.",
+   "fields": [
+    "vk_community_token"
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

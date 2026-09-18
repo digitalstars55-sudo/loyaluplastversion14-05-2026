@@ -1,0 +1,64 @@
+{
+ "name": "features_patch_200_branch_override",
+ "note": "branch override: 0 for birthday window = real zero; story empty/0 = inherit",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/settings/features/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "branch_id": 3,
+   "story_game_enabled": false,
+   "birthday_window_days": 0
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "branch": {
+    "id": 3,
+    "branch_id": 990002,
+    "name": "Песочница CheckUp · Точка 2"
+   },
+   "flags": {
+    "story_game_enabled": {
+     "value": false,
+     "source": "branch"
+    },
+    "story_min_order_amount": {
+     "value": 600,
+     "source": "default"
+    },
+    "story_cafe_address": {
+     "value": "",
+     "source": "default"
+    },
+    "story_activation_text": {
+     "value": "",
+     "source": "default"
+    },
+    "story_saved_text": {
+     "value": "",
+     "source": "default"
+    },
+    "birthday_window_days": {
+     "value": 0,
+     "source": "branch"
+    }
+   },
+   "read_only": false,
+   "branch_overridable": [
+    "story_game_enabled",
+    "story_min_order_amount",
+    "story_cafe_address",
+    "story_activation_text",
+    "story_saved_text",
+    "birthday_window_days"
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

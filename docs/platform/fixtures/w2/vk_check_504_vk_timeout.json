@@ -1,0 +1,25 @@
+{
+ "name": "vk_check_504_vk_timeout",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/mobile/branches/3/vk/check/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "vk_community_token": "bad"
+  }
+ },
+ "response": {
+  "status": 504,
+  "body": {
+   "code": "vk_timeout",
+   "detail": "ВКонтакте не ответил вовремя. Настройки не тронуты — попробуйте ещё раз.",
+   "vk_error_msg": "timeout"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,35 @@
+{
+ "name": "vk_patch_400_unknown_field",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/mobile/branches/3/vk/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "longpoll_ts": "x"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "invalid_payload",
+   "detail": "нельзя менять здесь: longpoll_ts",
+   "unknown": [
+    "longpoll_ts"
+   ],
+   "editable": [
+    "vk_group_id",
+    "vk_community_token",
+    "vk_callback_secret",
+    "vk_callback_confirmation",
+    "is_active",
+    "notes"
+   ]
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

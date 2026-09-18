@@ -1,0 +1,25 @@
+{
+ "name": "rc_create_400_tier_invalid",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/analytics/rf/reward-catalog/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "product_id": 2,
+   "tier": "G9"
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "code": "tier_invalid",
+   "detail": "tier: G1 | G2 | G3"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

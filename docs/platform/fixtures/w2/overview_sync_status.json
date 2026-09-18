@@ -1,0 +1,22 @@
+{
+ "name": "overview_sync_status",
+ "note": "",
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/overview/sync-gift-costs/status/",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "Authorization": "Bearer <platform jwt>"
+  },
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "running": true,
+   "last_run": null
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

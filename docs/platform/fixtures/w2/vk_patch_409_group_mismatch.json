@@ -1,0 +1,27 @@
+{
+ "name": "vk_patch_409_group_mismatch",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/mobile/branches/3/vk/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "vk_community_token": "vk1.a.fixture-token-222",
+   "confirm": true
+  }
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "group_mismatch",
+   "detail": "Токен выдан сообществом «Другая группа» (id 777), а подключить его просят к сообществу 12345. Возьмите токен в том сообществе, ID которого указан.",
+   "vk_group_id": 12345,
+   "token_group_id": 777
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

@@ -1,0 +1,25 @@
+{
+ "name": "features_patch_404_foreign_branch_client",
+ "note": "",
+ "request": {
+  "method": "PATCH",
+  "path": "/api/v1/settings/features/",
+  "headers": {
+   "Host": "dev.levelupapp.ru",
+   "Authorization": "Bearer <jwt>"
+  },
+  "body": {
+   "branch_id": 2,
+   "story_game_enabled": false
+  }
+ },
+ "response": {
+  "status": 403,
+  "body": {
+   "code": "role_not_allowed",
+   "detail": "менять флаги может только администратор сети"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}

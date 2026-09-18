@@ -1,0 +1,25 @@
+{
+ "name": "overview_sync_409_already_running",
+ "note": "",
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/overview/sync-gift-costs/",
+  "headers": {
+   "Host": "levelupapp.ru",
+   "Authorization": "Bearer <platform jwt>"
+  },
+  "body": {
+   "confirm": true
+  }
+ },
+ "response": {
+  "status": 409,
+  "body": {
+   "code": "already_running",
+   "detail": "синхронизация уже идёт",
+   "started_at": "2026-09-18T21:18:50.784034+00:00"
+  }
+ },
+ "recorded_at": "2026-09-18",
+ "tenant": "dev (sandbox)"
+}
