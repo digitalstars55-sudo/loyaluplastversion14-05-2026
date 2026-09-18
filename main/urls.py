@@ -33,6 +33,7 @@ urlpatterns = [
     path('api/v1/', include('apps.tenant.branch.api.contact_points_urls')),  # точки контакта (QR) для CheckUp (контракт №26/№27)
     path('api/v1/', include('apps.tenant.branch.api.story_settings_urls')),  # настройки сториз для CheckUp (контракт №23)
     path('api/v1/', include('apps.tenant.analytics.api.report_comments_urls')),  # комментарии и печать отчёта (контракт №28)
+    path('api/v1/', include('apps.tenant.marketer.api.urls')),  # AI-маркетолог для CheckUp (контракт №29)
     path('analytics/', include('apps.tenant.analytics.urls')),
 
     # Мобильное API: auth (JWT) + push register + tenant data. Аддитивно, веб не трогает.
