@@ -297,15 +297,15 @@ API нет совсем: есть модели `MarketerSettings` (одна на
 | Ручка | Запрос | Ответ |
 |---|---|---|
 | `GET /api/v1/marketer/settings/` | — | `{is_enabled, autopost_enabled, digest_enabled, digest_weekday, digest_hour, last_digest_at, brand_voice, extra_facts, vk_group_id, vk_wall_token_set: bool}` — сам токен не отдаётся |
-| `PATCH /api/v1/marketer/settings/` | те же поля **кроме токена стены** (он остаётся в админке до отдельного слова владельца — №55) | `200` · `400 invalid_payload` · `403 role_not_allowed` |
+| `PATCH /api/v1/marketer/settings/` | те же поля **кроме токена стены** (он остаётся в админке до отдельного слова владельца — №55); `vk_wall_token` в теле → `400 invalid_payload` (не игнорируется молча); чужие ключи → `400` | `200` · `400 invalid_payload` · `403 role_not_allowed` |
 | `GET /api/v1/marketer/posts/?status&type&limit&offset` · `GET …/{id}/` | — | `{total, limit, offset, results: [{id, post_type, status, text, model_used, created_by, published_at, vk_post_id, vk_post_url, error, created_at, updated_at}]}` |
-| `POST /api/v1/marketer/posts/generate/` | `{}` (`network_admin`) | `202 {queued: true}` — как экшен админки «сгенерировать сейчас»; результат появится в ленте черновиком (или `failed` с ошибкой) · `409 marketer_disabled` |
-| `PATCH /api/v1/marketer/posts/{id}/` | `{text}` — только у `draft`/`failed` | `200 post` · `409 not_editable` |
-| `POST /api/v1/marketer/posts/{id}/publish/` | `{confirm: true}` — публикация необратима | `200 post` (`published` + `vk_post_url`) · `400 confirm_required` · `409 not_publishable` / `marketer_disabled` / `no_vk_token` · `502 vk_error {detail}` |
-| `POST /api/v1/marketer/posts/{id}/reject/` | — | `200 post` · `409 not_rejectable` |
+| `POST /api/v1/marketer/posts/generate/` | `{}` (`network_admin`) | `202 {queued: true, lock_seconds: 300}` — как экшен админки «сгенерировать сейчас»; результат появится в ленте черновиком (или `failed` с ошибкой) · `409 already_generating {retry_after}` в окне 5 минут · `409 marketer_disabled` (выключен маркетолог или дайджест) · `503 queue_unavailable`, если задачу не удалось поставить (блокировка снимается) |
+| `PATCH /api/v1/marketer/posts/{id}/` | `{text}` — только у `draft`/`failed`; статус не меняет; `created_by` **не перезаписывается** (признак «писал ИИ» сохраняется; «кто последний правил» — отдельное поле, не в v1.5) | `200 post` · `403 role_not_allowed` · `409 not_editable` |
+| `POST /api/v1/marketer/posts/{id}/publish/` | `{confirm: true}` — публикация необратима; конфигурация (`is_enabled`, токен, группа) проверяется **до** вызова публикации — иначе publisher пометил бы пост `failed` из-за настройки | `200 post` (`published` + `vk_post_url`); уже опубликованный → `200 {already_published: true, post}` без повторного вызова · `400 confirm_required` · `403 role_not_allowed` · `409 not_publishable` / `marketer_disabled` / `no_vk_token` · `502 vk_error {detail: текст ВК как есть, post}` |
+| `POST /api/v1/marketer/posts/{id}/reject/` | — | `200 post`; уже отклонённый → `200 {already_rejected: true, post}` · `409 not_rejectable` |
 | `GET /api/v1/marketer/posts/{id}/context/` | — | `{context: {…снимок фактов, из которых написан пост}}` |
 
-**Оценка: 2,5 дня.**
+`post` дополнительно несёт `created_by_label` («ИИ» для автогенерации), `vk_post_url` (`https://vk.com/wall-<group>_<id>`), `is_editable`. **Сделано 18.09** (код в main, ждёт выкладки; celery не перезапускается — новых задач нет).
 
 ### 3б.7. №52 база знаний ИИ и №56 флаги механик (после 29)
 
