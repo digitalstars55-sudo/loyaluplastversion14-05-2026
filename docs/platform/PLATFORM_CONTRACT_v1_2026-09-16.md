@@ -1,6 +1,6 @@
-# Контракт платформы CheckUp × LoyalUP — v1.7
+# Контракт платформы CheckUp × LoyalUP — v1.8
 
-**Дата:** 16 сентября 2026 (v1), правки v1.1 — тот же день вечером по ревью агента CheckUp, v1.2 — `guest_vk_id` в жалобе по запросу CheckUp, v1.3 — 17 сентября, №78 телефон гостя сделан, v1.4 — 18 сентября, обмен открыт LevOne, правило «client — только чужим id», фикстуры рассылок, v1.5 — 18 сентября, старт волны 2 по слову владельца: раздел 3б, эталоны w2, срез схемы 18.09, v1.6 — 19 сентября, старт волны 3 «суперадмин на все сети»: раздел 3в, v1.7 — 19 сентября, признак платформы из тела обмена (право `loyalty.platform` владелец выдаёт сам) · **Статус:** согласован обеими сторонами с правками; подпись владельца · **Для кого:** команда (агент) CheckUp, строящая модуль «Гости → LoyalUP»; владелец платформы
+**Дата:** 16 сентября 2026 (v1), правки v1.1 — тот же день вечером по ревью агента CheckUp, v1.2 — `guest_vk_id` в жалобе по запросу CheckUp, v1.3 — 17 сентября, №78 телефон гостя сделан, v1.4 — 18 сентября, обмен открыт LevOne, правило «client — только чужим id», фикстуры рассылок, v1.5 — 18 сентября, старт волны 2 по слову владельца: раздел 3б, эталоны w2, срез схемы 18.09, v1.6 — 19 сентября, старт волны 3 «суперадмин на все сети»: раздел 3в, v1.7 — 19 сентября, признак платформы из тела обмена (право `loyalty.platform` владелец выдаёт сам), v1.8 — 19 сентября, добивка карты по аудиту (41/45): №49 запись каталога наград, №55 подключение ВК, №56 запись флагов, №34 экспорт и синхронизация себестоимости · **Статус:** согласован обеими сторонами с правками; подпись владельца · **Для кого:** команда (агент) CheckUp, строящая модуль «Гости → LoyalUP»; владелец платформы
 
 Этот документ — граница между двумя системами. Всё, что CheckUp делает с лояльностью, он делает через описанные здесь ручки и правила. Всё, что здесь не описано, для CheckUp не существует: ни таблиц LoyalUP, ни админки, ни гостевых ручек мини-аппа.
 
@@ -62,6 +62,10 @@
 ## Что изменилось в v1.6 (19.09, старт волны 3 по слову владельца)
 
 Вопрос владельца: «в LoyalUP я был суперадмин с доступом ко всем клиентам, и Антон тоже — как к этому прийти в CheckUp?». Ответ — раздел 3в: платформенный доступ через тот же обмен токена (белый список пользователей CheckUp у LoyalUP), список сетей платформы для переключателя, существующие сводная и лента отзывов всех клиентов открываются платформенному токену. Волна 2 в этот момент — на проде (18.09 20:48, `2abbc38`), CheckUp строит экраны по готовым ручкам. Попутно к №31 добавляется «предпросмотр аудитории словами» — для маркетолога, который не разобрался в старой админке.
+
+## Что изменилось в v1.8 (19.09, «добей ручки» — по аудиту карты v10)
+
+Аудит CheckUp после выкладки всех экранов: 41 из 45 возможностей полностью, 2 частично и 2 в экспертном режиме — все четыре упирались в отсутствие ручек LoyalUP. Владелец: «добей ручки на твоей стороне сейчас». Раздел 3г — формы четырёх ручек. Одно отклонение от пожеланий CheckUp: подключение ВК у нас хранится **на точке** (`SenlerConfig` один-к-одному с `Branch`, несколько точек могут делить одно сообщество), поэтому ручки ВК — по точке, плюс сводка по сети только на чтение.
 
 ## 1. Принципы
 
@@ -421,6 +425,57 @@ CheckUp принял 3б.1–3б.7 и прислал 11 блокеров и 26 �
 
 ---
 
+## 3г. Добивка карты (v1.8): №49, №55, №56, №34
+
+Общие правила — 3б.6: `{code, detail}`, чужой объект → `404 not_found`, запись — `network_admin`/суперадмин (`client` → `403 role_not_allowed`), внутренние `id` точек, `@extend_schema` и эталоны в `fixtures/w2/`.
+
+### 3г.1. №49 — каталог наград (пул призов RFM и авторассылок): запись
+
+Сущность — `RewardCatalogItem`: уровни **`G1|G2|G3`** (не «gift|coins»: награда всегда подарок-товар из каталога; баллы гостю даёт RFM-кампания с `reward_type=points`, не каталог), товар (`product_id`, обязателен — без него подарок не выдаётся), себестоимость (`cost_price`, 0 = из товара), вес в выборе, срок жизни, лимит выдач и счётчик (`issued_count` — только система), период доступности, точка (`branch_id` или `null` = вся сеть), флаги `is_active` / `is_archived` / `available_for_rfm`. Пути прежние (`analytics/rf/reward-catalog/`), старая форма `{items: [...]}` сохранена как надмножество.
+
+| Ручка | Запрос | Ответ |
+|---|---|---|
+| `GET …/reward-catalog/?include_inactive&include_archived&tier&branch_ids&limit&offset` | без параметров — как раньше (активные, доступные RFM, с товаром, в периоде) | `{items: [card], total, limit, offset, tiers: [{code, label}]}`; RBAC: сетевые позиции видны всем, точечные — своим точкам |
+| `GET …/reward-catalog/{id}/` | — | `card` · `404` |
+| `POST …/reward-catalog/` | `{product_id*, tier*, name?, internal_code?, description?, cost_price?, min_order_amount?, weight?, default_lifetime_days?, activation_limit?, available_from?, available_to?, branch_id?, available_for_rfm?, is_active?}`; картинка в v1.8 не принимается | `201 card` · `400 invalid_payload` / `product_required` / `tier_invalid` / `period_invalid` · `403 role_not_allowed` (в т.ч. `client` на сетевую позицию) · `404 not_found` (чужая точка, нет/архивный товар) |
+| `PATCH …/reward-catalog/{id}/` | те же поля; `issued_count` → `400 invalid_payload` (`read_only`) | `card + changed[]` · `409 limit_below_issued` (лимит ниже выданного) · `409 in_use {campaigns: [{id, name, status}], live_gifts, blocked_fields}` при смене `product`/`tier`/`branch` у позиции в идущей кампании или с живыми подарками; остальные поля — всегда |
+| `DELETE …/reward-catalog/{id}/` | — | `200 {id, is_archived: true, is_active: false}` — только архив, физического удаления нет · `409 in_use` при кампании `processing` |
+
+`card = {id, name, tier, tier_label, product: {id, name}|null, product_id, internal_code, description, image_url|null, cost_price, min_order_amount, weight, default_lifetime_days, activation_limit, issued_count, remaining_issues, available_from, available_to, branch_id|null, branch (имя|null — старый ключ), is_active, is_archived, available_for_rfm, is_available_now, in_use: {campaigns, live_gifts}, created_at, updated_at}`. Предупреждение (не блокер): архивация/выключение последней активной позиции уровня, который стоит во включённом правиле авторассылки → `warning: "last_item_in_tier", rules: [{id, name}]` (правило уйдёт на запасной текст, а при пустом — молча пропустит гостя).
+
+**Сделано 19.09, уточнения по коду:** `include_inactive`/`include_archived` переводят список в «режим каталога» (снимают фильтры пригодности к RFM — иначе редактор не увидел бы выключенную позицию); в `PATCH` есть `is_archived` (дорога обратно из архива), в `POST` — нет; сетевую позицию (`branch_id: null`) заводит и делает сетевой только пишущий без ограничения по точкам (иначе `403`); `branch_ids` в `GET` не прячет сетевые позиции (`branch is null OR branch in scope`); `description` в карточке — унаследованный от товара; `image_url` — полный адрес от домена сети, `image` в теле → `400`; `DELETE` блокируют только кампании `processing` (живые подарки архиву не мешают — они остаются у гостей), `PATCH` блокирует `product_id/tier/branch_id` только если значение реально меняется; `offset` без `limit` = остаток списка.
+
+### 3г.2. №55 — подключение ВКонтакте (по точке)
+
+Токен сообщества и секрет callback **никогда не отдаются** — только `token_set`, `token_last4`, `secret_set`, `confirmation_set`. Один токен обслуживает рассылки, ответы на отзывы, опрос сообщений и кнопку №78 — поэтому смена токена/группы/секрета требует `confirm: true` и проверяется через ВК до записи.
+
+| Ручка | Запрос | Ответ |
+|---|---|---|
+| `GET /api/v1/settings/vk/` (обе роли) | — | `{branches: [{id, branch_id, name, connected, is_active, vk_group_id, token_set, token_last4, confirmation_set, secret_set, callback_url}], groups: [{vk_group_id, branches: [id…], secrets_consistent}]}` — только доступные точки, без вызовов ВК; `secrets_consistent: false` = у конфигов одной группы разные секреты (инцидент 15.09) |
+| `GET /api/v1/mobile/branches/{id}/vk/` | — | `{branch: {id, branch_id, name}, connected, is_active, vk_group_id, token_set, token_last4, confirmation_set, secret_set, callback_url, notes, group_shared_with: [branch_id…], updated_at}` · `404` |
+| `POST /api/v1/mobile/branches/{id}/vk/check/` | `{vk_group_id?, vk_community_token?}` — без тела проверяются сохранённые; ничего не пишет; ≤3 вызова ВК | `{ok, group: {id, name, screen_name, photo}|null, permissions[], missing_permissions[] (нужны messages и manage), group_matches, callback_servers: [{id, title, url, status, ours}], can_save}` · `403` · `404` · `424 vk_error {vk_error_code, vk_error_msg}` · `504 vk_timeout` |
+| `PATCH /api/v1/mobile/branches/{id}/vk/` | `{vk_group_id?, vk_community_token?, vk_callback_secret?, vk_callback_confirmation?, is_active?, notes?, confirm?}`; при отсутствии конфига `vk_group_id` и токен обязательны | карточка + `changed[]` + `applied_to: [branch_id…]` · `400 invalid_payload` (с `editable`) · `400 confirm_required` (смена токена/группы/секрета) · `409 group_mismatch` (токен другой группы) · `409 group_in_use` (смена группы при истории рассылок/диалогов) · `424 vk_error` · `504 vk_timeout` |
+
+Секрет и строка подтверждения применяются ко **всем** конфигам той же группы разом (`applied_to`). Ошибка ВК никогда не даёт 500. Регистрация callback-сервера в ВК из API (`addCallbackServer`) в v1.8 не делается — сервер и события включают в кабинете ВК по `callback_url`; `check/` показывает, есть ли наш сервер и его статус.
+
+**Сделано 19.09, уточнения по коду:** `confirm` не нужен при ПЕРВОМ подключении точки (ломать нечего) и не нужен при повторе того же значения (оно не считается сменой и ВК не дёргается); проверка через ВК идёт и при смене `vk_group_id` сохранённым токеном (иначе группу можно было бы увести без проверки); `missing_permissions` на PATCH не блокирует запись (права в ВК иногда выдают после вставки токена) — только в `check/` гасит `can_save`; в ответе `check/` есть `callback_servers_error` (отказ `groups.getCallbackServers`, чаще нет права `manage`, — не валит проверку); `group_shared_with` и `applied_to` — публичные `branch_id`; у точки без подключения `connected: false, is_active: false`; `504 vk_timeout` = любое «до ВК не достучались» (таймаут, сеть, нечитаемый ответ), `424 vk_error` — только настоящий `error_code` ВК.
+
+### 3г.3. №56 — флаги механик: запись
+
+`PATCH /api/v1/settings/features/` частичным телом `{флаг: значение}` (`network_admin`) → ответ как у `GET` (`flags: {ключ: {value, source}}`, `read_only: false`) + списки `editable`, `readonly`, `branch_overridable`. Только чтение (→ `400 readonly_flag`): `web_entry_enabled`, `degrade_enabled`, `vk_catalog_enabled`, `vk_catalog_city`, `vk_review_branch_inference`, `vk_review_branch_inference_hours`, `guest_phone_enabled` — переключатели пилотов и каталога ВК, их включает оператор платформы. Остальные 19 — редактируемые; типы по полю модели (`400 invalid_payload`), неизвестный ключ → `400 unknown_flag`. С `branch_id` в теле — переопределение точки только для шести флагов с парой в `BranchConfig` (`story_game_enabled`, `story_min_order_amount`, `story_cafe_address`, `story_activation_text`, `story_saved_text`, `birthday_window_days`; иначе `400 no_branch_override`), ответ `{branch, flags: {6 флагов с value = effective и source: branch|network|default}}`; `null` = наследовать; семантика нуля разная (3б.3): у сториз `0`/`""` = как в сети, у окна ДР `0` = только день в день. **Сделано 19.09.**
+
+### 3г.4. №34 — экономика клиента: экспорт и синхронизация себестоимости
+
+| Ручка | Запрос | Ответ |
+|---|---|---|
+| `GET /api/v1/overview/export/?period=…\|start&end` (платформенный JWT) | — | CSV UTF-8 с BOM, разделитель `;`, `Content-Disposition: attachment; filename="loyalup-overview-<start>-<end>.csv"`; 21 колонка — те же строки, цифры и 5-минутный кэш, что `overview/stats/` (строка периода, шапка, строки клиентов, «Итого») · `403 role_not_allowed` |
+| `POST /api/v1/overview/sync-gift-costs/` | `{confirm: true, schema?: "levone", dry_run?: false}` | `202 {queued: true, task_id, scope: all\|schema, started_at, lock_seconds: 1800}` — та же команда, что кнопка суперадминки, но в celery; `dry_run: true` — синхронный подсчёт без записи → `200 {dry_run: true, inventory, story, refilled_zeros, …}` · `400 confirm_required` / `invalid_payload` · `409 already_running {started_at}` · `503 queue_unavailable` |
+| `GET /api/v1/overview/sync-gift-costs/status/` | — | `{running, last_run: {started_at, started_by, schema, finished_at, ok, result: {inventory, story, refilled_zeros}, error}|null}` |
+
+После успешной синхронизации кэш сводной сбрасывается (поколение ключа), цифры в `stats/` и `export/` обновляются сразу. **Сделано 19.09.**
+
+---
+
 ## 4. Список «никогда» для стороны CheckUp
 
 Каждый пункт — след реального инцидента или устройства LoyalUP, которого снаружи не видно.
@@ -533,7 +588,8 @@ X-LoyalUP-Relay-Secret: <LOYALUP_RELAY_SECRET>
 | Фикстуры рассылок `broadcasts_*` и перезапись `guest_card` с телефоном; контракт v1.4 (правило client-id, раздел 3.2) — **сделано 18.09** | 0,5 дня |
 | **Волна 2 (v1.5, старт 18.09):** эталоны w2 (45 записей) — **сделано 18.09**; №26/27 точки контакта и материалы — в работе; №31 авторассылки (4–5), №28 отчёт (3), №23 сториз (2), №29 маркетолог (2,5), №52 база знаний (1–1,5), №56 флаги (чтение, 1), ограничение по точкам для `client` в каталоге/квестах/акциях (0,5) | ≈ 17 дней после разведки 18.09 (карта считала 15: №53 закрыт, но №31 вырос до 4–5 за счёт активации с гейтом, лога, вариантов и тест-отправки; №28 — 3 с комментариями в базе) |
 | **Волна 3, первый срез (v1.6, старт 19.09):** платформенный доступ через обмен (1), список сетей (0,5), сводная и отзывы всех клиентов под платформенным JWT (1), «предпросмотр словами» у авторассылок (0,5) | ≈ 3 дня |
-| **Итого** | **≈ 17 дней** волна 1 + **≈ 17 дней** волна 2 + **≈ 3 дня** волна 3 (первый срез) |
+| **Добивка v1.8 (19.09):** №49 запись каталога наград (1,5), №55 подключение ВК (2), №56 запись флагов (0,5), №34 экспорт CSV + синхронизация себестоимости в celery (1) | ≈ 5 дней |
+| **Итого** | **≈ 17 дней** волна 1 + **≈ 17 дней** волна 2 + **≈ 3 дня** волна 3 (первый срез) + **≈ 5 дней** добивка |
 
 Порядок: обмен токена и песочница первыми (без них CheckUp не может начать), затем вердикт и фильтры отзывов (первый экран), остальное параллельно экранам CheckUp.
 

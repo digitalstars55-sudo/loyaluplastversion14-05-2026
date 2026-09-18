@@ -28,10 +28,12 @@ urlpatterns = [
     path('api/v1/', include('apps.tenant.inventory.api.urls')),
     path('api/v1/', include('apps.tenant.quest.api.urls')),
     path('telegram/', include('apps.tenant.telegram.api.urls')),
+    path('api/v1/', include('apps.tenant.inventory.api.reward_catalog_urls')),  # каталог наград для CheckUp (контракт №49); СТРОГО выше analytics.api.urls — перекрывает старый GET reward-catalog
     path('api/v1/', include('apps.tenant.analytics.api.urls')),
     path('api/v1/', include('apps.tenant.senler.api.urls')),  # рассылки JSON-CRUD для CheckUp (контракт №11/№13)
     path('api/v1/', include('apps.tenant.branch.api.contact_points_urls')),  # точки контакта (QR) для CheckUp (контракт №26/№27)
     path('api/v1/', include('apps.tenant.branch.api.story_settings_urls')),  # настройки сториз для CheckUp (контракт №23)
+    path('api/v1/', include('apps.tenant.branch.api.vk_connect_urls')),  # подключение ВКонтакте для CheckUp (контракт №55)
     path('api/v1/', include('apps.tenant.analytics.api.report_comments_urls')),  # комментарии и печать отчёта (контракт №28)
     path('api/v1/', include('apps.tenant.marketer.api.urls')),  # AI-маркетолог для CheckUp (контракт №29)
     path('api/v1/', include('apps.tenant.analytics.api.knowledge_urls')),  # база знаний ИИ (контракт №52)
