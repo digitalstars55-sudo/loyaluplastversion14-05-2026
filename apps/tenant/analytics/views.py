@@ -5,7 +5,7 @@ import json
 from datetime import date, timedelta
 
 from django.contrib.admin.views.decorators import staff_member_required
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -282,6 +282,15 @@ class ContactPointDetailView(View):
             stage = 'scan'
 
         qr = QRCode.objects.filter(pk=qr_id).select_related('branch').first()
+        # RBAC по точкам (18.09.2026): список «Точек контакта» фильтрует QR по
+        # доступным точкам (_branches_context), а drill-down брал ?qr=<id> как
+        # есть — сотрудник одной точки видел гостей чужой. Тот же хелпер, что в
+        # списке; чужая точка → 404, а не 403 (не раскрываем существование).
+        if qr is not None:
+            from apps.shared.users.access import user_allowed_branches, current_schema_name
+            allowed = user_allowed_branches(request.user, current_schema_name())
+            if allowed is not None and int(qr.branch_id) not in {int(b) for b in allowed}:
+                raise Http404('Точка контакта недоступна')
         clients = get_contact_point_clients(qr_id, stage, start, end) if qr else []
 
         context = {
