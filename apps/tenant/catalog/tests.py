@@ -414,12 +414,16 @@ _INV_PROD  = f'{_INV_SVC}.Product'
 
 def _established_cb(today=None):
     from datetime import date, timedelta
+    from apps.tenant.inventory.api.services import BIRTHDAY_WINDOW_DAYS
     today = today or date(2024, 6, 15)
     cb = MagicMock()
     cb.birth_date = today
     cb.birth_date_set_at = today - timedelta(days=31)
     cb.client.vk_id = 22222
     cb.branch.branch_id = 1
+    # Окно ДР задаём явно: у автомока это MagicMock, он выигрывает резолв как
+    # «переопределение точки» и сравнение с числом дней падает TypeError.
+    cb.branch.config.birthday_window_days = BIRTHDAY_WINDOW_DAYS
     return cb
 
 

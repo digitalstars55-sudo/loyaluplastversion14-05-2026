@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 from django.test import TestCase
 
+from apps.tenant.inventory.api.services import BIRTHDAY_WINDOW_DAYS
+
 
 # ── Patch paths ───────────────────────────────────────────────────────────────
 
@@ -21,13 +23,23 @@ _TZ         = f'{_SVC}.timezone'
 
 # ── Shared factories ──────────────────────────────────────────────────────────
 
-def _cb(birth_date=None, birth_date_set_at=None, vk_id=11111, branch_id=1):
-    """Minimal ClientBranch mock."""
+def _cb(birth_date=None, birth_date_set_at=None, vk_id=11111, branch_id=1,
+        window_days=BIRTHDAY_WINDOW_DAYS):
+    """
+    Minimal ClientBranch mock.
+
+    window_days задаётся ЯВНО: окно подарка ДР резолвится «точка → сеть →
+    константа» (LU-13), и у автомока `branch.config.birthday_window_days`
+    оказывался MagicMock — не None, поэтому побеждал как «переопределение
+    точки», а сравнение `abs(delta) <= window_days` падало TypeError.
+    Явное число ещё и отвязывает тесты от сетевой настройки в БД.
+    """
     cb = MagicMock()
     cb.birth_date = birth_date
     cb.birth_date_set_at = birth_date_set_at
     cb.client.vk_id = vk_id
     cb.branch.branch_id = branch_id
+    cb.branch.config.birthday_window_days = window_days
     return cb
 
 
@@ -41,6 +53,42 @@ def _patch_tz(today: date):
     m = MagicMock()
     m.localdate.return_value = today
     return patch(_TZ, m)
+
+
+# ── _branch_birthday_window ──────────────────────────────────────────────────
+
+class BranchBirthdayWindowTest(TestCase):
+    """
+    Окно подарка ДР: точка → сеть → константа (LU-13).
+
+    Эта развилка и сломала 21 тест: у мока точки окно было MagicMock, то есть
+    «не None», и всегда побеждало. Значит, саму развилку надо проверять.
+    """
+
+    def _call(self, cb):
+        from apps.tenant.inventory.api.services import _branch_birthday_window
+        return _branch_birthday_window(cb)
+
+    def test_branch_override_wins(self):
+        cb = _cb(window_days=10)
+        with patch(f'{_SVC}._network_birthday_window', return_value=3):
+            self.assertEqual(self._call(cb), 10)
+
+    def test_network_used_when_branch_silent(self):
+        cb = _cb(window_days=None)
+        with patch(f'{_SVC}._network_birthday_window', return_value=3):
+            self.assertEqual(self._call(cb), 3)
+
+    def test_constant_when_nobody_set_it(self):
+        cb = _cb(window_days=None)
+        with patch(f'{_SVC}._network_birthday_window', return_value=None):
+            self.assertEqual(self._call(cb), BIRTHDAY_WINDOW_DAYS)
+
+    def test_branch_zero_is_a_real_window_not_inheritance(self):
+        """0 у точки = «только день в день», а не «наследуй сеть»."""
+        cb = _cb(window_days=0)
+        with patch(f'{_SVC}._network_birthday_window', return_value=5):
+            self.assertEqual(self._call(cb), 0)
 
 
 # ── _is_in_birthday_window ────────────────────────────────────────────────────
@@ -383,6 +431,7 @@ class ClaimBirthdayPrizeTest(TestCase):
         cb_branch_b.birth_date_set_at = self._today - timedelta(days=31)
         cb_branch_b.client = shared_client  # same guest
         cb_branch_b.branch.branch_id = 2
+        cb_branch_b.branch.config.birthday_window_days = BIRTHDAY_WINDOW_DAYS
 
         with _patch_tz(self._today), \
              patch(_CB_MODEL) as MockCB, \
@@ -414,6 +463,9 @@ class ActivateBirthdayItemTest(TestCase):
         item = MagicMock()
         item.acquired_from = AcquisitionSource.BIRTHDAY
         item.status = ItemStatus.PENDING
+        # Срок забора подарка (14 дней) появился ПОЗЖЕ этих тестов: у автомока
+        # is_claim_expired правдив, и активация падала GiftClaimExpired.
+        item.is_claim_expired = False
         return item
 
     def test_birthday_item_requires_code(self):
