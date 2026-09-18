@@ -187,6 +187,7 @@ class ContactPointCreateTest(SimpleTestCase):
     @patch(CPP + '_branch_or_none')
     def test_created_row_carries_src_and_url(self, branch_or_none, *_):
         branch_or_none.return_value = _branch()
+        _QRCodeStub.objects.create.side_effect = None  # общий мок: чужой side_effect пересилил бы return_value
         _QRCodeStub.objects.create.return_value = _qr(mode='review', key='k5', table_number=7)
         resp = self._post({'branch_id': 3, 'name': 'Стол 7', 'mode': 'review', 'table_number': 7})
         self.assertEqual(resp.status_code, 201)

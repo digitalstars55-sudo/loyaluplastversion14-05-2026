@@ -256,7 +256,7 @@ class LegacyCardKeysTest(SimpleTestCase):
         self.assertIsNone(card['image'])
         self.assertFalse(card['is_archived'])
         self.assertEqual(card['stats']['sent_30d'], 4)
-        self.assertIn('все точки', card['audience_summary'])
+        self.assertIn('точки: 1', card['audience_summary'])
         self.assertEqual(card['reward_summary'], 'без подарка')
 
     def test_card_of_network_rule_with_segments(self):

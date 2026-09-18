@@ -14,6 +14,7 @@
 import inspect
 from datetime import date, datetime, timezone as dt_timezone
 from types import SimpleNamespace
+from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase
@@ -143,6 +144,7 @@ class CommentsViewTest(SimpleTestCase):
     def test_get_returns_comments_of_the_cell(self):
         objects = self._objects([_row(section_num=7, text='Негатива стало меньше')])
         with patch.object(RC.LoyaltyReportComment, 'objects', objects), \
+             patch(RCP + '_atomic', side_effect=nullcontext), \
              patch(RCP + 'effective_branch_ids', return_value=[3]), \
              patch(RCP + 'current_schema_name', return_value='levone'):
             resp = _call(RC.ReportCommentsAPIView, 'get', '/api/v1/analytics/report/comments/',
@@ -156,6 +158,7 @@ class CommentsViewTest(SimpleTestCase):
         existing = _row(section_num=1)
         objects = self._objects([existing])
         with patch.object(RC.LoyaltyReportComment, 'objects', objects), \
+             patch(RCP + '_atomic', side_effect=nullcontext), \
              patch(RCP + 'effective_branch_ids', return_value=[]), \
              patch(RCP + 'current_schema_name', return_value='levone'):
             resp = _call(RC.ReportCommentsAPIView, 'put', '/api/v1/analytics/report/comments/',
@@ -170,6 +173,7 @@ class CommentsViewTest(SimpleTestCase):
         existing = _row(section_num=1, text='старое')
         objects = self._objects([existing])
         with patch.object(RC.LoyaltyReportComment, 'objects', objects), \
+             patch(RCP + '_atomic', side_effect=nullcontext), \
              patch(RCP + 'effective_branch_ids', return_value=[]), \
              patch(RCP + 'current_schema_name', return_value='levone'):
             resp = _call(RC.ReportCommentsAPIView, 'put', '/api/v1/analytics/report/comments/',
@@ -189,6 +193,7 @@ class CommentsViewTest(SimpleTestCase):
         existing = _row(section_num=3, text='было')
         objects = self._objects([existing])
         with patch.object(RC.LoyaltyReportComment, 'objects', objects), \
+             patch(RCP + '_atomic', side_effect=nullcontext), \
              patch(RCP + 'effective_branch_ids', return_value=[]), \
              patch(RCP + 'current_schema_name', return_value='levone'):
             resp = _call(RC.ReportCommentsAPIView, 'put', '/api/v1/analytics/report/comments/',
@@ -271,11 +276,12 @@ class GenerateViewTest(SimpleTestCase):
         from apps.tenant.analytics.api.views import GenerateReportCommentAPIView
         live = inspect.getsource(GenerateReportCommentAPIView.post)
         mine = inspect.getsource(RC.generate_comment_text)
-        for line in ('Ты — менеджер системы лояльности ресторана/кафе.',
-                     'claude-haiku-4-5-20251001'):
-            with self.subTest(line=line):
-                self.assertIn(line, live)
-                self.assertIn(line, mine)
+        prompt_line = 'Ты — менеджер системы лояльности ресторана/кафе.'
+        self.assertIn(prompt_line, live)
+        self.assertIn(prompt_line, mine)
+        # Модель у нас вынесена в константу AI_MODEL — сверяем её с литералом живой ручки.
+        self.assertEqual(RC.AI_MODEL, 'claude-haiku-4-5-20251001')
+        self.assertIn(RC.AI_MODEL, live)
 
 
 # ── строки метрик и печать ───────────────────────────────────────────────────

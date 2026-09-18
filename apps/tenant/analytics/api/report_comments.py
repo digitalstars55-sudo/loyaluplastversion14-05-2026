@@ -154,6 +154,11 @@ SECTION_TITLES = {num: title for num, title, _ in SECTIONS}
 
 # ── общие помощники (форма как в senler/api/broadcasts.py) ────────────────────
 
+def _atomic():
+    """transaction.atomic() отдельной функцией — тесты на моках подменяют её пустым контекстом."""
+    return transaction.atomic()
+
+
 def _error(code: str, detail: str, status_code: int, **extra):
     payload = {'code': code, 'detail': detail}
     payload.update(extra)
@@ -413,7 +418,7 @@ class ReportCommentsAPIView(APIView):
 
         branch_key = LoyaltyReportComment.make_branch_key(scope['branch_ids'])
         author = (getattr(request.user, 'username', '') or '')[:150]
-        with transaction.atomic():
+        with _atomic():
             existing = {r.section_num: r for r in LoyaltyReportComment.objects
                         .select_for_update()
                         .filter(period_start=scope['start'], period_end=scope['end'],

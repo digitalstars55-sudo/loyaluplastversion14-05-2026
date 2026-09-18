@@ -127,7 +127,8 @@ class UploadTest(SimpleTestCase):
         big = SimpleUploadedFile('big.txt', b'x')
         big.size = K.MAX_FILE_BYTES + 1
         objects, _ = _objects([])
-        with patch.object(K.KnowledgeBaseDocument, 'objects', objects):
+        with patch.object(K.KnowledgeBaseDocument, 'objects', objects), \
+             patch.object(K, 'MAX_FILE_BYTES', 0):  # multipart пересчитает size по содержимому
             factory = APIRequestFactory()
             request = factory.post('/api/v1/ai/knowledge/', {'file': big}, format='multipart')
             force_authenticate(request, user=_user())

@@ -13,6 +13,7 @@
 """
 from datetime import date
 from types import SimpleNamespace
+from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase
@@ -303,7 +304,7 @@ class BranchStoryViewTest(SimpleTestCase):
         with patch(STP + '_branch_or_none', return_value=_branch()):
             resp = _call(ST.BranchStorySettingsAPIView, 'patch',
                          '/api/v1/mobile/branches/3/story/',
-                         data={'story_game_enabled': False}, user=_user(role='client'))
+                         data={'story_game_enabled': False}, user=_user(role='client'), pk=3)
         self.assertEqual((resp.status_code, resp.data['code']), (403, 'role_not_allowed'))
 
     def test_network_only_field_is_rejected(self):
@@ -320,6 +321,7 @@ class BranchStoryViewTest(SimpleTestCase):
         cfg = _branch_cfg(story_min_order_amount=900, story_activation_text='текст точки')
         cfg.save = MagicMock()
         with patch(STP + '_branch_or_none', return_value=branch), \
+             patch(STP + '_atomic', side_effect=nullcontext), \
              patch(STP + 'BranchConfig') as branch_config, \
              patch(STP + '_network_config', return_value=_net()), \
              patch(STP + 'story_gifts_for_branch') as gifts, \
@@ -345,7 +347,7 @@ class BranchStoryViewTest(SimpleTestCase):
             qs.count.return_value = 0
             qs.__getitem__ = lambda self_, item: []
             gifts.return_value = qs
-            payload = ST.BranchStorySettingsAPIView._payload(branch, request)
+            payload = ST.BranchStorySettingsAPIView._payload(branch)
 
         self.assertEqual(set(payload), {'branch', 'overrides', 'effective', 'source',
                                         'prizes', 'rendered'})
@@ -433,6 +435,7 @@ class ZeroMeansInheritTest(SimpleTestCase):
         cfg.save = MagicMock()
         net_cfg = _net(story_min_order_amount=700)
         with patch(STP + '_branch_or_none', return_value=branch), \
+             patch(STP + '_atomic', side_effect=nullcontext), \
              patch(STP + 'BranchConfig') as branch_config, \
              patch(STP + '_network_config', return_value=net_cfg), \
              patch(SSP + '_network_config', return_value=net_cfg), \

@@ -82,6 +82,11 @@ RESOLVED_KEY = {f[0]: f[4] for f in FIELDS}
 
 # ── общие помощники (форма как в senler/api/broadcasts.py) ────────────────────
 
+def _atomic():
+    """transaction.atomic() отдельной функцией — тесты на моках подменяют её пустым контекстом."""
+    return transaction.atomic()
+
+
 def _error(code: str, detail: str, status_code: int, **extra):
     payload = {'code': code, 'detail': detail}
     payload.update(extra)
@@ -431,7 +436,7 @@ class BranchStorySettingsAPIView(APIView):
             return _error('invalid_payload', exc.detail, http_status.HTTP_400_BAD_REQUEST,
                           editable=OVERRIDE_FIELDS)
 
-        with transaction.atomic():
+        with _atomic():
             cfg, created = BranchConfig.objects.get_or_create(branch=branch)
             for field, value in values.items():
                 setattr(cfg, field, value)

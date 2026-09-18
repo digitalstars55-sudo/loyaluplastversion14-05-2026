@@ -402,8 +402,10 @@ def _parse_rule_payload(data, *, create: bool) -> dict:
             raise PayloadError(f'event: неизвестное событие «{event}»', 'event_unknown')
         fields['event'] = event
     if create or 'message_text' in data:
+        # Текст обязателен и при создании, и при правке: пустое правило
+        # разослало бы пустые сообщения (мобилка тоже получает 400, как раньше).
         fields['message_text'] = _parse_text(data.get('message_text'), 'message_text',
-                                             MAX_TEXT_LEN, required=create)
+                                             MAX_TEXT_LEN, required=True)
     if 'delay_days' in data:
         fields['delay_days'] = _parse_int(data.get('delay_days'), 'delay_days', minimum=0)
     if 'send_hour_start' in data:
