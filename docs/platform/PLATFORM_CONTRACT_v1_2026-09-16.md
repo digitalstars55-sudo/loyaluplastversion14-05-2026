@@ -283,12 +283,12 @@ BFF CheckUp живёт в Django (мобилка CheckUp ходит только
 |---|---|---|
 | `GET /api/v1/analytics/report/sections/` | — | `{sections: [{num, title, metric_keys}]}` (11 секций; сейчас список захардкожен в вебе и продублирован в JS) |
 | `GET /api/v1/analytics/report/comments/?period&start&end&branch_ids` | тот же период/точки, что у отчёта | `{period_key, comments: [{section_num, text, is_ai, author, updated_at}]}` |
-| `PUT /api/v1/analytics/report/comments/?…` | `{comments: [{section_num, text}]}` — сохраняет все секции периода | `200` как GET · `400 invalid_payload` |
-| `POST /api/v1/analytics/report/generate-comment/` | как сейчас (`section_num, section_title, metrics_json, draft`) **+** `save: true` и период/точки — сохраняет результат | `{text}` (как сейчас); ошибки ключа/Claude — `{code: ai_unavailable}` |
+| `PUT /api/v1/analytics/report/comments/?…` | `{comments: [{section_num, text, updated_at?}]}` — пишет только присланные секции; пустой `text` удаляет; `updated_at` из `GET` защищает от перезаписи чужой правки | `200` как GET · `400 invalid_payload` · `409 conflict {conflicts: [{section_num, updated_at}]}` |
+| `POST /api/v1/analytics/report/comments/generate/?period\|start&end&branch_ids` | `{section_num, section_title?, metrics_json?, draft?, save: true\|false}` — тот же промпт и модель, что у живой `…/report/generate-comment/` (её не меняем — на ней веб и мобилка); `save: true` пишет комментарий с `is_ai` | `{text, saved, comment}`; нет ключа → `503 ai_unavailable`, Claude недоступен → `502 ai_unavailable` |
 | `GET /api/v1/analytics/report/?…` | как сейчас | **+** `comments: [{section_num, text, is_ai}]` (аддитивно; `ai_summary` остаётся `""`) |
-| `GET /api/v1/analytics/report/print/?period&start&end&branch_ids` | под JWT в заголовке (без `?token=`) | `text/html` — та же PDF-версия отчёта с комментариями из базы (не из localStorage); BFF CheckUp получает её сервер-сервер и отдаёт со своего домена, печать/скачивание PDF делает браузер, как сейчас. Серверного PDF нет (weasyprint не установлен — отдельное решение владельца) |
+| `GET /api/v1/analytics/report/print/?period&start&end&branch_ids` | под JWT в заголовке (без `?token=`) | `text/html` — самодостаточная печатная версия: инлайн-стили, ни одного `<script>` (только `onclick="window.print()"`), внешних адресов и картинок нет, комментарии из базы; цифры — тем же кодом, что `GET …/report/` (до единицы совпадают с мобилкой и кабинетом); состав метрик по секциям — таблица представления `SECTION_METRICS` (новая метрика веб-страницы появится в печати, когда её добавят туда — тот же размен, что у JSON-ручки). BFF CheckUp получает страницу сервер-сервер и показывает со своего домена в iframe sandbox. Серверного PDF нет (weasyprint не установлен — отдельное решение владельца) |
 
-**Модель:** `LoyaltyReportComment` (тенантная, новая таблица: период, точки, секция, текст, `is_ai`, автор; уникальность по периоду+точкам+секции). **Оценка: 3 дня.**
+**Модель:** `LoyaltyReportComment` (тенантная, новая таблица: период, `branch_ids` + `branch_key` («1,3» или `all`), секция, текст, `is_ai`, автор; уникальность по периоду+`branch_key`+секции; миграция analytics/0007). **Сделано 18.09** (код в main, ждёт выкладки).
 
 ### 3б.5. №29 — AI-маркетолог: настройки, лента постов, действия
 
