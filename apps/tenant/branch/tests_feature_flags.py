@@ -93,10 +93,101 @@ class EndpointTest(SimpleTestCase):
             force_authenticate(request, user=_user())
             resp = F.FeatureFlagsAPIView.as_view()(request)
         self.assertEqual(resp.status_code, 200)
-        self.assertTrue(resp.data['read_only'])
+        self.assertFalse(resp.data['read_only'])
         self.assertEqual(len(resp.data['flags']), len(F.FLAG_FIELDS))
+        self.assertEqual(set(resp.data['editable']) | set(resp.data['readonly']), set(F.FLAG_FIELDS))
 
-    def test_no_write_methods(self):
+    def test_only_patch_is_a_write_method(self):
         view = F.FeatureFlagsAPIView()
-        for method in ('post', 'patch', 'put', 'delete'):
+        for method in ('post', 'put', 'delete'):
             self.assertFalse(hasattr(view, method), f'{method} у ручки быть не должно')
+        self.assertTrue(hasattr(view, 'patch'))
+
+
+# ── запись (v1.8) ─────────────────────────────────────────────────────────────
+
+def _admin():
+    user = _user(role='network_admin')
+    user.is_network_admin = True
+    user.role = 'network_admin'
+    return user
+
+
+def _patch(data, user=None):
+    factory = APIRequestFactory()
+    request = factory.patch('/api/v1/settings/features/', data, format='json')
+    force_authenticate(request, user=user or _admin())
+    return F.FeatureFlagsAPIView.as_view()(request)
+
+
+class PatchFlagsTest(SimpleTestCase):
+
+    def setUp(self):
+        self.cfg = SimpleNamespace(**{name: F._field_default(name) for name in F.FLAG_FIELDS})
+        self.cfg.save = MagicMock()
+        objects = MagicMock()
+        objects.get_or_create.return_value = (self.cfg, False)
+        objects.filter.return_value.first.return_value = self.cfg
+        p1 = patch.object(F.ClientConfig, 'objects', objects)
+        p2 = patch(FP + 'connection', SimpleNamespace(tenant=SimpleNamespace(pk=1)))
+        p3 = patch(FP + 'current_schema_name', return_value='dev')
+        for p in (p1, p2, p3):
+            p.start(); self.addCleanup(p.stop)
+
+    def test_client_cannot_write(self):
+        resp = _patch({'birthday_window_days': 5}, user=_user(role='client'))
+        self.assertEqual((resp.status_code, resp.data['code']), (403, 'role_not_allowed'))
+
+    def test_unknown_and_readonly_flags(self):
+        resp = _patch({'pos_type': 'iiko'})
+        self.assertEqual((resp.status_code, resp.data['code']), (400, 'unknown_flag'))
+        resp = _patch({'web_entry_enabled': True})
+        self.assertEqual((resp.status_code, resp.data['code']), (400, 'readonly_flag'))
+        self.assertIn('editable', resp.data)
+        self.cfg.save.assert_not_called()
+
+    def test_patch_network_values_and_source(self):
+        resp = _patch({'birthday_window_days': 4, 'rf_orchestrator_enabled': 'true', 'brand_color': '#6a1b9a'})
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(self.cfg.birthday_window_days, 4)
+        self.assertIs(self.cfg.rf_orchestrator_enabled, True)
+        self.cfg.save.assert_called_once()
+        self.assertEqual(sorted(self.cfg.save.call_args.kwargs['update_fields']),
+                         ['birthday_window_days', 'brand_color', 'rf_orchestrator_enabled'])
+        self.assertEqual(resp.data['flags']['birthday_window_days'], {'value': 4, 'source': 'network'})
+        self.assertFalse(resp.data['read_only'])
+
+    def test_type_errors_are_400(self):
+        for body in ({'birthday_window_days': 'abc'}, {'birthday_window_days': -1},
+                     {'rf_orchestrator_enabled': 'maybe'}, {'story_campaign_start': '31.12.2026'}):
+            with self.subTest(body=body):
+                resp = _patch(body)
+                self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+
+    def test_empty_body_is_400(self):
+        resp = _patch({})
+        self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+
+    def test_branch_override_only_for_overridable_flags(self):
+        branch = SimpleNamespace(pk=3, branch_id=990002, name='Точка', config=None)
+        branch_cfg = SimpleNamespace(birthday_window_days=None, story_game_enabled=None, story_min_order_amount=None,
+                                     story_cafe_address='', story_activation_text='', story_saved_text='')
+        branch_cfg.save = MagicMock()
+        bc_objects = MagicMock(); bc_objects.get_or_create.return_value = (branch_cfg, False)
+        with patch(FP + '_branch_or_none', return_value=branch), patch.object(F.BranchConfig, 'objects', bc_objects):
+            resp = _patch({'branch_id': 3, 'auto_broadcast_weekly_cap': 2})
+            self.assertEqual((resp.status_code, resp.data['code']), (400, 'no_branch_override'))
+            resp = _patch({'branch_id': 3, 'birthday_window_days': 0, 'story_game_enabled': False})
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(branch_cfg.birthday_window_days, 0)
+        self.assertIs(branch_cfg.story_game_enabled, False)
+        self.assertEqual(resp.data['branch']['branch_id'], 990002)
+        self.assertEqual(resp.data['flags']['birthday_window_days'], {'value': 0, 'source': 'branch'},
+                         'у окна ДР 0 у точки — настоящий ноль, не наследование')
+        self.assertEqual(resp.data['flags']['story_game_enabled']['source'], 'branch')
+        self.assertEqual(resp.data['flags']['story_min_order_amount']['source'], 'default')
+
+    def test_branch_not_found_is_404(self):
+        with patch(FP + '_branch_or_none', return_value=None):
+            resp = _patch({'branch_id': 99, 'birthday_window_days': 1})
+        self.assertEqual((resp.status_code, resp.data['code']), (404, 'not_found'))

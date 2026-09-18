@@ -594,3 +594,53 @@ class PlatformGateTest(_SimpleTestCase):
         from apps.shared.clients.api.views import _is_platform
         self.assertFalse(_is_platform(self._request('not-a-jwt')))
         self.assertFalse(_is_platform(self._request(None)))
+
+
+
+class OverviewExportTest(_SimpleTestCase):
+
+    def test_csv_has_bom_header_rows_and_totals(self):
+        from apps.shared.clients.api.views import overview_rows_to_csv, EXPORT_COLUMNS
+        rows = [{'name': 'LevOne', 'schema': 'levone', 'client_id': 1, 'domain': 'levone.levelupapp.ru',
+                 'total_scans': 10, 'qr_scans': 8, 'pos_guests': 100, 'scan_index': 8.0, 'new_community': 2,
+                 'new_newsletter': 1, 'stories': 0, 'reviews': 3, 'gift_cost': 150.5, 'service_cost': 1000.0,
+                 'total_cost': 1150.5, 'sub_contacts': 3, 'unique_digitized': 2, 'cost_per_contact': 383.5,
+                 'cost_per_unique': 575.25, 'no_cost_products': 0, 'gift_breakdown_title': 'Чизкейк ×2',
+                 'gift_breakdown': [{'name': 'Чизкейк', 'qty': 2}], 'ok': True}]
+        totals = {'total_scans': 10, 'gift_cost': 150.5}
+        csv_text = overview_rows_to_csv(rows, totals, '2026-09-01', '2026-09-30')
+        self.assertTrue(csv_text.startswith('\ufeff'))
+        lines = csv_text.lstrip('\ufeff').split('\r\n')
+        self.assertEqual(lines[1].split(';')[0], 'Клиент')
+        self.assertEqual(len(lines[1].split(';')), len(EXPORT_COLUMNS))
+        self.assertIn('LevOne;levone;1;levone.levelupapp.ru;10;8;100;8,00;', lines[2])
+        self.assertIn('150,50', lines[2])
+        self.assertTrue(lines[3].startswith('Итого;;;;10;'))
+
+    @_override(CHECKUP_TOKEN_EXCHANGE_MINUTES=60)
+    def test_view_requires_platform_and_returns_csv(self):
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from apps.shared.checkup.services import issue_exchange_token
+        from apps.shared.clients.api.views import CrossTenantOverviewExportView
+        user = _NS(pk=5, username='checkup-1-dev', role='network_admin', is_superuser=False, is_authenticated=True, is_active=True)
+        token, _ = issue_exchange_token(user, 'dev', platform=True)
+        payload = {'rows': [{'name': 'A', 'schema': 'a', 'client_id': 1, 'domain': '', 'total_scans': 1}], 'totals': {'total_scans': 1}}
+        with _mock.patch('apps.shared.clients.cross_stats.get_cross_tenant_overview', return_value=payload), \
+             _mock.patch('django.core.cache.cache.get', return_value=None), \
+             _mock.patch('django.core.cache.cache.set'):
+            request = APIRequestFactory().get('/api/v1/overview/export/', {'period': '30d'})
+            force_authenticate(request, user=user, token=token)
+            resp = CrossTenantOverviewExportView.as_view()(request)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp['Content-Type'].startswith('text/csv'))
+        self.assertIn('attachment; filename="loyalup-overview-', resp['Content-Disposition'])
+        self.assertIn('Клиент;Сеть', resp.content.decode('utf-8'))
+
+    def test_view_403_for_plain_user(self):
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from apps.shared.clients.api.views import CrossTenantOverviewExportView
+        user = _NS(pk=6, username='u', role='client', is_superuser=False, is_authenticated=True, is_active=True)
+        request = APIRequestFactory().get('/api/v1/overview/export/', {'period': '30d'})
+        force_authenticate(request, user=user, token='not-a-jwt')
+        resp = CrossTenantOverviewExportView.as_view()(request)
+        self.assertEqual((resp.status_code, resp.data['code']), (403, 'role_not_allowed'))

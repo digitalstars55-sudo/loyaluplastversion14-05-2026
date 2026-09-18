@@ -133,3 +133,72 @@ class TenantDomainView(APIView):
 
         serializer = TenantDomainResponseSerializer(data)
         return Response(serializer.data)
+
+
+# ── №34: экспорт сводной в CSV (контракт v1.8) ───────────────────────────────
+
+EXPORT_COLUMNS = [
+    ('name', 'Клиент'), ('schema', 'Сеть'), ('client_id', 'client_id'), ('domain', 'Домен'),
+    ('total_scans', 'Сканы'), ('qr_scans', 'Сканы QR'), ('pos_guests', 'Гости POS'), ('scan_index', 'Индекс сканирования, %'),
+    ('new_community', 'Новые в сообществе'), ('new_newsletter', 'Новые подписки на рассылку'),
+    ('stories', 'Сториз'), ('reviews', 'Отзывы'),
+    ('gift_cost', 'Себестоимость подарков, ₽'), ('service_cost', 'Обслуживание, ₽'), ('total_cost', 'Итого затраты, ₽'),
+    ('sub_contacts', 'Контакты'), ('unique_digitized', 'Уникальных оцифровано'),
+    ('cost_per_contact', 'Цена контакта, ₽'), ('cost_per_unique', 'Цена уникального, ₽'),
+    ('no_cost_products', 'Подарков без себестоимости'), ('gift_breakdown_title', 'Подарки за период'),
+]
+
+
+def overview_rows_to_csv(rows: list[dict], totals: dict | None, start, end) -> str:
+    """Те же строки и колонки, что у GET /overview/stats/; BOM для Excel, разделитель «;»."""
+    import csv
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=';', lineterminator='\r\n')
+    writer.writerow([f'Сводная по клиентам {start} — {end}'])
+    writer.writerow([label for _, label in EXPORT_COLUMNS])
+    for row in rows:
+        writer.writerow([_csv_cell(row.get(key)) for key, _ in EXPORT_COLUMNS])
+    if totals:
+        writer.writerow(['Итого', '', '', ''] + [_csv_cell(totals.get(key, '')) for key, _ in EXPORT_COLUMNS[4:]])
+    return '\ufeff' + buf.getvalue()
+
+
+def _csv_cell(value):
+    if value is None:
+        return ''
+    if isinstance(value, bool):
+        return 'да' if value else 'нет'
+    if isinstance(value, float):
+        return f'{value:.2f}'.replace('.', ',')
+    if isinstance(value, (list, dict)):
+        return ''
+    return str(value)
+
+
+class CrossTenantOverviewExportView(APIView):
+    """
+    GET /api/v1/overview/export/?period=30d   (или ?start=&end=)
+
+    CSV сводной по всем клиентам (те же строки и цифры, что /overview/stats/,
+    из того же кэша на 5 минут). Только суперадмин или платформенный JWT.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request):
+        if not _may_see_platform(request):
+            return Response({'code': 'role_not_allowed', 'detail': 'Только для платформенного доступа.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        from django.core.cache import cache
+        from django.http import HttpResponse
+        from apps.shared.clients.cross_stats import get_cross_tenant_overview, parse_overview_period
+        start, end, _period = parse_overview_period(request)
+        cache_key = f'overview:stats:{start.isoformat()}:{end.isoformat()}'
+        data = cache.get(cache_key)
+        if data is None:
+            data = get_cross_tenant_overview(start, end)
+            cache.set(cache_key, data, 300)
+        body = overview_rows_to_csv(data.get('rows', []), data.get('totals'), start.isoformat(), end.isoformat())
+        resp = HttpResponse(body, content_type='text/csv; charset=utf-8')
+        resp['Content-Disposition'] = f'attachment; filename="loyalup-overview-{start.isoformat()}-{end.isoformat()}.csv"'
+        return resp
