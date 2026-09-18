@@ -14,6 +14,7 @@ apps.tenant.branch.api.contact_points:
 напечатаны десятки тысяч QR: если формат поедет, гость уйдёт в чужую точку
 или размещение выпадет из воронки. Таблица прибита гвоздями намеренно.
 """
+import json
 from datetime import datetime, timezone as dt_timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -407,3 +408,116 @@ class ScopeTest(SimpleTestCase):
         resp, qs = self._list([-1])
         self.assertEqual(resp.status_code, 200)
         qs.filter.assert_called_once_with(branch_id__in=[-1])
+
+
+# ── доделка по ревью CheckUp (3б.8) ──────────────────────────────────────────
+
+class TotalsFilteredTest(SimpleTestCase):
+    """`totals` — по показанной странице, `totals_filtered` — по всему фильтру."""
+
+    def test_two_sums_differ(self):
+        qr11, qr12 = _qr(pk=11, key='k11'), _qr(pk=12, key='k12')
+        stub = SimpleNamespace(Mode=_Mode, objects=MagicMock())
+        qs = MagicMock()
+        stub.objects.select_related.return_value.order_by.return_value = qs
+        qs.values_list.return_value = [11, 12]
+        qs.__getitem__ = lambda self_, item: [qr11]   # на странице только первый
+        funnel = {
+            11: {'scans': 10, 'guests': 5, 'subscribed': 2, 'played': 1, 'activated': 1,
+                 'conversion': 40},
+            12: {'scans': 4, 'guests': 4, 'subscribed': 2, 'played': 0, 'activated': 0,
+                 'conversion': 50},
+        }
+        with patch(CPP + 'QRCode', stub), \
+             patch(CPP + 'current_schema_name', return_value='dev'), \
+             patch(CPP + 'current_company_id', return_value=COMPANY), \
+             patch(CPP + 'effective_branch_ids', return_value=None), \
+             patch(CPP + '_funnel_map', return_value=funnel), \
+             patch(CPP + '_scan_windows', return_value={11: {'d7': 1, 'd30': 2, 'all': 10}}):
+            resp = _call(CP.ContactPointListCreateAPIView, 'get', '/api/v1/contact-points/')
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['total'], 2, 'total — по всему фильтру')
+        self.assertEqual(len(resp.data['results']), 1, 'на странице одна строка')
+        self.assertEqual(resp.data['totals']['guests'], 5)
+        self.assertEqual(resp.data['totals_filtered']['guests'], 9)
+        self.assertEqual(resp.data['totals_filtered']['subscribed'], 4)
+        # Конверсия считается по сумме, а не как среднее по строкам (м4).
+        self.assertEqual(resp.data['totals_filtered']['conversion'], 44)
+
+    def test_sum_funnel_conversion_is_integer_percent(self):
+        out = CP._sum_funnel([{'scans': 1, 'guests': 3, 'subscribed': 1, 'played': 0,
+                               'activated': 0}])
+        self.assertEqual(out['conversion'], 33)
+
+    def test_sum_funnel_without_guests_is_zero(self):
+        self.assertEqual(CP._sum_funnel([])['conversion'], 0)
+        self.assertEqual(CP._sum_funnel([None])['guests'], 0)
+
+
+class HostIndependenceTest(SimpleTestCase):
+    """
+    Ссылки не зависят от Host и схемы запроса (★5 ревью).
+
+    CheckUp ходит к нам через loopback по http с подменённым Host, поэтому
+    ссылка, собранная из запроса, увела бы гостя на внутренний адрес. Формат
+    собирается из настроек, `client_id` сети и публичного `branch_id`.
+    """
+
+    def test_materials_links_ignore_request_host(self):
+        branch = _branch()
+        stub = SimpleNamespace(Mode=_Mode, objects=MagicMock())
+        (stub.objects.select_related.return_value
+         .filter.return_value.order_by.return_value) = [_qr(mode='cafe', key='k1')]
+        with patch(CPP + 'QRCode', stub), patch(CPP + 'Branch') as branch_model, \
+             patch(CPP + 'effective_branch_ids', return_value=None), \
+             patch(CPP + 'current_schema_name', return_value='dev'), \
+             patch(CPP + 'current_company_id', return_value=COMPANY):
+            branch_model.objects.filter.return_value.first.return_value = branch
+            factory = APIRequestFactory()
+            request = factory.get('/api/v1/mobile/branches/3/materials/',
+                                  HTTP_HOST='127.0.0.1:7000')
+            force_authenticate(request, user=_user())
+            resp = CP.BranchMaterialsAPIView.as_view()(request, pk=3)
+
+        body = json.dumps(resp.data, ensure_ascii=False)
+        self.assertNotIn('127.0.0.1', body)
+        self.assertNotIn('http://', body, 'ссылки только https на vk.com')
+        self.assertIn('https://vk.com/app', body)
+
+    def test_link_builder_takes_no_request(self):
+        import inspect
+        from apps.tenant.branch.api.qr_links import build_branch_link, build_qr_link
+        for func in (build_qr_link, build_branch_link):
+            with self.subTest(func=func.__name__):
+                self.assertNotIn('request', inspect.signature(func).parameters)
+
+
+class GuestVkIdTypeTest(SimpleTestCase):
+    """`vk_id` гостя — строкой: у CheckUp поле строковое (м6 ревью)."""
+
+    def test_vk_id_is_string(self):
+        qr = _qr()
+        guest = SimpleNamespace(pk=77, vk_id=887316623, first_name='Пётр', last_name='Иванов',
+                                rf_score=None)
+        grouped = MagicMock()
+        grouped.order_by.return_value = grouped
+        grouped.count.return_value = 1
+        grouped.__getitem__ = lambda self_, item: [{'client__client_id': 77,
+                                                    'at': datetime(2026, 9, 18, tzinfo=dt_timezone.utc)}]
+        with patch(CPP + '_get_qr', return_value=qr), \
+             patch(CPP + 'effective_branch_ids', return_value=None), \
+             patch(CPP + 'current_schema_name', return_value='dev'), \
+             patch(CPP + 'QRScan') as scan, \
+             patch(CPP + 'GuestClient') as guests:
+            scan.objects.filter.return_value.values.return_value.annotate.return_value = grouped
+            guests.objects.filter.return_value.select_related.return_value = [guest]
+            resp = _call(CP.ContactPointGuestsAPIView, 'get',
+                         '/api/v1/contact-points/11/guests/', params={'stage': 'scan'}, pk=11)
+
+        self.assertEqual(resp.status_code, 200)
+        row = resp.data['results'][0]
+        self.assertEqual(row['vk_id'], '887316623')
+        self.assertIsInstance(row['vk_id'], str)
+        self.assertEqual(row['guest_id'], 77)
+        self.assertIsNone(row['segment'])

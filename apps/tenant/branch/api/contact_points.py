@@ -184,12 +184,23 @@ def _row(qr, company_id: str, scans: dict, funnel: dict) -> dict:
     }
 
 
-def _rows_for(qrs: list, scope, start, end) -> list[dict]:
+def _rows_for(qrs: list, funnel: dict) -> list[dict]:
     ids = [q.pk for q in qrs]
     scans = _scan_windows(ids)
-    funnel = _funnel_map(scope, start, end)
     company_id = current_company_id()
     return [_row(q, company_id, scans.get(q.pk), funnel.get(q.pk)) for q in qrs]
+
+
+def _sum_funnel(rows) -> dict:
+    """Сумма воронки по набору строк + конверсия по сумме (не средняя)."""
+    out = dict(EMPTY_FUNNEL)
+    for row in rows:
+        if not row:
+            continue
+        for key in ('scans', 'guests', 'subscribed', 'played', 'activated'):
+            out[key] += row.get(key, 0)
+    out['conversion'] = (round(out['subscribed'] / out['guests'] * 100) if out['guests'] else 0)
+    return out
 
 
 # ── создание и правка: разбор тела ───────────────────────────────────────────
@@ -302,24 +313,19 @@ class ContactPointListCreateAPIView(APIView):
             from django.db.models import Q
             qs = qs.filter(Q(name__icontains=search) | Q(key__icontains=search))
 
-        total = qs.count()
+        # Один проход по отфильтрованным id: и total, и итоги по всему фильтру.
+        all_ids = list(qs.values_list('pk', flat=True))
         page = list(qs[offset:offset + limit])
-        rows = _rows_for(page, scope, params['start'], params['end'])
-        totals = {
-            'scans':      sum(r['funnel']['scans'] for r in rows),
-            'guests':     sum(r['funnel']['guests'] for r in rows),
-            'subscribed': sum(r['funnel']['subscribed'] for r in rows),
-            'played':     sum(r['funnel']['played'] for r in rows),
-            'activated':  sum(r['funnel']['activated'] for r in rows),
-        }
-        totals['conversion'] = (round(totals['subscribed'] / totals['guests'] * 100)
-                                if totals['guests'] else 0)
+        funnel = _funnel_map(scope, params['start'], params['end'])
+        rows = _rows_for(page, funnel)
         return Response({
-            'total': total, 'limit': limit, 'offset': offset,
+            'total': len(all_ids), 'limit': limit, 'offset': offset,
             'results': rows,
-            # totals — по показанной странице, не по всей сети: иначе цифры в
-            # шапке не сойдутся с тем, что видно в таблице.
-            'totals': totals,
+            # Две суммы намеренно: `totals` сходится с тем, что видно в
+            # таблице сейчас, `totals_filtered` — со всем фильтром, включая
+            # страницы, которые кабинет не листал (★1 ревью CheckUp).
+            'totals': _sum_funnel([r['funnel'] for r in rows]),
+            'totals_filtered': _sum_funnel([funnel.get(i) for i in all_ids]),
             'meta': {'start': str(params['start']), 'end': str(params['end']),
                      'branch_ids': scope or []},
         })
@@ -369,7 +375,7 @@ class ContactPointDetailAPIView(APIView):
             return _error('invalid_payload', f'параметры периода: {errors}',
                           http_status.HTTP_400_BAD_REQUEST)
 
-        row = _rows_for([qr], [qr.branch_id], params['start'], params['end'])[0]
+        row = _rows_for([qr], _funnel_map([qr.branch_id], params['start'], params['end']))[0]
         row['funnel_by_day'] = _funnel_by_day(qr, params['start'], params['end'])
         return Response(row)
 
@@ -517,7 +523,9 @@ class ContactPointGuestsAPIView(APIView):
             segment = getattr(getattr(guest, 'rf_score', None), 'segment', None)
             results.append({
                 'guest_id': guest.pk,
-                'vk_id': guest.vk_id,
+                # Строкой: у VK ID 2.0 до 12 знаков, и приёмник CheckUp хранит
+                # его строкой — пусть тип совпадает с обеих сторон (м6 ревью).
+                'vk_id': str(guest.vk_id),
                 'name': f'{guest.first_name} {guest.last_name}'.strip(),
                 'at': _iso(row['at']),
                 'segment': ({'code': segment.code, 'name': segment.name} if segment else None),
