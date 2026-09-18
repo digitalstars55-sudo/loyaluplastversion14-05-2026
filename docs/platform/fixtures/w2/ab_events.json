@@ -1,6 +1,6 @@
 {
  "name": "ab_events",
- "note": "single source of placeholders; delay_required only for no_visit_days/subscribed_days",
+ "note": "delay_required only for no_visit_days/subscribed_days; placeholders per event",
  "request": {
   "method": "GET",
   "path": "/api/v1/auto-broadcasts/events/",
