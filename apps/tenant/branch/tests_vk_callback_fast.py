@@ -258,7 +258,33 @@ class EnqueueTest(SimpleTestCase):
             fast.enqueue('levone', _msg())
         self.assertEqual(send.call_args[1]['queue'], 'vkcb')
 
+    def test_publish_does_not_retry(self):
+        """Три попытки celery по умолчанию залипли бы почти на секунду на событие."""
+        with patch('apps.tenant.branch.tasks.handle_vk_callback_task.apply_async') as send:
+            fast.enqueue('levone', _msg())
+        self.assertFalse(send.call_args[1]['retry'])
+        self.assertEqual(send.call_args[1]['expires'], 1800)
+
     def test_broker_failure_is_reported_not_raised(self):
         with patch('apps.tenant.branch.tasks.handle_vk_callback_task.apply_async',
                    side_effect=OSError('broker unreachable')):
             self.assertFalse(fast.enqueue('levone', _msg()))
+
+
+class RedisCacheSettingsTest(SimpleTestCase):
+    """Настройки кэша колбэка, от которых зависит, не залипнет ли ручка."""
+
+    def test_callback_cache_has_short_timeouts(self):
+        """
+        Без тайм-аутов подвисший (не упавший) Redis блокировал бы ручку — это
+        ровно та беда 21.09, ради которой быстрый путь и делался.
+        """
+        from django.conf import settings
+        opts = settings.CACHES['vk_callback']['OPTIONS']
+        self.assertLessEqual(opts['socket_connect_timeout'], 1)
+        self.assertLessEqual(opts['socket_timeout'], 1)
+
+    def test_default_cache_left_as_it_was(self):
+        """default остаётся внутрипроцессным: менять поведение соседей не хотим."""
+        from django.conf import settings
+        self.assertIn('locmem', settings.CACHES['default']['BACKEND'])
