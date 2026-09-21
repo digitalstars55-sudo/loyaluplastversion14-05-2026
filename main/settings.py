@@ -319,6 +319,45 @@ CELERY_TASK_TIME_LIMIT       = 300          # 5 min hard limit per task
 CELERY_TASK_SOFT_TIME_LIMIT  = 240          # 4 min soft limit
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1       # one task at a time per worker slot
 
+# ---------------------------------------------------------------------------
+# VK Callback API — быстрый путь (инцидент 21.09.2026)
+# ---------------------------------------------------------------------------
+# Событие ВК больше не обрабатывается в HTTP-запросе: ручка проверяет секрет,
+# отсекает повтор и кладёт событие в ОТДЕЛЬНУЮ очередь. Подробности и правила —
+# в докстринге apps/tenant/branch/api/vk_callback_fast.py.
+
+# Выключатель на случай беды: off = старое синхронное поведение (оно и валило
+# сервис, но пусть будет путь отката без правки кода). Читается на импорте —
+# смена требует пересоздания контейнера web, не HUP.
+VK_CALLBACK_ASYNC = os.getenv('VK_CALLBACK_ASYNC', 'on').lower() in ('on', '1', 'true', 'yes')
+
+# Своя очередь: общий celery-worker крутит рассылки и мониторинг на
+# --concurrency=2, всплеск колбэка (до 380 событий/с) встал бы поперёк них.
+VK_CALLBACK_QUEUE = os.getenv('VK_CALLBACK_QUEUE', 'vkcb')
+
+# Дедуп и кэш секретов — общие для всех процессов gunicorn, поэтому Redis.
+# Отдельный алиас: CACHES['default'] остаётся внутрипроцессным, как было, и
+# поведение остальных мест, которые им пользуются, не меняется.
+VK_CALLBACK_CACHE_ALIAS = 'vk_callback'
+VK_CALLBACK_REDIS_URL   = os.getenv('VK_CALLBACK_REDIS_URL', CELERY_BROKER_URL)
+
+CACHES = {
+    # Как было до 22.09.2026: CACHES в проекте не задавался, Django молча брал
+    # локальную память процесса. Оставляем ровно это, чтобы не менять поведение
+    # мест, которые уже на нём сидят (сводная по сетям, троттлы маркетолога).
+    'default': {
+        'BACKEND':  'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'levelup-default',
+    },
+    # Только для колбэка ВК. Redis нужен ради атомарного SET NX: два воркера на
+    # два ретрая одного события не должны оба решить, что видят его впервые.
+    'vk_callback': {
+        'BACKEND':  'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': VK_CALLBACK_REDIS_URL,
+        'KEY_PREFIX': 'lu',
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # CORS — для мобильного web-превью и нативных сборок.

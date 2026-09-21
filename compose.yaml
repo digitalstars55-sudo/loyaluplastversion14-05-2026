@@ -81,6 +81,36 @@ services:
         condition: service_healthy
     command: celery -A main worker --loglevel=info --concurrency=2
 
+  # Потребитель очереди колбэка ВК (инцидент 21.09.2026). Отдельный контейнер,
+  # а не -Q celery,vkcb у соседа: общий воркер крутит рассылки и мониторинг на
+  # двух слотах, всплеск колбэка встал бы поперёк них. Слотов хватает двух —
+  # дедуп в ручке отсекает ретраи, а настоящих событий 50-270 в ЧАС.
+  celery-vkcb:
+    build: .
+    container_name: celery-vkcb
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - .:/app
+      - ./media:/app/media
+    env_file:
+      - .env/.env.prod
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - POSTGRES_HOST=db
+    networks:
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      celery -A main worker --loglevel=warning --concurrency=2
+      -Q vkcb -n vkcb@%h
+      --without-gossip --without-mingle --max-tasks-per-child=500
+
   celery-beat:
     build: .
     container_name: celery-beat

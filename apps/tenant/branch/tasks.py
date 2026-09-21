@@ -1023,3 +1023,40 @@ def vk_bulk_membership_sync_task(self, schema_name: str, branch_id: int) -> dict
 
         logger.info('VK bulk membership sync schema=%s branch=%s: synced=%d', schema_name, branch_id, synced)
         return {'synced': synced, 'errors': errors}
+
+
+# ── VK Callback: обработка события вне HTTP-запроса ───────────────────────────
+
+@shared_task(
+    bind=True,
+    name='apps.tenant.branch.tasks.handle_vk_callback_task',
+    max_retries=2,
+    default_retry_delay=5,
+    time_limit=90,
+    soft_time_limit=60,
+)
+def handle_vk_callback_task(self, schema_name: str, payload: dict) -> str:
+    """
+    Разбирает событие Callback API ВКонтакте, которое быстрый путь ручки уже
+    принял и отсёк от повторов (инцидент 21.09.2026 — см. докстринг
+    apps/tenant/branch/api/vk_callback_fast.py).
+
+    Живёт в ОТДЕЛЬНОЙ очереди (settings.VK_CALLBACK_QUEUE, по умолчанию `vkcb`):
+    в общую очередь колбэк лить нельзя, там рассылки и мониторинг на двух слотах.
+
+    Секрет в полезной нагрузке не приходит и здесь не проверяется: он проверен
+    синхронно в ручке, до постановки в очередь.
+    """
+    from django_tenants.utils import schema_context
+    from apps.tenant.branch.api.services import handle_vk_callback
+
+    try:
+        with schema_context(schema_name):
+            handle_vk_callback(payload, verify_secret=False)
+    except Exception as e:
+        logger.warning(
+            'vk callback task failed schema=%s type=%s: %s',
+            schema_name, (payload or {}).get('type'), e,
+        )
+        raise self.retry(exc=e)
+    return 'ok'

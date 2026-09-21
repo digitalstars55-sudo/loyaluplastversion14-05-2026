@@ -309,7 +309,7 @@ def vk_web_auth(
     return profile, created
 
 
-def handle_vk_callback(data: dict) -> None:
+def handle_vk_callback(data: dict, verify_secret: bool = True) -> None:
     """
     Processes a VK Callback API event.
 
@@ -318,6 +318,9 @@ def handle_vk_callback(data: dict) -> None:
         VKCallbackForbidden          — secret mismatch; view returns 403
 
     Returns normally for all handled events (view returns 'ok').
+
+    verify_secret=False — событие пришло из очереди (handle_vk_callback_task):
+    секрет уже проверен синхронно в ручке и в брокер намеренно не клался.
     """
     from apps.tenant.senler.models import SenlerConfig
 
@@ -344,7 +347,7 @@ def handle_vk_callback(data: dict) -> None:
         return
 
     secrets = [c.vk_callback_secret for c in configs if c.vk_callback_secret]
-    if secrets and secret not in secrets:
+    if verify_secret and secrets and secret not in secrets:
         raise VKCallbackForbidden
 
     # Для обработки берём конфиг с совпавшим секретом, иначе первый с токеном.

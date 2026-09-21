@@ -315,9 +315,21 @@ class VKCallbackView(APIView):
 
     Принимает события Callback API ВКонтакте.
 
-    Обрабатывает:
-      — confirmation  → возвращает строку подтверждения из SenlerConfig
-      — message_new   → сохраняет входящее сообщение в тред
+    Быстрый путь: проверить секрет, отсечь повтор, положить событие в очередь
+    и ответить. Разбор события живёт в handle_vk_callback_task.
+
+    Так сделано после инцидента 21.09.2026: обработка шла прямо в запросе, а
+    внутри message_new висел сетевой вызов ВК. На всплеске ретраев (~380
+    событий/с при норме 50–270 в ЧАС) воркеры gunicorn встали, ВК не дождался
+    ответа и слал заново — 53 415 ответов 499 и 25 WORKER TIMEOUT. Правила
+    быстрого пути — в докстринге apps/tenant/branch/api/vk_callback_fast.py.
+
+    Синхронно остаются только два события:
+      — confirmation   → ВК ждёт код подтверждения в теле ответа;
+      — message_event  → нажатие кнопки, в ответ зовём sendMessageEventAnswer.
+
+    Ответ ВСЕГДА 200 «ok», кроме строки подтверждения и 403 на чужой секрет:
+    ВК отключает callback-сервер и за 5xx тоже (15.09 так отвалились 5 сетей).
     """
 
     authentication_classes = []
@@ -325,13 +337,65 @@ class VKCallbackView(APIView):
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.STR, 403: None})
     def post(self, request: Request) -> Response:
+        from django.conf import settings as dj_settings
+        from django.db import connection
         from django.http import HttpResponse
+
+        from apps.tenant.branch.api import vk_callback_fast as fast
+
         try:
-            handle_vk_callback(request.data)
+            # Путь отката без правки кода: VK_CALLBACK_ASYNC=off возвращает
+            # прежнее синхронное поведение целиком.
+            if not getattr(dj_settings, 'VK_CALLBACK_ASYNC', True):
+                handle_vk_callback(request.data)
+                return Response('ok')
+
+            data = request.data if isinstance(request.data, dict) else {}
+            event    = data.get('type') or ''
+            group_id = data.get('group_id')
+            schema   = getattr(connection, 'schema_name', '') or ''
+
+            if not group_id:
+                return Response('ok')
+
+            # Подтверждение — только синхронно, ВК ждёт код в теле.
+            if event == 'confirmation':
+                handle_vk_callback(data)
+                return Response('ok')
+
+            # Секрет — здесь, до очереди: иначе очередь открыта для чужих.
+            verdict = fast.check_secret(schema, group_id, data.get('secret') or '')
+            if verdict == 'no_config':
+                return Response('ok')
+            if verdict == 'forbidden':
+                return Response(status=status.HTTP_403_FORBIDDEN)
+
+            # Повтор — здесь же, до очереди: иначе затор переедет в очередь.
+            key, ttl = fast.dedup_key(schema, data)
+            if fast.seen_before(key, ttl):
+                return Response('ok')
+
+            if event in fast.QUEUED_EVENTS:
+                if not fast.enqueue(schema, data):
+                    # Событие потеряно осознанно: сообщения подберёт резервный
+                    # опрос poll_all_vk_messages_task, а ВК должен получить 200.
+                    logger.error(
+                        'vk callback: dropped %s for schema=%s group=%s — queue unavailable',
+                        event, schema, group_id,
+                    )
+                return Response('ok')
+
+            # message_event и прочее — как раньше, в запросе.
+            handle_vk_callback(data)
+
         except VKCallbackConfirmation as e:
             return HttpResponse(e.code, content_type='text/plain')
         except VKCallbackForbidden:
             return Response(status=status.HTTP_403_FORBIDDEN)
+        except Exception:
+            # Ни при каких обстоятельствах не отдаём ВК 5xx.
+            logger.exception('vk callback: unhandled error, answering ok anyway')
+
         return Response('ok')
 
 
