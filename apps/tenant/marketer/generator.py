@@ -78,12 +78,14 @@ def generate_post(knowledge: dict, *, task: str = _DIGEST_TASK,
     )
     user_message = '\n\n'.join(parts)
 
+    from apps.shared.ai.usage import log_usage
     message = client.messages.create(
         model=model,
         max_tokens=1024,
         system=_SYSTEM_PROMPT,
         messages=[{'role': 'user', 'content': user_message}],
     )
+    log_usage('marketer', message)
     raw = message.content[0].text.strip()
 
     if raw.startswith('```'):

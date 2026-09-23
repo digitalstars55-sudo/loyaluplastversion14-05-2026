@@ -335,6 +335,8 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
         logger.warning('auto_reply: anthropic package not installed')
         return None
 
+    from apps.shared.ai.usage import cached_system, log_usage
+
     parts = build_draft_prompt(conv, ai_tone)
     if parts is None:
         return None
@@ -349,9 +351,12 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
         message = client.messages.create(
             model='claude-haiku-4-5-20251001',
             max_tokens=2048,
-            system=system_prompt,
+            # Кэш промпта: правила + база знаний сети одинаковы от черновика к
+            # черновику, меняется только тред (он в user). См. cached_system.
+            system=cached_system(system_prompt),
             messages=[{'role': 'user', 'content': user_message}],
         )
+        log_usage('draft', message)
         return message.content[0].text.strip()
     except Exception as e:
         logger.warning('Claude draft generation failed for conv %s: %s', conv.pk, e)

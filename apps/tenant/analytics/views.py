@@ -755,12 +755,14 @@ class ReviewsAIReplyView(View):
                     + kb_text
                 )
 
+            from apps.shared.ai.usage import cached_system, log_usage
             msg = ai_client.messages.create(
                 model='claude-haiku-4-5-20251001',
                 max_tokens=2048,
-                system=system_prompt,
+                system=cached_system(system_prompt),   # БЗ сети — в кэш промпта
                 messages=[{'role': 'user', 'content': user_content}],
             )
+            log_usage('draft_improve', msg)
             suggestion = msg.content[0].text.strip()
         except Exception as e:
             return JsonResponse({'error': f'Ошибка AI: {e}'}, status=500)

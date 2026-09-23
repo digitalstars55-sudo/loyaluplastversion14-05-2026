@@ -532,5 +532,7 @@ LOGGING = {
         # несколько событий в день, нужны в логе, а корень стоит на WARNING.
         'apps.tenant.branch.api.client_phone': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
         'apps.tenant.branch.api.vk_message_event': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        # 23.09.2026: строка расхода на каждый вызов Anthropic (apps/shared/ai/usage.py).
+        'ai.usage': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
     },
 }

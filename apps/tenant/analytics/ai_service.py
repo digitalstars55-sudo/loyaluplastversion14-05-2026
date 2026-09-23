@@ -1,7 +1,8 @@
 """
 AI-сервис для анализа тональности отзывов и обращений гостей.
 
-Использует Claude (Anthropic API) с инструкциями из базы знаний (KnowledgeBaseDocument).
+Использует Claude (Anthropic API). База знаний (KnowledgeBaseDocument) идёт только
+в черновик ответа (auto_reply), в классификацию — нет (23.09.2026).
 
 Вызывается синхронно при сохранении нового TestimonialMessage с source APP или VK_MESSAGE.
 Обновляет sentiment и ai_comment у родительского TestimonialConversation.
@@ -142,17 +143,6 @@ def _get_knowledge_base_text() -> str:
         return ''
 
 
-def _build_system_prompt() -> str:
-    kb_text = _get_knowledge_base_text()
-    if kb_text:
-        return (
-            _BASE_SYSTEM_PROMPT
-            + '\n\n--- Дополнительные инструкции из базы знаний ---\n'
-            + kb_text
-        )
-    return _BASE_SYSTEM_PROMPT
-
-
 def analyze_message(text: str, source: str = '') -> dict:
     """
     Анализирует текст сообщения через Claude.
@@ -189,12 +179,17 @@ def analyze_message(text: str, source: str = '') -> dict:
     source_note = f'[Источник: {source}] ' if source else ''
     user_message = f'{source_note}Сообщение гостя:\n\n{text}'
 
+    from apps.shared.ai.usage import log_usage
     message = client.messages.create(
         model='claude-haiku-4-5-20251001',    # fast + cheap for classification
         max_tokens=256,
-        system=_build_system_prompt(),
+        # 23.09.2026: без базы знаний. Она нужна черновику ответа (факты о
+        # заведении), а классификации тональности — нет: БЗ уходила целиком в
+        # КАЖДОЕ сообщение гостя и была основной частью счёта за разбор.
+        system=_BASE_SYSTEM_PROMPT,
         messages=[{'role': 'user', 'content': user_message}],
     )
+    log_usage('sentiment', message)
 
     raw = message.content[0].text.strip()
 

@@ -238,6 +238,7 @@ def run_chat_turn(lead: Lead, user_message: str) -> Tuple[str, List[str]]:
     updated_fields: List[str] = []
 
     for _ in range(3):
+        from apps.shared.ai.usage import log_usage
         response = client.messages.create(
             model='claude-haiku-4-5-20251001',
             max_tokens=512,
@@ -245,6 +246,7 @@ def run_chat_turn(lead: Lead, user_message: str) -> Tuple[str, List[str]]:
             tools=[UPDATE_LEAD_TOOL],
             messages=messages,
         )
+        log_usage('leads', response)
 
         # Собираем текст и обрабатываем tool-вызовы
         tool_calls: List[Tuple[str, Dict[str, Any]]] = []

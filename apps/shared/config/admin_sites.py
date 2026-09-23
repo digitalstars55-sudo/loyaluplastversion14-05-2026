@@ -657,12 +657,14 @@ class TenantAdminSite(AdminSite):
                 )
             else:
                 client = anthropic.Anthropic(api_key=api_key)
+            from apps.shared.ai.usage import log_usage
             message = client.messages.create(
                 model='claude-haiku-4-5-20251001',
                 max_tokens=2048,
                 system=system_prompt,
                 messages=[{'role': 'user', 'content': user_msg}],
             )
+            log_usage('admin', message)
             return JsonResponse({'text': message.content[0].text.strip()})
 
         except Exception as e:

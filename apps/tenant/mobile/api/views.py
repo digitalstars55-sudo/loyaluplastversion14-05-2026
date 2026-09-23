@@ -1182,12 +1182,14 @@ def _call_claude_for_draft(conv: TestimonialConversation) -> tuple[str, int]:
         if proxy_url else anthropic.Anthropic(api_key=api_key)
     )
     try:
+        from apps.shared.ai.usage import cached_system, log_usage
         message = client.messages.create(
             model='claude-haiku-4-5-20251001',
             max_tokens=2048,
-            system=system_prompt,
+            system=cached_system(system_prompt),   # правила + БЗ сети — в кэш промпта
             messages=[{'role': 'user', 'content': user_message}],
         )
+        log_usage('draft_mobile', message)
         return (message.content[0].text.strip(), 200)
     except anthropic.BadRequestError as e:
         return (f'AI-сервис недоступен: {e}', 503)
@@ -3195,12 +3197,14 @@ class AssistantAskAPIView(APIView):
             # Контекст по сети — чтобы Лояльчик отвечал реальными цифрами.
             ctx_text = _assistant_context_text(_assistant_tenant_context())
             system_prompt = _ASSISTANT_SYSTEM_PROMPT + ('\n\n' + ctx_text if ctx_text else '')
+            from apps.shared.ai.usage import log_usage
             resp = client.messages.create(
                 model='claude-haiku-4-5-20251001',
                 max_tokens=600,
                 system=system_prompt,
                 messages=msgs,
             )
+            log_usage('assistant', resp)
             answer = (resp.content[0].text or '').strip()
             if not answer:
                 answer = 'Хм, не смог сформулировать ответ. Попробуй переформулировать вопрос 🚀'

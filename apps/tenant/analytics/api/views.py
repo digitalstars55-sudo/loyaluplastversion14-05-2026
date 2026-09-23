@@ -1568,12 +1568,14 @@ class GenerateBroadcastTextAPIView(APIView):
                 else anthropic.Anthropic(api_key=api_key)
             )
 
+            from apps.shared.ai.usage import log_usage
             message = client.messages.create(
                 model='claude-haiku-4-5-20251001',
                 max_tokens=2048,
                 system=system_prompt,
                 messages=[{'role': 'user', 'content': user_message}],
             )
+            log_usage('analytics_api', message)
             generated_text = message.content[0].text.strip()
 
             return Response({'text': generated_text})
@@ -1665,12 +1667,14 @@ class GenerateReportCommentAPIView(APIView):
                 else anthropic.Anthropic(api_key=api_key)
             )
 
+            from apps.shared.ai.usage import log_usage
             message = client.messages.create(
                 model='claude-haiku-4-5-20251001',
                 max_tokens=512,
                 system=system_prompt,
                 messages=[{'role': 'user', 'content': user_message}],
             )
+            log_usage('analytics_api_2', message)
             generated_text = message.content[0].text.strip()
             return Response({'text': generated_text})
 

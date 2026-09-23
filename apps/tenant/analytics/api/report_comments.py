@@ -308,10 +308,12 @@ def generate_comment_text(section_num, section_title: str, metrics_json: str,
         proxy_url = os.getenv('AI_PROXY_URL', '')
         client = (anthropic.Anthropic(api_key=api_key, base_url=proxy_url)
                   if proxy_url else anthropic.Anthropic(api_key=api_key))
+        from apps.shared.ai.usage import log_usage
         message = client.messages.create(
             model=AI_MODEL, max_tokens=AI_MAX_TOKENS, system=system_prompt,
             messages=[{'role': 'user', 'content': user_message}],
         )
+        log_usage('report_comments', message)
         return message.content[0].text.strip()
     except AIUnavailable:
         raise
