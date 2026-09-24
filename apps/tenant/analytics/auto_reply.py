@@ -219,10 +219,52 @@ DRAFT_KB_EMPTY_NOTE = (
 )
 
 
+# 24.09.2026, жалоба клиента (Автосуши Брянск, conv 1172): на голую «1» из ВК
+# кнопка «Сгенерировать» ответила «Спасибо за высшую оценку!». Рефактор 09.09
+# свёл роли гостя к одному «Гость» — модель перестала видеть, откуда отзыв
+# (раньше было «Гость (приложение)» / «Гость (ВКонтакте)»), а звёзд отзыва из
+# приложения (`rating`) в треде не было никогда. База знаний сети учит шкале
+# 1–10 на примерах («Оценка 10: Спасибо за высшую оценку!»), и без шкалы рядом
+# с цифрой Haiku подставил ближайший пример. Поэтому у реплики гостя теперь
+# источник, а у оценки — шкала словами.
+DRAFT_SOURCE_HUMAN = {
+    'APP': 'отзыв в приложении',
+    'VK_MESSAGE': 'ВКонтакте',
+}
+# Шкалы те же, что у предклассификатора `ai_service._try_numeric_rating`:
+# в приложении звёзды 1–5, во ВКонтакте цифра 1–10.
+DRAFT_SCALE = {'APP': 5}
+DRAFT_SCALE_DEFAULT = 10
+DRAFT_RULE_RATINGS = (
+    '- Оценка гостя указана в скобках у его реплики вместе со шкалой: 1 — худшая, '
+    'максимум шкалы — лучшая. Отвечай по оценке и тональности, а не по примерам: '
+    'на низкую оценку не благодари «за высокую», извинись и предложи разобраться.'
+)
+
+
+def _guest_rating(m) -> tuple[int, int] | None:
+    """(оценка, шкала) реплики гостя: звёзды приложения или голая цифра в тексте."""
+    import re
+    source = (m.get('source') or '').upper()
+    scale = DRAFT_SCALE.get(source, DRAFT_SCALE_DEFAULT)
+    stars = m.get('rating')
+    if stars:
+        return int(stars), 5
+    digits = re.sub(r'[\W_]+', '', m.get('text') or '', flags=re.UNICODE)
+    if digits.isdigit() and 1 <= int(digits) <= scale:
+        return int(digits), scale
+    return None
+
+
 def render_draft_thread(msgs) -> tuple[str, bool]:
     """
     Тред для промпта: строки «Роль: текст». msgs — iterable dict'ов с ключами
-    source/text (как из .values('source', 'text')), по времени.
+    source/text и (необязательно) rating — как из
+    .values('source', 'text', 'rating'), по времени.
+
+    Реплика гостя подписана источником и оценкой со шкалой:
+    «Гость (ВКонтакте, оценка 1 из 10): 1». Отзыв из приложения, где стоят
+    только звёзды, в тред попадает, даже если текста нет.
 
     Возвращает (текст, заведение_уже_отвечало). «Отвечало» = есть ADMIN_REPLY
     ПОСЛЕ хотя бы одного сообщения гостя: рассылки тоже лежат как ADMIN_REPLY,
@@ -233,15 +275,25 @@ def render_draft_thread(msgs) -> tuple[str, bool]:
     venue_replied = False
     for m in msgs:
         text = (m.get('text') or '').strip()
-        if not text:
-            continue
         if m.get('source') == 'ADMIN_REPLY':
+            if not text:
+                continue
             if guest_seen:
                 venue_replied = True
             lines.append(f'{DRAFT_ROLE_VENUE}: {text}')
-        else:
-            guest_seen = True
-            lines.append(f'{DRAFT_ROLE_GUEST}: {text}')
+            continue
+        оценка = _guest_rating(m)
+        if not text and not оценка:
+            continue
+        guest_seen = True
+        пометки = []
+        источник = DRAFT_SOURCE_HUMAN.get((m.get('source') or '').upper())
+        if источник:
+            пометки.append(источник)
+        if оценка:
+            пометки.append(f'оценка {оценка[0]} из {оценка[1]}')
+        роль = f'{DRAFT_ROLE_GUEST} ({", ".join(пометки)})' if пометки else DRAFT_ROLE_GUEST
+        lines.append(f'{роль}: {text or "(без текста)"}')
     return '\n'.join(lines), venue_replied
 
 
@@ -267,6 +319,7 @@ def build_draft_prompt_parts(
         '- Без markdown, HTML и эмодзи (максимум один по необходимости).\n'
         '- Обращайся на «Вы».\n'
         f'{dialog_rule}\n'
+        f'{DRAFT_RULE_RATINGS}\n'
         '- Если негатив — извинись, не оправдывайся, предложи решение.\n'
         '- Если позитив — поблагодари искренне, без шаблонов.\n'
         '- Не упоминай скидки/компенсации без явной просьбы.\n'
@@ -301,7 +354,7 @@ def build_draft_prompt(conv, ai_tone: str = '') -> Optional[tuple[str, str]]:
     from django.db import connection
     from apps.tenant.analytics.ai_service import _get_knowledge_base_text
 
-    msgs = list(conv.messages.order_by('created_at').values('source', 'text'))
+    msgs = list(conv.messages.order_by('created_at').values('source', 'text', 'rating'))
     thread, _ = render_draft_thread(msgs)
     if not thread:
         return None

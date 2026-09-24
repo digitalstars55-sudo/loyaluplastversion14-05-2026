@@ -132,8 +132,10 @@
           <div class="msg-rating">{% for i in "12345" %}{% if forloop.counter <= msg.rating %}★{% else %}☆{% endif %}{% endfor %}</div>
           {% endif %}
           {% if msg.phone %}<div class="msg-meta">📞 {{ msg.phone }}</div>{% endif %}
-          {# Точка + стол у САМОГО сообщения: столы на точках повторяются,
-             по одному номеру стола точку не отличить (16.09.2026). #}
+          {% comment %}Точка + стол у САМОГО сообщения: столы на точках повторяются,
+             по одному номеру стола точку не отличить (16.09.2026).
+             ⚠️ {# #} в Django только однострочный — многострочный печатался
+             гостям на экран админки (24.09.2026).{% endcomment %}
           {% if msg.branch or msg.table_number %}
           <div class="msg-meta">
             {% if msg.branch %}📍 {{ msg.branch.name }}{% if msg.table_number %} · {% endif %}{% endif %}

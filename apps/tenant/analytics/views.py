@@ -694,16 +694,22 @@ class ReviewsAIReplyView(View):
         # факты только из базы знаний.
         from apps.tenant.analytics.auto_reply import (
             DRAFT_RULE_CONTINUATION, DRAFT_RULE_FACTS, DRAFT_RULE_FIRST_REPLY,
-            render_draft_thread,
+            DRAFT_RULE_RATINGS, render_draft_thread,
         )
         conv_text, venue_replied = render_draft_thread(
-            conv.messages.order_by('created_at').values('source', 'text')
+            conv.messages.order_by('created_at').values('source', 'text', 'rating')
         )
         conv_text = conv_text or 'Нет сообщений'
+        # Тональность — как у автоответа и мобилки: без неё на голую цифру
+        # модель гадала сама (24.09.2026, «спасибо за высшую оценку» на «1»).
+        if conv.sentiment:
+            conv_text = (f'Тональность (определена ИИ): {conv.get_sentiment_display()}\n\n'
+                         + conv_text)
         dialog_rules = (
             '\nПравила:\n'
             + (DRAFT_RULE_CONTINUATION if venue_replied else DRAFT_RULE_FIRST_REPLY)
             + '\n' + DRAFT_RULE_FACTS
+            + '\n' + DRAFT_RULE_RATINGS
         )
 
         api_key = getattr(settings, 'ANTHROPIC_API_KEY', None)

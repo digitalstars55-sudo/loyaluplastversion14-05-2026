@@ -670,9 +670,9 @@ class DraftPromptTest(SimpleTestCase):
         self.assertNotIn('[ADMIN_REPLY]', thread)
         lines = thread.split('\n')
         self.assertEqual(len(lines), 4)
-        self.assertTrue(lines[0].startswith(f'{DRAFT_ROLE_GUEST}: Здравствуйте, где'))
+        self.assertTrue(lines[0].startswith(f'{DRAFT_ROLE_GUEST} (ВКонтакте): Здравствуйте, где'))
         self.assertTrue(lines[1].startswith(f'{DRAFT_ROLE_VENUE}: Здравствуйте! Актуальное'))
-        self.assertTrue(lines[3].startswith(f'{DRAFT_ROLE_GUEST}: Скажите'))
+        self.assertTrue(lines[3].startswith(f'{DRAFT_ROLE_GUEST} (ВКонтакте): Скажите'))
 
     def test_empty_texts_are_skipped(self):
         from apps.tenant.analytics.auto_reply import render_draft_thread
@@ -681,7 +681,35 @@ class DraftPromptTest(SimpleTestCase):
             {'source': 'VK_MESSAGE', 'text': '   '},
             {'source': 'VK_MESSAGE', 'text': 'Привет'},
         ])
-        self.assertEqual(thread, 'Гость: Привет')
+        self.assertEqual(thread, 'Гость (ВКонтакте): Привет')
+
+    def test_source_and_rating_scale_are_visible(self):
+        """24.09.2026, Автосуши Брянск conv 1172: на «1» из ВК «Сгенерировать»
+        ответил «Спасибо за высшую оценку!» — в треде не было ни источника, ни
+        шкалы, а в базе знаний сети есть пример ответа на 10."""
+        from apps.tenant.analytics.auto_reply import render_draft_thread
+        thread, _ = render_draft_thread([{'source': 'VK_MESSAGE', 'text': '1'}])
+        self.assertEqual(thread, 'Гость (ВКонтакте, оценка 1 из 10): 1')
+        thread, _ = render_draft_thread([
+            {'source': 'APP', 'text': 'Долго несли', 'rating': 2},
+        ])
+        self.assertEqual(thread, 'Гость (отзыв в приложении, оценка 2 из 5): Долго несли')
+        # Цифра в тексте отзыва из приложения — по шкале приложения (1–5).
+        thread, _ = render_draft_thread([{'source': 'APP', 'text': '4'}])
+        self.assertEqual(thread, 'Гость (отзыв в приложении, оценка 4 из 5): 4')
+        # «10 - всё вкусно» — это не голая цифра: оценку не выдумываем.
+        thread, _ = render_draft_thread([{'source': 'VK_MESSAGE', 'text': '10 - все вкусно'}])
+        self.assertEqual(thread, 'Гость (ВКонтакте): 10 - все вкусно')
+
+    def test_app_review_with_only_stars_is_not_dropped(self):
+        from apps.tenant.analytics.auto_reply import render_draft_thread
+        thread, _ = render_draft_thread([{'source': 'APP', 'text': '', 'rating': 1}])
+        self.assertEqual(thread, 'Гость (отзыв в приложении, оценка 1 из 5): (без текста)')
+
+    def test_rating_rule_in_system_prompt(self):
+        from apps.tenant.analytics.auto_reply import DRAFT_RULE_RATINGS, build_draft_prompt_parts
+        system, _ = build_draft_prompt_parts([{'source': 'VK_MESSAGE', 'text': '1'}])
+        self.assertIn(DRAFT_RULE_RATINGS, system)
 
     def test_first_reply_rule_when_venue_never_replied(self):
         from apps.tenant.analytics.auto_reply import (
@@ -690,7 +718,7 @@ class DraftPromptTest(SimpleTestCase):
         system, user = build_draft_prompt_parts(self.FIRST, sentiment_human='Позитивный')
         self.assertIn(DRAFT_RULE_FIRST_REPLY, system)
         self.assertNotIn(DRAFT_RULE_CONTINUATION, system)
-        self.assertIn('Гость: Все отлично', user)
+        self.assertIn('Гость (отзыв в приложении): Все отлично', user)
         self.assertIn('черновик ответа', user)
 
     def test_continuation_rule_when_venue_already_replied(self):
