@@ -1211,7 +1211,10 @@ class QRCodeAdmin(admin.ModelAdmin):
     list_filter = ('branch', 'mode', 'is_active')
     search_fields = ('name', 'key')
     readonly_fields = ('key',)
-    fields = ('branch', 'name', 'mode', 'table_number', 'is_active', 'key')
+    # Стол кассы (id и зал) — только справочно для CheckUp (24.09.2026): в
+    # ссылку не входит. Заполняется при создании QR по схеме залов из CheckUp.
+    fields = ('branch', 'name', 'mode', 'table_number', 'table_hall', 'table_external_id',
+              'is_active', 'key')
     change_form_template = 'admin/branch/qrcode/change_form.html'
 
     def get_queryset(self, request):

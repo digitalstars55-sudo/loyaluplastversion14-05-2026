@@ -476,6 +476,15 @@ CHECKUP_TOKEN_EXCHANGE_MINUTES = int(os.getenv("CHECKUP_TOKEN_EXCHANGE_MINUTES",
 # и ставит platform: true в JWT (сводная по всем клиентам). Меняет только владелец.
 CHECKUP_PLATFORM_ADMINS = os.getenv("CHECKUP_PLATFORM_ADMINS", "")
 
+# Выгрузка сканов QR для CheckUp («скан со стола → официант стола», 24.09.2026,
+# apps/shared/checkup/scans_export.py). Секрет СВОЙ (контракт 4.15: не обмен и не
+# релей); пусто = ручка выключена (503). Сети — через запятую; пусто = НИ ОДНОЙ
+# (в отличие от обмена: выгрузка про поведение гостей, включается по сети).
+CHECKUP_SCANS_EXPORT_SECRET = os.getenv("CHECKUP_SCANS_EXPORT_SECRET", "")
+CHECKUP_SCANS_EXPORT_TENANTS = [
+    s.strip().lower() for s in os.getenv("CHECKUP_SCANS_EXPORT_TENANTS", "").split(",") if s.strip()
+]
+
 # Мониторинг платформы (apps.shared.monitoring): сертификаты, домены, оплата
 # сетей, callback ВК, доступность входа. Выключен, пока не задано
 # PLATFORM_MONITOR_ENABLED=1 — задача beat тикает вхолостую.

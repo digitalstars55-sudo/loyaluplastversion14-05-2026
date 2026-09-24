@@ -32,10 +32,25 @@ apps/tenant/branch/models.py:385): владелец создаёт его под
 
 Ошибки — единой формой `{code, detail}`: `invalid_payload` и `table_required`
 (400), `not_found` (404), `has_scans` (409).
+
+Стол у «В кафе» (24.09.2026, «скан со стола → официант этого стола»):
+  • Стол теперь бывает не только у «Отзыва со стола», но и у «В кафе» — это
+    QR, наклеенный на стол: гость играет и подписывается, а скан относится к
+    столу. Ссылка у «В кафе» НЕ меняется (стол в неё не пишется): стол живёт
+    в самой записи QR, скан пишется по метке `src`, значит мини-аппу
+    передавать стол на бэк не нужно, а подменить стол правкой адреса нельзя.
+  • Рядом с номером — `table_external_id` (id стола в кассе, у iiko — UUID
+    из схемы залов) и `table_hall`: номера столов в разных залах повторяются.
+    Эти два поля — справочные, в ссылку не входят, поэтому их можно поправить
+    и после сканов (ошибка сопоставления со схемой залов — не смена смысла
+    напечатанного кода). Номер стола после сканов по-прежнему не меняется.
+  • `batch-tables` умеет `mode: cafe` и явный список столов `tables` с id
+    кассы и залом — CheckUp заводит QR на все столы схемы залов одним вызовом.
 """
 from __future__ import annotations
 
 import logging
+import re
 from datetime import timedelta
 
 from django.db.models import Count, Max
@@ -62,6 +77,20 @@ MAX_LIMIT = 200
 BATCH_TABLES_MAX = 200
 MAX_NAME_LEN = 120
 FUNNEL_DAYS = 30
+# Режимы, у которых бывает стол (= QRCode.TABLE_MODES; равенство держит тест).
+# Строками, а не через модель: тесты подменяют QRCode стабом.
+TABLE_MODES = ('cafe', 'review')
+MAX_TABLE_HALL_LEN = 120
+# id стола в кассе: UUID iiko, число Dooglys, слаг — без пробелов и кавычек.
+_TABLE_EXT_RE = re.compile(r'^[A-Za-z0-9_.:-]{1,64}$')
+DEFAULT_TABLE_NAMES = {
+    'review': 'Отзыв со стола {table}',
+    'cafe': 'Стол {table}',
+}
+DEFAULT_TABLE_NAMES_WITH_HALL = {
+    'review': 'Отзыв со стола {table} · {hall}',
+    'cafe': '{hall} · стол {table}',
+}
 
 STAGES = ('scan', 'subscribe', 'play', 'activate')
 STAGE_LABELS = {
@@ -168,6 +197,10 @@ def _row(qr, company_id: str, scans: dict, funnel: dict) -> dict:
         'mode': qr.mode,
         'mode_label': qr.get_mode_display(),
         'table_number': qr.table_number,
+        # Стол кассы (id и зал) — справочно, в ссылку не входит. `getattr`:
+        # строки, собранные до миграции 0038 (и стабы тестов), полей не имеют.
+        'table_external_id': getattr(qr, 'table_external_id', '') or '',
+        'table_hall': getattr(qr, 'table_hall', '') or '',
         'src': qr.key,
         'url': build_qr_link(qr, company_id),
         'is_active': qr.is_active,
@@ -232,7 +265,10 @@ def _parse_mode(value) -> str:
 
 
 def _parse_table_number(value, mode: str):
-    """Стол обязателен у «отзыва со стола» и запрещён у остальных режимов."""
+    """
+    Стол обязателен у «отзыва со стола», по желанию — у «В кафе» (QR на
+    столе), запрещён у доставки и сайта.
+    """
     if value in (None, ''):
         if mode == QRCode.Mode.REVIEW:
             raise PayloadError('table_required',
@@ -245,10 +281,37 @@ def _parse_table_number(value, mode: str):
         raise PayloadError('invalid_payload', 'table_number: целое число')
     if table <= 0:
         raise PayloadError('invalid_payload', 'table_number: положительное число')
-    if mode != QRCode.Mode.REVIEW:
+    if mode not in TABLE_MODES:
         raise PayloadError('invalid_payload',
-                           'table_number: только для режима review («отзыв со стола»)')
+                           'table_number: только для режимов cafe («в кафе», QR на столе) '
+                           'и review («отзыв со стола»)')
     return table
+
+
+def _parse_table_external_id(value, mode: str) -> str:
+    """id стола в кассе: пусто или короткая метка без пробелов; только у столов."""
+    ext = str(value or '').strip()
+    if not ext:
+        return ''
+    if mode not in TABLE_MODES:
+        raise PayloadError('invalid_payload',
+                           'table_external_id: только для режимов cafe и review')
+    if not _TABLE_EXT_RE.match(ext):
+        raise PayloadError('invalid_payload',
+                           'table_external_id: id стола в кассе — до 64 знаков, '
+                           'латиница, цифры и - _ . :')
+    return ext
+
+
+def _parse_table_hall(value, mode: str) -> str:
+    hall = str(value or '').strip()
+    if not hall:
+        return ''
+    if mode not in TABLE_MODES:
+        raise PayloadError('invalid_payload', 'table_hall: только для режимов cafe и review')
+    if len(hall) > MAX_TABLE_HALL_LEN:
+        raise PayloadError('invalid_payload', f'table_hall: не длиннее {MAX_TABLE_HALL_LEN} символов')
+    return hall
 
 
 def _parse_is_active(value) -> bool:
@@ -338,6 +401,12 @@ class ContactPointListCreateAPIView(APIView):
             name = _parse_name(data.get('name'))
             mode = _parse_mode(data.get('mode'))
             table_number = _parse_table_number(data.get('table_number'), mode)
+            table_external_id = _parse_table_external_id(data.get('table_external_id'), mode)
+            table_hall = _parse_table_hall(data.get('table_hall'), mode)
+            if (table_external_id or table_hall) and not table_number:
+                raise PayloadError('invalid_payload',
+                                   'table_external_id / table_hall: сначала номер стола — '
+                                   'без него стол кассы не к чему привязать')
         except PayloadError as exc:
             return _error(exc.code, exc.detail, http_status.HTTP_400_BAD_REQUEST)
 
@@ -345,9 +414,17 @@ class ContactPointListCreateAPIView(APIView):
         if branch is None:
             return _error('not_found', 'Точка не найдена', http_status.HTTP_404_NOT_FOUND)
 
+        extra = {}
+        # Поля стола кассы передаём, только когда они есть: так создание без
+        # них остаётся байт-в-байт прежним вызовом модели.
+        if table_external_id:
+            extra['table_external_id'] = table_external_id
+        if table_hall:
+            extra['table_hall'] = table_hall
         qr = QRCode.objects.create(branch=branch, name=name, mode=mode,
                                    table_number=table_number,
-                                   is_active=_parse_is_active(data.get('is_active', True)))
+                                   is_active=_parse_is_active(data.get('is_active', True)),
+                                   **extra)
         log.info('contact point created: %s qr=%s branch=%s mode=%s by=%s',
                  current_schema_name(), qr.pk, branch.pk, mode, request.user)
         company_id = current_company_id()
@@ -417,6 +494,31 @@ class ContactPointDetailAPIView(APIView):
                     raw_table = qr.table_number if qr.mode == QRCode.Mode.REVIEW else None
                 qr.table_number = _parse_table_number(raw_table, qr.mode)
                 fields.append('table_number')
+            # Стол кассы (id и зал) — справочные поля, не смысл кода: их можно
+            # поправить и после сканов. Ушёл режим без стола или сам стол —
+            # снимаем и их, иначе QR доставки «висел» бы на столе кассы.
+            touched_ext = 'table_external_id' in data
+            touched_hall = 'table_hall' in data
+            if touched_ext or touched_hall or 'mode' in data or 'table_number' in data:
+                cur_ext = getattr(qr, 'table_external_id', '') or ''
+                cur_hall = getattr(qr, 'table_hall', '') or ''
+                keep = qr.mode in TABLE_MODES and qr.table_number
+                new_ext = _parse_table_external_id(
+                    data.get('table_external_id') if touched_ext else (cur_ext if keep else ''),
+                    qr.mode)
+                new_hall = _parse_table_hall(
+                    data.get('table_hall') if touched_hall else (cur_hall if keep else ''),
+                    qr.mode)
+                if (new_ext or new_hall) and not qr.table_number:
+                    raise PayloadError('invalid_payload',
+                                       'table_external_id / table_hall: сначала номер стола — '
+                                       'без него стол кассы не к чему привязать')
+                if new_ext != cur_ext:
+                    qr.table_external_id = new_ext
+                    fields.append('table_external_id')
+                if new_hall != cur_hall:
+                    qr.table_hall = new_hall
+                    fields.append('table_hall')
         except PayloadError as exc:
             return _error(exc.code, exc.detail, http_status.HTTP_400_BAD_REQUEST)
 
@@ -542,57 +644,161 @@ class ContactPointGuestsAPIView(APIView):
 
 # ── пакет QR по столам ───────────────────────────────────────────────────────
 
+def _table_name(template: str | None, mode: str, table: int, hall: str) -> str:
+    """Название QR стола по шаблону (`{table}`, `{hall}`). Кривой шаблон → 400."""
+    if template:
+        tpl = template
+    elif hall:
+        tpl = DEFAULT_TABLE_NAMES_WITH_HALL[mode]
+    else:
+        tpl = DEFAULT_TABLE_NAMES[mode]
+    try:
+        name = tpl.format(table=table, hall=hall).strip()
+    except (KeyError, IndexError, ValueError):
+        raise PayloadError('invalid_payload',
+                           'name_template: можно только {table} и {hall}')
+    if not name:
+        raise PayloadError('invalid_payload', 'name_template: получилось пустое название')
+    return name[:MAX_NAME_LEN]
+
+
+def _parse_tables_list(raw, mode: str) -> list[dict]:
+    """
+    Явный список столов `[{number, external_id?, hall?, name?}]`.
+
+    Номер обязателен (он и в названии, и у «отзыва со стола» — в ссылке), id
+    кассы и зал — по желанию. Один и тот же стол дважды в списке — 400: иначе
+    на один стол напечатали бы два кода.
+    """
+    if not isinstance(raw, list) or not raw:
+        raise PayloadError('invalid_payload', 'tables: непустой список столов')
+    if len(raw) > BATCH_TABLES_MAX:
+        raise PayloadError('invalid_payload', f'за один вызов не больше {BATCH_TABLES_MAX} столов')
+    out, seen = [], set()
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise PayloadError('invalid_payload', f'tables[{i}]: объект {{number, external_id?, hall?}}')
+        try:
+            number = _parse_table_number(item.get('number'), mode)
+        except PayloadError as exc:
+            raise PayloadError('invalid_payload', f'tables[{i}].number: {exc.detail}')
+        if number is None:
+            raise PayloadError('invalid_payload', f'tables[{i}].number: номер стола обязателен')
+        ext = _parse_table_external_id(item.get('external_id'), mode)
+        hall = _parse_table_hall(item.get('hall'), mode)
+        key = ('ext', ext) if ext else ('num', hall.casefold(), number)
+        if key in seen:
+            raise PayloadError('invalid_payload', f'tables[{i}]: этот стол в списке уже есть')
+        seen.add(key)
+        name = str(item.get('name') or '').strip()
+        if len(name) > MAX_NAME_LEN:
+            raise PayloadError('invalid_payload', f'tables[{i}].name: не длиннее {MAX_NAME_LEN} символов')
+        out.append({'number': number, 'external_id': ext, 'hall': hall, 'name': name})
+    return out
+
+
 class ContactPointBatchTablesAPIView(APIView):
     """
-    POST /api/v1/contact-points/batch-tables/ {branch_id, from, to, name_template?}
+    POST /api/v1/contact-points/batch-tables/
 
-    Заводит QR «отзыв со стола» на диапазон столов. Столы, у которых уже есть
-    АКТИВНЫЙ такой QR, пропускаются (в схеме уникального индекса на пару
-    «точка + стол» нет — защищаемся здесь, чтобы не печатать два кода на один
-    стол). Потолок — BATCH_TABLES_MAX за вызов.
+    Два вида тела:
+      • диапазон — `{branch_id, from, to, mode?, name_template?}`, как было;
+      • явный список — `{branch_id, mode?, tables: [{number, external_id?,
+        hall?, name?}], name_template?}`. Так CheckUp заводит QR на все столы
+        схемы залов кассы разом: номера в залах повторяются, поэтому стол
+        называет пара «id кассы» или «зал + номер», а не один номер.
+
+    `mode` — `review` (по умолчанию, «отзыв со стола») или `cafe` («В кафе»,
+    QR на столе: игра и подписка, скан относится к столу). Столы, у которых
+    уже есть АКТИВНЫЙ QR того же режима на этой точке, пропускаются
+    (уникального индекса «точка + стол» в схеме нет — защищаемся здесь, чтобы
+    не печатать два кода на один стол). Для списка «тот же стол» = тот же id
+    кассы, а без него — тот же зал и номер. Потолок — BATCH_TABLES_MAX за вызов.
     """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         data = request.data or {}
         allowed = _allowed_branches(request)
+        mode = str(data.get('mode') or QRCode.Mode.REVIEW).strip()
+        if mode not in TABLE_MODES:
+            return _error('invalid_payload', 'mode: review | cafe — стол бывает только у них',
+                          http_status.HTTP_400_BAD_REQUEST)
+        template = str(data.get('name_template') or '').strip() or None
         try:
             _reject_src(data)
-            first = int(data.get('from'))
-            last = int(data.get('to'))
+            if template:
+                # Шаблон проверяем ДО первого создания, на обоих видах стола
+                # (с залом и без): кривой шаблон не должен оставить полпачки.
+                _table_name(template, mode, 1, 'Зал')
+                _table_name(template, mode, 1, '')
+            if 'tables' in data:
+                tables = _parse_tables_list(data.get('tables'), mode)
+            else:
+                tables = None
+                first = int(data.get('from'))
+                last = int(data.get('to'))
         except PayloadError as exc:
             return _error(exc.code, exc.detail, http_status.HTTP_400_BAD_REQUEST)
         except (TypeError, ValueError):
             return _error('invalid_payload', 'from и to: целые номера столов',
                           http_status.HTTP_400_BAD_REQUEST)
-        if first <= 0 or last < first:
-            return _error('invalid_payload', 'диапазон столов: from ≥ 1 и to ≥ from',
-                          http_status.HTTP_400_BAD_REQUEST)
-        if last - first + 1 > BATCH_TABLES_MAX:
-            return _error('invalid_payload',
-                          f'за один вызов не больше {BATCH_TABLES_MAX} столов',
-                          http_status.HTTP_400_BAD_REQUEST)
+        if tables is None:
+            if first <= 0 or last < first:
+                return _error('invalid_payload', 'диапазон столов: from ≥ 1 и to ≥ from',
+                              http_status.HTTP_400_BAD_REQUEST)
+            if last - first + 1 > BATCH_TABLES_MAX:
+                return _error('invalid_payload',
+                              f'за один вызов не больше {BATCH_TABLES_MAX} столов',
+                              http_status.HTTP_400_BAD_REQUEST)
 
         branch = _branch_or_none(data.get('branch_id'), allowed)
         if branch is None:
             return _error('not_found', 'Точка не найдена', http_status.HTTP_404_NOT_FOUND)
 
-        template = str(data.get('name_template') or 'Отзыв со стола {table}').strip()
-        existing = set(QRCode.objects
-                       .filter(branch=branch, mode=QRCode.Mode.REVIEW, is_active=True,
-                               table_number__gte=first, table_number__lte=last)
-                       .values_list('table_number', flat=True))
         created, skipped = [], []
         company_id = current_company_id()
-        for table in range(first, last + 1):
-            if table in existing:
-                skipped.append({'table_number': table, 'reason': 'already_exists'})
-                continue
-            qr = QRCode.objects.create(branch=branch, name=template.format(table=table)[:MAX_NAME_LEN],
-                                       mode=QRCode.Mode.REVIEW, table_number=table, is_active=True)
-            created.append(_row(qr, company_id, None, None))
-        log.info('contact points batch: %s branch=%s created=%s skipped=%s by=%s',
-                 current_schema_name(), branch.pk, len(created), len(skipped), request.user)
+        try:
+            if tables is None:
+                existing = set(QRCode.objects
+                               .filter(branch=branch, mode=mode, is_active=True,
+                                       table_number__gte=first, table_number__lte=last)
+                               .values_list('table_number', flat=True))
+                for table in range(first, last + 1):
+                    if table in existing:
+                        skipped.append({'table_number': table, 'reason': 'already_exists'})
+                        continue
+                    qr = QRCode.objects.create(branch=branch,
+                                               name=_table_name(template, mode, table, ''),
+                                               mode=mode, table_number=table, is_active=True)
+                    created.append(_row(qr, company_id, None, None))
+            else:
+                taken_ext, taken_num = set(), set()
+                for number, hall, ext in (QRCode.objects
+                                          .filter(branch=branch, mode=mode, is_active=True)
+                                          .values_list('table_number', 'table_hall',
+                                                       'table_external_id')):
+                    if ext:
+                        taken_ext.add(ext)
+                    if number:
+                        taken_num.add(((hall or '').casefold(), number))
+                for t in tables:
+                    if (t['external_id'] and t['external_id'] in taken_ext) or \
+                            (not t['external_id'] and (t['hall'].casefold(), t['number']) in taken_num):
+                        skipped.append({'table_number': t['number'], 'table_hall': t['hall'],
+                                        'table_external_id': t['external_id'],
+                                        'reason': 'already_exists'})
+                        continue
+                    name = t['name'] or _table_name(template, mode, t['number'], t['hall'])
+                    qr = QRCode.objects.create(branch=branch, name=name, mode=mode,
+                                               table_number=t['number'], is_active=True,
+                                               table_external_id=t['external_id'],
+                                               table_hall=t['hall'])
+                    created.append(_row(qr, company_id, None, None))
+        except PayloadError as exc:  # pragma: no cover — шаблон проверен выше
+            return _error(exc.code, exc.detail, http_status.HTTP_400_BAD_REQUEST)
+        log.info('contact points batch: %s branch=%s mode=%s created=%s skipped=%s by=%s',
+                 current_schema_name(), branch.pk, mode, len(created), len(skipped), request.user)
         return Response({'created': created, 'skipped': skipped},
                         status=http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK)
 
@@ -632,6 +838,13 @@ class BranchMaterialsAPIView(APIView):
                     'url': build_qr_link(qr, company_id)}
             if qr.mode == QRCode.Mode.REVIEW:
                 item['table_number'] = qr.table_number
+            elif qr.mode == QRCode.Mode.CAFE and qr.table_number:
+                # QR на столе («В кафе» со столом): номер — чтобы при печати
+                # было видно, на какой стол клеить. У остальных «В кафе» ключа
+                # нет, как и раньше.
+                item['table_number'] = qr.table_number
+            if qr.mode in TABLE_MODES and qr.table_number:
+                item['table_hall'] = getattr(qr, 'table_hall', '') or ''
             by_mode[qr.mode].append(item)
 
         site = next((i['url'] for i in by_mode[QRCode.Mode.WEBSITE] if i['is_active']), None)

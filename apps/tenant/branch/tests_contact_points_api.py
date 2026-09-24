@@ -176,8 +176,12 @@ class ContactPointCreateTest(SimpleTestCase):
         self.assertEqual((resp.status_code, resp.data['code']), (400, 'table_required'))
 
     def test_table_forbidden_for_other_modes(self, *_):
-        resp = self._post({'branch_id': 3, 'name': 'X', 'mode': 'cafe', 'table_number': 5})
-        self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+        # С 24.09.2026 стол бывает и у «В кафе» (QR на столе) — запрещён он
+        # только доставке и сайту.
+        for mode in ('delivery', 'delivery_network', 'website'):
+            with self.subTest(mode=mode):
+                resp = self._post({'branch_id': 3, 'name': 'X', 'mode': mode, 'table_number': 5})
+                self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
 
     @patch(CPP + '_branch_or_none', return_value=None)
     def test_foreign_branch_is_404_not_403(self, *_):
@@ -522,3 +526,226 @@ class GuestVkIdTypeTest(SimpleTestCase):
         self.assertIsInstance(row['vk_id'], str)
         self.assertEqual(row['guest_id'], 77)
         self.assertIsNone(row['segment'])
+
+
+# ── стол у «В кафе» и стол кассы (24.09.2026, «скан со стола → официант») ────
+
+def _table_qr(pk=21, mode='cafe', key='t21', table_number=7, ext='', hall='', name='Стол 7'):
+    qr = _qr(pk=pk, mode=mode, key=key, table_number=table_number, name=name)
+    qr.table_external_id = ext
+    qr.table_hall = hall
+    return qr
+
+
+class TableModesTest(SimpleTestCase):
+
+    def test_table_modes_match_the_model(self):
+        from apps.tenant.branch.models import QRCode as RealQRCode
+        self.assertEqual(tuple(RealQRCode.TABLE_MODES), CP.TABLE_MODES)
+
+    def test_cafe_link_does_not_change_with_table(self):
+        # Стол живёт в записи QR, а не в адресе: ссылка «В кафе» прежняя, и
+        # напечатанные ранее коды ведут туда же.
+        link = build_qr_link(_table_qr(key='k1', table_number=7, ext='u-7', hall='Зал'),
+                             COMPANY, APP_ID)
+        self.assertEqual(link, f'https://vk.com/app{APP_ID}/#/?company=7&branch=202&src=k1')
+
+    def test_row_carries_table_of_the_till(self):
+        row = CP._row(_table_qr(ext='u-7', hall='Бар'), COMPANY, None, None)
+        self.assertEqual((row['table_number'], row['table_external_id'], row['table_hall']),
+                         (7, 'u-7', 'Бар'))
+
+    def test_row_without_new_fields_is_empty_strings(self):
+        row = CP._row(_qr(), COMPANY, None, None)
+        self.assertEqual((row['table_external_id'], row['table_hall']), ('', ''))
+
+
+@patch(CPP + 'current_schema_name', return_value='dev')
+@patch(CPP + 'current_company_id', return_value=COMPANY)
+@patch(CPP + 'effective_branch_ids', return_value=None)
+@patch(CPP + 'QRCode', _QRCodeStub)
+class CafeTableCreateTest(SimpleTestCase):
+
+    def setUp(self):
+        _QRCodeStub.objects.reset_mock()
+        _QRCodeStub.objects.create.side_effect = None
+
+    def _post(self, payload):
+        return _call(CP.ContactPointListCreateAPIView, 'post', '/api/v1/contact-points/', data=payload)
+
+    @patch(CPP + '_branch_or_none')
+    def test_cafe_with_table_and_till_table(self, branch_or_none, *_):
+        branch_or_none.return_value = _branch()
+        _QRCodeStub.objects.create.return_value = _table_qr(ext='u-7', hall='Зал')
+        resp = self._post({'branch_id': 3, 'name': 'Стол 7', 'mode': 'cafe', 'table_number': 7,
+                           'table_external_id': 'u-7', 'table_hall': 'Зал'})
+        self.assertEqual(resp.status_code, 201, resp.data)
+        kwargs = _QRCodeStub.objects.create.call_args.kwargs
+        self.assertEqual((kwargs['mode'], kwargs['table_number'], kwargs['table_external_id'],
+                          kwargs['table_hall']), ('cafe', 7, 'u-7', 'Зал'))
+        self.assertNotIn('table=', resp.data['url'])
+
+    @patch(CPP + '_branch_or_none')
+    def test_cafe_without_table_is_the_old_call(self, branch_or_none, *_):
+        branch_or_none.return_value = _branch()
+        _QRCodeStub.objects.create.return_value = _qr()
+        resp = self._post({'branch_id': 3, 'name': 'Флаер', 'mode': 'cafe'})
+        self.assertEqual(resp.status_code, 201)
+        self.assertNotIn('table_external_id', _QRCodeStub.objects.create.call_args.kwargs)
+
+    def test_till_table_needs_a_number(self, *_):
+        resp = self._post({'branch_id': 3, 'name': 'X', 'mode': 'cafe', 'table_external_id': 'u-7'})
+        self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+
+    def test_till_table_forbidden_for_delivery(self, *_):
+        resp = self._post({'branch_id': 3, 'name': 'X', 'mode': 'delivery', 'table_hall': 'Зал'})
+        self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+
+    def test_till_table_id_shape(self, *_):
+        for bad in ('с пробелом', 'x' * 65, '"; drop'):
+            with self.subTest(bad=bad):
+                resp = self._post({'branch_id': 3, 'name': 'X', 'mode': 'cafe', 'table_number': 1,
+                                   'table_external_id': bad})
+                self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+
+
+@patch(CPP + 'current_schema_name', return_value='dev')
+@patch(CPP + 'current_company_id', return_value=COMPANY)
+@patch(CPP + 'effective_branch_ids', return_value=None)
+@patch(CPP + 'QRCode', _QRCodeStub)
+class TillTablePatchTest(SimpleTestCase):
+
+    def _patch_call(self, payload, qr, has_scans):
+        with patch(CPP + '_get_qr', return_value=qr), \
+             patch(CPP + '_has_scans', return_value=has_scans):
+            return _call(CP.ContactPointDetailAPIView, 'patch',
+                         '/api/v1/contact-points/21/', data=payload, pk=21)
+
+    def test_till_table_editable_after_scans(self, *_):
+        # Ошибку сопоставления со схемой залов чинят и после сканов: в ссылку
+        # эти поля не входят, смысл напечатанного кода не меняется.
+        qr = _table_qr(ext='old', hall='Зал')
+        resp = self._patch_call({'table_external_id': 'u-7', 'table_hall': 'Бар'}, qr, True)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual((qr.table_external_id, qr.table_hall), ('u-7', 'Бар'))
+        self.assertEqual(sorted(qr.save.call_args.kwargs['update_fields']),
+                         ['table_external_id', 'table_hall'])
+
+    def test_table_number_still_locked_after_scans(self, *_):
+        resp = self._patch_call({'table_number': 8}, _table_qr(), True)
+        self.assertEqual((resp.status_code, resp.data['code']), (409, 'has_scans'))
+
+    def test_leaving_table_modes_clears_till_table(self, *_):
+        qr = _table_qr(mode='review', ext='u-7', hall='Зал')
+        resp = self._patch_call({'mode': 'delivery'}, qr, False)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertIsNone(qr.table_number)
+        self.assertEqual((qr.table_external_id, qr.table_hall), ('', ''))
+
+    def test_cafe_can_get_a_table(self, *_):
+        qr = _qr(mode='cafe')
+        resp = self._patch_call({'table_number': 4, 'table_hall': 'Летник'}, qr, False)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual((qr.table_number, qr.table_hall), (4, 'Летник'))
+
+
+@patch(CPP + 'current_schema_name', return_value='dev')
+@patch(CPP + 'current_company_id', return_value=COMPANY)
+@patch(CPP + 'effective_branch_ids', return_value=None)
+@patch(CPP + 'QRCode', _QRCodeStub)
+class BatchTablesListTest(SimpleTestCase):
+
+    def setUp(self):
+        _QRCodeStub.objects.reset_mock()
+        self.created = []
+
+        def _create(**kw):
+            qr = _table_qr(pk=100 + len(self.created), mode=kw['mode'], key=f'k{len(self.created)}',
+                           table_number=kw['table_number'], ext=kw.get('table_external_id', ''),
+                           hall=kw.get('table_hall', ''), name=kw['name'])
+            self.created.append(kw)
+            return qr
+
+        _QRCodeStub.objects.create.side_effect = _create
+
+    def _post(self, payload):
+        return _call(CP.ContactPointBatchTablesAPIView, 'post',
+                     '/api/v1/contact-points/batch-tables/', data=payload)
+
+    @patch(CPP + '_branch_or_none')
+    def test_cafe_list_skips_by_till_id_or_hall_and_number(self, branch_or_none, *_):
+        branch_or_none.return_value = _branch()
+        (_QRCodeStub.objects.filter.return_value.values_list.return_value) = [
+            (2, 'Зал', ''), (3, 'Бар', 'u-3'),
+        ]
+        resp = self._post({'branch_id': 3, 'mode': 'cafe', 'tables': [
+            {'number': 1, 'hall': 'Зал', 'external_id': 'u-1'},
+            {'number': 2, 'hall': 'зал'},                          # занят по залу и номеру
+            {'number': 3, 'hall': 'Бар', 'external_id': 'u-3'},   # занят по id кассы
+            {'number': 2, 'hall': 'Бар', 'external_id': 'u-b2'},  # тот же номер, другой зал
+        ]})
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual([(k['table_number'], k['table_hall'], k['table_external_id'], k['name'])
+                          for k in self.created],
+                         [(1, 'Зал', 'u-1', 'Зал · стол 1'), (2, 'Бар', 'u-b2', 'Бар · стол 2')])
+        self.assertEqual({k['mode'] for k in self.created}, {'cafe'})
+        self.assertEqual([s['table_number'] for s in resp.data['skipped']], [2, 3])
+        self.assertEqual({s['reason'] for s in resp.data['skipped']}, {'already_exists'})
+
+    @patch(CPP + '_branch_or_none', return_value=_branch())
+    def test_same_table_twice_in_list_is_400(self, *_):
+        for tables in ([{'number': 1, 'external_id': 'u-1'}, {'number': 2, 'external_id': 'u-1'}],
+                       [{'number': 1, 'hall': 'Зал'}, {'number': 1, 'hall': 'ЗАЛ'}]):
+            with self.subTest(tables=tables):
+                resp = self._post({'branch_id': 3, 'mode': 'cafe', 'tables': tables})
+                self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+        _QRCodeStub.objects.create.assert_not_called()
+
+    def test_mode_must_have_a_table(self, *_):
+        resp = self._post({'branch_id': 3, 'mode': 'delivery', 'from': 1, 'to': 2})
+        self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+
+    def test_bad_list(self, *_):
+        for tables in ([], 'все', [{'hall': 'Зал'}], [{'number': 0}], ['1'],
+                       [{'number': i} for i in range(1, CP.BATCH_TABLES_MAX + 2)]):
+            with self.subTest(n=len(tables) if isinstance(tables, list) else tables):
+                resp = self._post({'branch_id': 3, 'mode': 'cafe', 'tables': tables})
+                self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+
+    def test_bad_template_creates_nothing(self, *_):
+        resp = self._post({'branch_id': 3, 'mode': 'cafe', 'name_template': 'Стол {n}',
+                           'tables': [{'number': 1}]})
+        self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+        _QRCodeStub.objects.create.assert_not_called()
+
+    @patch(CPP + '_branch_or_none')
+    def test_range_in_cafe_mode(self, branch_or_none, *_):
+        branch_or_none.return_value = _branch()
+        (_QRCodeStub.objects.filter.return_value.values_list.return_value) = []
+        resp = self._post({'branch_id': 3, 'mode': 'cafe', 'from': 1, 'to': 2})
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual([(k['mode'], k['name']) for k in self.created],
+                         [('cafe', 'Стол 1'), ('cafe', 'Стол 2')])
+        self.assertEqual(_QRCodeStub.objects.filter.call_args.kwargs['mode'], 'cafe')
+
+
+class MaterialsCafeTableTest(SimpleTestCase):
+
+    def test_cafe_with_table_shows_its_table(self):
+        branch = _branch()
+        stub = SimpleNamespace(Mode=_Mode, objects=MagicMock())
+        (stub.objects.select_related.return_value.filter.return_value.order_by.return_value) = [
+            _table_qr(key='t1', table_number=7, hall='Зал'), _qr(pk=12, mode='cafe', key='f1'),
+        ]
+        with patch(CPP + 'QRCode', stub), patch(CPP + 'Branch') as branch_model, \
+             patch(CPP + 'effective_branch_ids', return_value=None), \
+             patch(CPP + 'current_schema_name', return_value='dev'), \
+             patch(CPP + 'current_company_id', return_value=COMPANY):
+            branch_model.objects.filter.return_value.first.return_value = branch
+            factory = APIRequestFactory()
+            request = factory.get('/api/v1/mobile/branches/3/materials/')
+            force_authenticate(request, user=_user())
+            resp = CP.BranchMaterialsAPIView.as_view()(request, pk=3)
+        cafe = resp.data['qr']['cafe']
+        self.assertEqual((cafe[0]['table_number'], cafe[0]['table_hall']), (7, 'Зал'))
+        self.assertNotIn('table_number', cafe[1])
