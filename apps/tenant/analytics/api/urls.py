@@ -11,6 +11,7 @@ from .views import (
     LoyaltyReportAPIView, ContactPointsAPIView,
     RFMRewardCatalogAPIView, RFMCampaignAPIView, RFMCampaignDetailAPIView,
     RFMCampaignCancelAPIView, RFMCampaignKPIAPIView,
+    GiftsExport1CAPIView,
 )
 
 urlpatterns = [
@@ -35,6 +36,8 @@ urlpatterns = [
     path('analytics/rf/generate-broadcast-text/', GenerateBroadcastTextAPIView.as_view(), name='analytics-rf-generate-text'),
     path('analytics/report/generate-comment/',    GenerateReportCommentAPIView.as_view(), name='analytics-report-generate-comment'),
     path('analytics/branches/',         BranchListAPIView.as_view(),   name='analytics-branches'),
+    # Выданные подарки для загрузки в 1С (JSON / CSV / XLSX) — как страница /analytics/gifts-1c/.
+    path('analytics/gifts-1c/',         GiftsExport1CAPIView.as_view(), name='analytics-gifts-1c-api'),
     # Экраны CheckUp (контракт платформы, ручки №2/№5/№4) — только чтение, цифры как в веб-кабинете.
     path('analytics/reviews/summary/',  ReviewsSummaryAPIView.as_view(), name='analytics-reviews-summary'),
     path('analytics/stats/detail/',     StatsDetailAPIView.as_view(),    name='analytics-stats-detail-api'),

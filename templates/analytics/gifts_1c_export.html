@@ -1,0 +1,142 @@
+{% extends "admin/base_site.html" %}
+{% block title %}{{ title }} — {{ block.super }}{% endblock %}
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Главная</a>
+  &rsaquo; <a href="{% url 'analytics-general' %}">Аналитика</a>
+  &rsaquo; {{ title }}
+</div>
+{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block extrastyle %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<style>
+  .gx-bg{background:#f3f4f6;padding:18px 20px;border-radius:12px;}
+  .gx-title{font-size:20px;font-weight:800;color:#111827;}
+  .gx-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;}
+  .gx-lbl{font-size:12px;font-weight:600;color:#6b7280;margin-bottom:4px;display:block;}
+  .gx-note{font-size:12px;color:#6b7280;}
+  table.gx-table{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;}
+  .gx-table th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#6b7280;font-weight:700;padding:10px 14px;background:#f9fafb;border-bottom:1px solid #e5e7eb;text-align:left;}
+  .gx-table td{padding:9px 14px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#111827;}
+  .gx-table td.gx-num,.gx-table th.gx-num{text-align:right;}
+  .gx-table tr:last-child td{border-bottom:none;}
+  .gx-tot td{background:#f9fafb;font-weight:800;border-top:2px solid #e5e7eb;}
+  .gx-code{font-family:monospace;font-size:12px;background:#f3f4f6;border-radius:6px;padding:8px 10px;display:block;white-space:pre-wrap;word-break:break-all;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="gx-bg">
+
+  <div class="mb-3">
+    <span class="gx-title">🎁 {{ title }}</span>
+    <div class="gx-note mt-1">
+      Выданный подарок — тот, который гость активировал в баре (показал сотруднику): призы игры,
+      покупки за баллы, подарки на день рождения, подарки из сториз и с сайта.
+      Дата — по московскому времени, календарные сутки. Бар — где подарок забрали.
+    </div>
+  </div>
+
+  <form method="get" class="gx-card mb-3">
+    <div class="row g-3 align-items-end">
+      <div class="col-auto">
+        <label class="gx-lbl" for="gx-start">Период с</label>
+        <input id="gx-start" type="date" name="start" value="{{ start }}" class="form-control form-control-sm" style="width:150px;" required>
+      </div>
+      <div class="col-auto">
+        <label class="gx-lbl" for="gx-end">по</label>
+        <input id="gx-end" type="date" name="end" value="{{ end }}" class="form-control form-control-sm" style="width:150px;" required>
+      </div>
+      <div class="col-auto">
+        <label class="gx-lbl" for="gx-branch">Бар</label>
+        <select id="gx-branch" name="branch" class="form-select form-select-sm" style="min-width:220px;">
+          <option value="">Все точки</option>
+          {% for b in branches %}
+          <option value="{{ b.id }}"{% if b.id == branch_pk %} selected{% endif %}>{{ b.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <span class="gx-lbl">Группировка</span>
+        {% for key, label in group_choices %}
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="group" id="gx-group-{{ key }}" value="{{ key }}"{% if group == key %} checked{% endif %}>
+          <label class="form-check-label small" for="gx-group-{{ key }}">{{ label }}</label>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="col-auto">
+        <label class="gx-lbl" for="gx-fmt">Формат файла</label>
+        <select id="gx-fmt" name="fmt" class="form-select form-select-sm">
+          {% for key, label in format_choices %}
+          <option value="{{ key }}"{% if fmt == key %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-outline-secondary px-3">Показать</button>
+        <button type="submit" name="download" value="1" class="btn btn-sm btn-success px-3">⬇ Скачать</button>
+      </div>
+    </div>
+  </form>
+
+  {% if error %}
+  <div class="alert alert-danger py-2 px-3 small">{{ error }}</div>
+  {% elif submitted %}
+  <p class="small text-muted mb-2">
+    Строк: <strong class="text-dark">{{ rows_count }}</strong> ·
+    Выдано подарков: <strong class="text-dark">{{ total_qty }}</strong>
+    {% if rows_truncated %}· на странице первые {{ preview_limit }} строк, в файле — все{% endif %}
+  </p>
+  {% if rows %}
+  <table class="gx-table mb-3">
+    <thead>
+      <tr>
+        <th>{{ headers.0 }}</th>
+        <th>{{ headers.1 }}</th>
+        <th>{{ headers.2 }}</th>
+        <th class="gx-num">{{ headers.3 }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.bar }}</td>
+        <td>{{ r.date_label }}</td>
+        <td>{{ r.name }}</td>
+        <td class="gx-num">{{ r.qty }}</td>
+      </tr>
+      {% endfor %}
+      {% if not rows_truncated %}
+      <tr class="gx-tot">
+        <td colspan="3">Итого (в файл не попадает)</td>
+        <td class="gx-num">{{ total_qty }}</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="gx-card text-center text-muted py-4 mb-3">За выбранный период выданных подарков нет</div>
+  {% endif %}
+  {% endif %}
+
+  <details class="gx-card">
+    <summary class="small fw-semibold">Формат файла и автоматическая загрузка (для программиста 1С)</summary>
+    <div class="gx-note mt-2">
+      Имя файла: <code>{{ filename }}</code>. Первая строка — заголовки
+      «Бар; Дата; Наименование; Количество», итоговой строки в файле нет.
+      CSV — UTF-8 с BOM, разделитель «;». В выгрузке «по дням» дата — дд.мм.гггг
+      (в XLSX — ячейка-дата), «за период» — «дд.мм.гггг–дд.мм.гггг».
+      Одинаковые наименования складываются в одну строку.
+    </div>
+    <div class="gx-note mt-2">Тот же отчёт без браузера:</div>
+    <span class="gx-code">POST /api/v1/auth/login/   {"login": "…", "password": "…"}  → token
+GET  /api/v1/analytics/gifts-1c/?start={{ start }}&amp;end={{ end }}&amp;group={{ group }}&amp;fmt=csv
+     Authorization: Bearer &lt;token&gt;
+group = day | period · fmt = json | csv | xlsx · branch_ids = id точки (необязательно)</span>
+  </details>
+
+</div>
+{% endblock %}

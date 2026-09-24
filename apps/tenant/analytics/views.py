@@ -1216,3 +1216,103 @@ class LoyaltyReportView(View):
         response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response['Pragma'] = 'no-cache'
         return response
+
+
+# ── Выгрузка выданных подарков для 1С (запрос БИРФЕСТ, 24.09.2026) ────────────
+
+def _parse_iso_date(raw):
+    try:
+        return date.fromisoformat((raw or '').strip())
+    except ValueError:
+        return None
+
+
+@method_decorator(staff_member_required, name='dispatch')
+@method_decorator(feature_required('general_stats'), name='dispatch')
+class GiftsExport1CView(View):
+    """
+    GET /analytics/gifts-1c/ — «Выгрузка подарков для 1С».
+
+    Форма: период (с/по), точка (одна или все), группировка (по дням / за период),
+    формат (XLSX / CSV). «Показать» — таблица на странице, «Скачать» — файл.
+    Что считается выданным — см. apps/tenant/analytics/gifts_export.py.
+
+    Доступ — как у «Общей статистики» (staff + раздел general_stats), точки —
+    только доступные пользователю (branch_access). «Без точки» видит только тот,
+    у кого нет ограничения по точкам, и только при выборе «Все точки».
+    """
+    template_name = 'analytics/gifts_1c_export.html'
+    PREVIEW_LIMIT = 500
+
+    def get(self, request):
+        from apps.shared.users.access import user_allowed_branches, current_schema_name
+        from apps.tenant.analytics import gifts_export as gx
+
+        schema = current_schema_name()
+        allowed = user_allowed_branches(request.user, schema)  # None = все точки
+
+        branches_qs = Branch.objects.filter(is_active=True)
+        if allowed is not None:
+            branches_qs = branches_qs.filter(pk__in=allowed)
+        branches = list(branches_qs.values('id', 'name').order_by('name'))
+
+        today = timezone.localdate()
+        submitted = 'start' in request.GET or 'end' in request.GET
+        start = _parse_iso_date(request.GET.get('start')) or today.replace(day=1)
+        end = _parse_iso_date(request.GET.get('end')) or today
+        group = request.GET.get('group') or gx.GROUP_DAY
+        if group not in dict(gx.GROUP_CHOICES):
+            group = gx.GROUP_DAY
+        fmt = request.GET.get('fmt') or gx.FORMAT_XLSX
+        if fmt not in dict(gx.FORMAT_CHOICES):
+            fmt = gx.FORMAT_XLSX
+
+        error = ''
+        branch_pk = None
+        branch_raw = (request.GET.get('branch') or '').strip()
+        if branch_raw:
+            try:
+                branch_pk = int(branch_raw)
+            except ValueError:
+                error = 'Неизвестная точка.'
+        if start > end:
+            error = 'Дата «с» позже даты «по».'
+
+        if branch_pk is not None:
+            if allowed is not None and branch_pk not in {int(b) for b in allowed}:
+                error = 'Эта точка вам недоступна.'
+            branch_ids = [branch_pk]
+        elif allowed is None:
+            branch_ids = None                      # все точки + «Без точки»
+        else:
+            branch_ids = sorted(allowed) or [-1]   # только разрешённые точки
+
+        rows = None
+        if submitted and not error:
+            rows = gx.build_gift_export(start, end, branch_ids=branch_ids, group=group)
+            if request.GET.get('download'):
+                return gx.file_response(rows, fmt, schema_name=schema, start=start, end=end)
+
+        context = {
+            'title':          'Выгрузка подарков для 1С',
+            'branches':       branches,
+            'branch_pk':      branch_pk,
+            'start':          start.isoformat(),
+            'end':            end.isoformat(),
+            'group':          group,
+            'fmt':            fmt,
+            'group_choices':  gx.GROUP_CHOICES,
+            'format_choices': gx.FORMAT_CHOICES,
+            'error':          error,
+            'submitted':      submitted,
+            'rows':           rows[:self.PREVIEW_LIMIT] if rows else [],
+            'rows_count':     len(rows) if rows else 0,
+            'rows_truncated': bool(rows) and len(rows) > self.PREVIEW_LIMIT,
+            'preview_limit':  self.PREVIEW_LIMIT,
+            'total_qty':      gx.total_qty(rows) if rows else 0,
+            'headers':        gx.HEADERS,
+            'filename':       gx.export_filename(schema, start, end, fmt),
+        }
+        response = render(request, self.template_name, context)
+        response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        return response

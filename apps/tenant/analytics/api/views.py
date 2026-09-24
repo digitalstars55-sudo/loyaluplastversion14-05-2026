@@ -2135,3 +2135,65 @@ class RFMCampaignKPIAPIView(APIView):
             'improved': improved,
             'improved_rate_of_returned': _pct(improved, returned),
         })
+
+
+class GiftsExport1CAPIView(APIView):
+    """
+    GET /api/v1/analytics/gifts-1c/ — выданные подарки для загрузки в 1С
+    (то же, что страница /analytics/gifts-1c/ в веб-админке).
+
+    Query params:
+      start, end — YYYY-MM-DD (или period — как у /analytics/stats/, по умолчанию 30d)
+      branch_ids — Branch PK через запятую; пусто = все доступные точки
+      group      — day (по дням, по умолчанию) | period (за период целиком)
+      fmt        — json (по умолчанию) | csv | xlsx
+                   (не `format`: этот параметр DRF забирает под выбор рендерера)
+
+    Авторизация — существующая: Bearer из POST /api/v1/auth/login/ (или сессия
+    веб-админки). Доступ — как у веб-страницы: пользователь этой сети с разделом
+    «Общая статистика»; точки — только доступные ему (branch_access).
+    Что считается выданным — apps/tenant/analytics/gifts_export.py.
+    """
+    permission_classes = [IsAuthenticated]
+
+    FORMATS = ('json', 'csv', 'xlsx')
+
+    @extend_schema(parameters=[StatsQuerySerializer], responses={200: OpenApiTypes.OBJECT})
+    def get(self, request):
+        from apps.shared.users.access import has_tenant_access, user_can_feature
+        from apps.tenant.analytics import gifts_export as gx
+
+        schema = current_schema_name()
+        if not has_tenant_access(request.user, schema) or not user_can_feature(request.user, 'general_stats'):
+            return Response({'detail': 'Нет доступа к выгрузке подарков.'}, status=status.HTTP_403_FORBIDDEN)
+
+        ser = StatsQuerySerializer(data=request.query_params)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        group = request.query_params.get('group') or gx.GROUP_DAY
+        if group not in dict(gx.GROUP_CHOICES):
+            return Response({'group': ['day | period']}, status=status.HTTP_400_BAD_REQUEST)
+        fmt = request.query_params.get('fmt') or 'json'
+        if fmt not in self.FORMATS:
+            return Response({'fmt': ['json | csv | xlsx']}, status=status.HTTP_400_BAD_REQUEST)
+
+        start_date = ser.validated_data['start']
+        end_date   = ser.validated_data['end']
+        branch_ids = effective_branch_ids(request.user, schema, ser.validated_data.get('branch_ids')) or None
+
+        rows = gx.build_gift_export(start_date, end_date, branch_ids=branch_ids, group=group)
+        if fmt != 'json':
+            return gx.file_response(rows, fmt, schema_name=schema, start=start_date, end=end_date)
+
+        return Response({
+            'rows':      [gx.row_to_dict(r) for r in rows],
+            'total_qty': gx.total_qty(rows),
+            'meta': {
+                'start':      str(start_date),
+                'end':        str(end_date),
+                'group':      group,
+                'branch_ids': branch_ids or [],
+                'headers':    list(gx.HEADERS),
+            },
+        })

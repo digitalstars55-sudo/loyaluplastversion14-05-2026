@@ -6,11 +6,14 @@ from .views import (
     SegmentExportSenlerView, SegmentCreateBroadcastView,
     CreateBroadcastForAllGuestsView,
     LoyaltyReportView, ContactPointsView, ContactPointDetailView,
+    GiftsExport1CView,
 )
 
 urlpatterns = [
     path('',                  GeneralStatsView.as_view(),     name='analytics-general'),
     path('report/',           LoyaltyReportView.as_view(),    name='analytics-report'),
+    # Выгрузка выданных подарков для загрузки в 1С (запрос БИРФЕСТ)
+    path('gifts-1c/',         GiftsExport1CView.as_view(),    name='analytics-gifts-1c'),
     path('contact-points/',        ContactPointsView.as_view(),       name='analytics-contact-points'),
     path('contact-points/detail/', ContactPointDetailView.as_view(),  name='analytics-contact-points-detail'),
     path('rf/',               RFAnalysisView.as_view(),       name='analytics-rf'),
