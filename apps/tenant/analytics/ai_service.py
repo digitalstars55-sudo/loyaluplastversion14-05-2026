@@ -7,7 +7,7 @@ AI-сервис для анализа тональности отзывов и �
 Вызывается синхронно при сохранении нового TestimonialMessage с source APP или VK_MESSAGE.
 Обновляет sentiment и ai_comment у родительского TestimonialConversation.
 
-Настройка: добавьте ANTHROPIC_API_KEY в settings.py (или .env).
+Настройка: добавьте OPENAI_API_KEY в settings.py (или .env).
 """
 from __future__ import annotations
 
@@ -165,15 +165,16 @@ def analyze_message(text: str, source: str = '') -> dict:
 
     import json
 
-    api_key = getattr(settings, 'ANTHROPIC_API_KEY', None)
+    api_key = getattr(settings, 'OPENAI_API_KEY', None)
     if not api_key:
         raise RuntimeError(
-            'ANTHROPIC_API_KEY не задан в settings.py. '
-            'Добавьте: ANTHROPIC_API_KEY = "sk-ant-..."'
+            'OPENAI_API_KEY не задан в settings.py. '
+            'Добавьте ключ через production environment.'
         )
 
-    import os, anthropic
-    proxy_url = os.getenv('AI_PROXY_URL', '')
+    import os
+    from apps.shared.ai import openai_compat as anthropic
+    proxy_url = os.getenv('OPENAI_BASE_URL', '')
     client = anthropic.Anthropic(api_key=api_key, base_url=proxy_url) if proxy_url else anthropic.Anthropic(api_key=api_key)
 
     source_note = f'[Источник: {source}] ' if source else ''

@@ -642,14 +642,13 @@ class TenantAdminSite(AdminSite):
                 user_msg = f'Напиши сообщение для рассылки{f" ({hint})" if hint else ""}.'
 
         # ── Call Claude Haiku via proxy ────────────────────────────────────────
-        api_key = getattr(settings, 'ANTHROPIC_API_KEY', None)
+        api_key = getattr(settings, 'OPENAI_API_KEY', None)
         if not api_key:
-            return JsonResponse({'error': 'ANTHROPIC_API_KEY не настроен'}, status=500)
+            return JsonResponse({'error': 'OPENAI_API_KEY не настроен'}, status=500)
 
         try:
-            import anthropic
-
-            proxy_url = os.getenv('AI_PROXY_URL', '')
+            from apps.shared.ai import openai_compat as anthropic
+            proxy_url = os.getenv('OPENAI_BASE_URL', '')
             if proxy_url:
                 client = anthropic.Anthropic(
                     api_key=api_key,

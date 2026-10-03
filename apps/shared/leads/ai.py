@@ -209,21 +209,20 @@ def run_chat_turn(lead: Lead, user_message: str) -> Tuple[str, List[str]]:
     Один turn чата: получили реплику от клиента, идём в Claude, получаем ответ,
     применяем tool-вызовы, возвращаем (assistant_text, updated_fields).
 
-    Бросает исключение если ANTHROPIC_API_KEY не настроен или Claude недоступен.
+    Бросает исключение если OPENAI_API_KEY не настроен или Claude недоступен.
     Caller (view) ловит и решает что делать (мобайл получит 503 → fallback на скрипт).
     """
-    api_key = getattr(settings, 'ANTHROPIC_API_KEY', None) or os.getenv('ANTHROPIC_API_KEY')
+    api_key = getattr(settings, 'OPENAI_API_KEY', None) or os.getenv('OPENAI_API_KEY')
     if not api_key:
-        raise RuntimeError('ANTHROPIC_API_KEY не настроен в окружении')
+        raise RuntimeError('OPENAI_API_KEY не настроен в окружении')
 
-    import anthropic
-
+    from apps.shared.ai import openai_compat as anthropic
     # Собираем историю
     history = list(lead.conversation_history or [])
     if user_message:
         history.append({'role': 'user', 'text': user_message})
 
-    proxy_url = os.getenv('AI_PROXY_URL', '')
+    proxy_url = os.getenv('OPENAI_BASE_URL', '')
     client_kwargs: Dict[str, Any] = {'api_key': api_key}
     if proxy_url:
         client_kwargs['base_url'] = proxy_url

@@ -218,7 +218,7 @@ class CommentsViewTest(SimpleTestCase):
 class GenerateViewTest(SimpleTestCase):
 
     def test_ai_unavailable_is_not_500(self):
-        err = RC.AIUnavailable('ANTHROPIC_API_KEY не настроен', 503)
+        err = RC.AIUnavailable('OPENAI_API_KEY не настроен', 503)
         with patch(RCP + 'generate_comment_text', side_effect=err), \
              patch(RCP + 'effective_branch_ids', return_value=[]), \
              patch(RCP + 'current_schema_name', return_value='levone'), \

@@ -1491,10 +1491,10 @@ class GenerateBroadcastTextAPIView(APIView):
         except Exception:
             company_name = 'наше кафе'
 
-        api_key = getattr(_settings, 'ANTHROPIC_API_KEY', None)
+        api_key = getattr(_settings, 'OPENAI_API_KEY', None)
         if not api_key:
             return Response(
-                {'error': 'ANTHROPIC_API_KEY не настроен'},
+                {'error': 'OPENAI_API_KEY не настроен'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -1559,9 +1559,8 @@ class GenerateBroadcastTextAPIView(APIView):
 
         try:
             import os
-            import anthropic
-
-            proxy_url = os.getenv('AI_PROXY_URL', '')
+            from apps.shared.ai import openai_compat as anthropic
+            proxy_url = os.getenv('OPENAI_BASE_URL', '')
             client = (
                 anthropic.Anthropic(api_key=api_key, base_url=proxy_url)
                 if proxy_url
@@ -1616,10 +1615,10 @@ class GenerateReportCommentAPIView(APIView):
         except Exception:
             company_name = 'кафе'
 
-        api_key = getattr(_settings, 'ANTHROPIC_API_KEY', None)
+        api_key = getattr(_settings, 'OPENAI_API_KEY', None)
         if not api_key:
             return Response(
-                {'error': 'ANTHROPIC_API_KEY не настроен'},
+                {'error': 'OPENAI_API_KEY не настроен'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -1658,9 +1657,8 @@ class GenerateReportCommentAPIView(APIView):
 
         try:
             import os
-            import anthropic
-
-            proxy_url = os.getenv('AI_PROXY_URL', '')
+            from apps.shared.ai import openai_compat as anthropic
+            proxy_url = os.getenv('OPENAI_BASE_URL', '')
             client = (
                 anthropic.Anthropic(api_key=api_key, base_url=proxy_url)
                 if proxy_url

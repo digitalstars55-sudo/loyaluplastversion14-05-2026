@@ -712,13 +712,14 @@ class ReviewsAIReplyView(View):
             + '\n' + DRAFT_RULE_RATINGS
         )
 
-        api_key = getattr(settings, 'ANTHROPIC_API_KEY', None)
+        api_key = getattr(settings, 'OPENAI_API_KEY', None)
         if not api_key:
-            return JsonResponse({'error': 'AI не настроен (ANTHROPIC_API_KEY)'}, status=500)
+            return JsonResponse({'error': 'AI не настроен (OPENAI_API_KEY)'}, status=500)
 
         try:
-            import os, anthropic
-            proxy_url = os.getenv('AI_PROXY_URL', '')
+            import os
+            from apps.shared.ai import openai_compat as anthropic
+            proxy_url = os.getenv('OPENAI_BASE_URL', '')
             if proxy_url:
                 ai_client = anthropic.Anthropic(
                     api_key=api_key,

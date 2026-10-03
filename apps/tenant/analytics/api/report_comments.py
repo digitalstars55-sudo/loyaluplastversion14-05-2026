@@ -272,9 +272,9 @@ def generate_comment_text(section_num, section_title: str, metrics_json: str,
 
     from django.conf import settings as dj_settings
 
-    api_key = getattr(dj_settings, 'ANTHROPIC_API_KEY', None)
+    api_key = getattr(dj_settings, 'OPENAI_API_KEY', None)
     if not api_key:
-        raise AIUnavailable('ANTHROPIC_API_KEY не настроен',
+        raise AIUnavailable('OPENAI_API_KEY не настроен',
                             http_status.HTTP_503_SERVICE_UNAVAILABLE)
 
     system_prompt = (
@@ -304,8 +304,8 @@ def generate_comment_text(section_num, section_title: str, metrics_json: str,
                          f'обязательно учти их:\n{draft}')
 
     try:
-        import anthropic
-        proxy_url = os.getenv('AI_PROXY_URL', '')
+        from apps.shared.ai import openai_compat as anthropic
+        proxy_url = os.getenv('OPENAI_BASE_URL', '')
         client = (anthropic.Anthropic(api_key=api_key, base_url=proxy_url)
                   if proxy_url else anthropic.Anthropic(api_key=api_key))
         from apps.shared.ai.usage import log_usage
@@ -320,7 +320,7 @@ def generate_comment_text(section_num, section_title: str, metrics_json: str,
     except Exception as exc:
         # Кредиты Anthropic на этом проекте кончались четыре раза — для
         # кабинета это должен быть понятный код, а не 500.
-        raise AIUnavailable(f'Claude недоступен: {exc}', http_status.HTTP_502_BAD_GATEWAY)
+        raise AIUnavailable(f'AI недоступен: {exc}', http_status.HTTP_502_BAD_GATEWAY)
 
 
 def _company_name() -> str:

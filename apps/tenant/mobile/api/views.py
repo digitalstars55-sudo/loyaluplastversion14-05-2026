@@ -1162,21 +1162,21 @@ def _call_claude_for_draft(conv: TestimonialConversation) -> tuple[str, int]:
     import os
     from django.conf import settings as _settings
 
-    api_key = getattr(_settings, 'ANTHROPIC_API_KEY', None)
+    api_key = getattr(_settings, 'OPENAI_API_KEY', None)
     if not api_key:
-        return ('ANTHROPIC_API_KEY не настроен', 500)
+        return ('OPENAI_API_KEY не настроен', 500)
 
     try:
-        import anthropic
+        from apps.shared.ai import openai_compat as anthropic
     except ImportError:
-        return ('Библиотека anthropic не установлена', 500)
+        return ('OpenAI-адаптер не установлен', 500)
 
     parts = _build_draft_prompt(conv)
     if parts is None:
         return ('В переписке нет текста, на который можно ответить', 400)
     system_prompt, user_message = parts
 
-    proxy_url = os.getenv('AI_PROXY_URL', '')
+    proxy_url = os.getenv('OPENAI_BASE_URL', '')
     client = (
         anthropic.Anthropic(api_key=api_key, base_url=proxy_url)
         if proxy_url else anthropic.Anthropic(api_key=api_key)
@@ -3183,15 +3183,15 @@ class AssistantAskAPIView(APIView):
 
         try:
             import os
-            import anthropic
+            from apps.shared.ai import openai_compat as anthropic
             from django.conf import settings
-            api_key = getattr(settings, 'ANTHROPIC_API_KEY', None)
+            api_key = getattr(settings, 'OPENAI_API_KEY', None)
             if not api_key:
                 return Response(
                     {'error': 'AI временно недоступен'},
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
-            proxy_url = os.getenv('AI_PROXY_URL', '')
+            proxy_url = os.getenv('OPENAI_BASE_URL', '')
             client = (anthropic.Anthropic(api_key=api_key, base_url=proxy_url)
                       if proxy_url else anthropic.Anthropic(api_key=api_key))
             # Контекст по сети — чтобы Лояльчик отвечал реальными цифрами.

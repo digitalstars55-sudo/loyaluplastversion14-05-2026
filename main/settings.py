@@ -271,6 +271,12 @@ VK_SECRET = os.getenv('VK_SECRET', '')
 # в лог пишется 'vk_sign candidate=ok|mismatch'. Ничего не решает (guest/vk_sign.candidate_check).
 VK_SECRET_CANDIDATE = os.getenv('VK_SECRET_CANDIDATE', '')
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+OPENAI_MODEL_FAST = os.getenv('OPENAI_MODEL_FAST', 'gpt-6-luna')
+OPENAI_MODEL_SMART = os.getenv('OPENAI_MODEL_SMART', 'gpt-6.1-sol')
+OPENAI_REASONING_EFFORT_FAST = os.getenv('OPENAI_REASONING_EFFORT_FAST', 'none')
+OPENAI_REASONING_EFFORT = os.getenv('OPENAI_REASONING_EFFORT', 'low')
 
 # Сервис-API лояльности для внешнего ordering-BFF (приложение заказа).
 # Ключ — только в окружении, не в гите. Без него loyalty-эндпоинты fail closed.

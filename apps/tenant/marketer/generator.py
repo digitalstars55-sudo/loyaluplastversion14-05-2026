@@ -2,7 +2,7 @@
 Генератор постов через Claude (Anthropic API).
 
 Тот же паттерн доступа, что в analytics/ai_service.py: ключ из
-settings.ANTHROPIC_API_KEY, опциональный прокси AI_PROXY_URL. Модель
+settings.OPENAI_API_KEY, опциональный прокси OPENAI_BASE_URL. Модель
 задаётся MARKETER_AI_MODEL (дефолт — claude-sonnet-5: посты наружу,
 haiku тут экономить не стоит).
 
@@ -53,14 +53,13 @@ def generate_post(knowledge: dict, *, task: str = _DIGEST_TASK,
     Raises:
         RuntimeError — нет ключа API или ИИ вернул нечитаемый ответ.
     """
-    api_key = getattr(settings, 'ANTHROPIC_API_KEY', None)
+    api_key = getattr(settings, 'OPENAI_API_KEY', None)
     if not api_key:
-        raise RuntimeError('ANTHROPIC_API_KEY не задан в settings.')
+        raise RuntimeError('OPENAI_API_KEY не задан в settings.')
 
     import os
-    import anthropic
-
-    proxy_url = os.getenv('AI_PROXY_URL', '')
+    from apps.shared.ai import openai_compat as anthropic
+    proxy_url = os.getenv('OPENAI_BASE_URL', '')
     client = (
         anthropic.Anthropic(api_key=api_key, base_url=proxy_url)
         if proxy_url else anthropic.Anthropic(api_key=api_key)

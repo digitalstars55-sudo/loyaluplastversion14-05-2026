@@ -400,11 +400,11 @@ class NeedsHumanParsingTest(SimpleTestCase):
 
     def _run(self, raw_json, text):
         from apps.tenant.analytics import ai_service
-        with patch.object(ai_service, '_build_system_prompt', return_value='sys'), \
-             patch('anthropic.Anthropic', return_value=self._answer(raw_json)):
+        with patch('apps.shared.ai.openai_compat.Anthropic',
+                   return_value=self._answer(raw_json)):
             return ai_service.analyze_message(text, 'VK_MESSAGE')
 
-    @override_settings(ANTHROPIC_API_KEY='sk-test')
+    @override_settings(OPENAI_API_KEY='sk-test')
     def test_flag_from_model(self):
         res = self._run(
             '{"sentiment":"POSITIVE","comment":"ок","needs_human":true}',
@@ -413,7 +413,7 @@ class NeedsHumanParsingTest(SimpleTestCase):
         self.assertTrue(res['needs_human'])
         self.assertEqual(res['sentiment'], 'POSITIVE')
 
-    @override_settings(ANTHROPIC_API_KEY='sk-test')
+    @override_settings(OPENAI_API_KEY='sk-test')
     def test_missing_key_defaults_to_false(self):
         # Старый формат ответа (без needs_human) + текст без вопроса.
         res = self._run(
@@ -422,7 +422,7 @@ class NeedsHumanParsingTest(SimpleTestCase):
         )
         self.assertFalse(res['needs_human'])
 
-    @override_settings(ANTHROPIC_API_KEY='sk-test')
+    @override_settings(OPENAI_API_KEY='sk-test')
     def test_heuristic_question_mark_wins(self):
         res = self._run(
             '{"sentiment":"POSITIVE","comment":"ок","needs_human":false}',

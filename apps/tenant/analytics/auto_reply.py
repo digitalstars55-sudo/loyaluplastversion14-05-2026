@@ -377,15 +377,15 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
     """Вызов Anthropic Claude. Возвращает текст черновика или None."""
     from django.conf import settings
 
-    api_key = getattr(settings, 'ANTHROPIC_API_KEY', None)
+    api_key = getattr(settings, 'OPENAI_API_KEY', None)
     if not api_key:
-        logger.warning('auto_reply: no ANTHROPIC_API_KEY')
+        logger.warning('auto_reply: no OPENAI_API_KEY')
         return None
 
     try:
-        import anthropic
+        from apps.shared.ai import openai_compat as anthropic
     except ImportError:
-        logger.warning('auto_reply: anthropic package not installed')
+        logger.warning('auto_reply: OpenAI adapter not installed')
         return None
 
     from apps.shared.ai.usage import cached_system, log_usage
@@ -395,7 +395,7 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
         return None
     system_prompt, user_message = parts
 
-    proxy_url = os.getenv('AI_PROXY_URL', '')
+    proxy_url = os.getenv('OPENAI_BASE_URL', '')
     client = (
         anthropic.Anthropic(api_key=api_key, base_url=proxy_url)
         if proxy_url else anthropic.Anthropic(api_key=api_key)
@@ -412,7 +412,7 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
         log_usage('draft', message)
         return message.content[0].text.strip()
     except Exception as e:
-        logger.warning('Claude draft generation failed for conv %s: %s', conv.pk, e)
+        logger.warning('AI draft generation failed for conv %s: %s', conv.pk, e)
         return None
 
 
