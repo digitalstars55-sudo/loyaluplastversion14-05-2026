@@ -30,6 +30,14 @@ class OpenAICompatTests(SimpleTestCase):
     def setUp(self):
         self.client = OpenAICompatClient(api_key='test', base_url='https://example.test/v1')
 
+    @override_settings(OPENAI_PROXY_URL='http://proxy.example:8888')
+    def test_dedicated_proxy_is_scoped_to_openai_session(self):
+        client = OpenAICompatClient(api_key='test')
+        self.assertEqual(client.session.proxies, {
+            'http': 'http://proxy.example:8888',
+            'https': 'http://proxy.example:8888',
+        })
+
     def test_text_response_maps_model_and_disables_storage(self):
         payload = {
             'id': 'resp_1', 'model': 'gpt-6-luna', 'status': 'completed',

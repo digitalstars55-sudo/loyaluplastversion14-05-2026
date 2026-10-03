@@ -275,6 +275,15 @@ class OpenAICompatClient:
         self.timeout = timeout
         self.max_retries = max(0, int(max_retries or 0))
         self.session = requests.Session()
+        proxy_url = (getattr(settings, 'OPENAI_PROXY_URL', '')
+                     or os.getenv('OPENAI_PROXY_URL') or '').strip()
+        if proxy_url:
+            # Scope the proxy to OpenAI only. Global HTTP(S)_PROXY would also
+            # reroute VK, Telegram, Senler, POS and every other integration.
+            self.session.proxies.update({
+                'http': proxy_url,
+                'https': proxy_url,
+            })
         self.messages = _Messages(self)
 
     def _body(self, params: dict) -> dict:
