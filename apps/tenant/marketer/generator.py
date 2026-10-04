@@ -85,7 +85,8 @@ def generate_post(knowledge: dict, *, task: str = _DIGEST_TASK,
         messages=[{'role': 'user', 'content': user_message}],
     )
     log_usage('marketer', message)
-    raw = message.content[0].text.strip()
+    raw = ''.join(getattr(block, 'text', '') for block in message.content
+                  if getattr(block, 'type', '') == 'text').strip()
 
     if raw.startswith('```'):
         raw = raw.split('```')[1]
