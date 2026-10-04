@@ -1,3 +1,4 @@
+from apps.shared.secret_fields import EncryptedSecretField
 import uuid
 
 from django.db import models
@@ -17,7 +18,7 @@ class TelegramBot(TimeStampedModel):
         verbose_name='Username бота',
         help_text='Username без @, например: my_restaurant_bot',
     )
-    api = models.CharField(
+    api = EncryptedSecretField(
         max_length=512,
         verbose_name='API Token',
         help_text='Токен от @BotFather. Храните в секрете.',

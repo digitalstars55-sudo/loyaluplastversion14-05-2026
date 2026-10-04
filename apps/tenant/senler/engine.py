@@ -741,11 +741,16 @@ def _prepare_rf_gift(rule, c, now):
         .values_list('catalog_item_id', flat=True)[:RF_GIFT_RECENT_EXCLUDE]
     )
 
+    from .pilot_controls import limits
+    cost_cap, _ = limits(_tenant_client_config())
+    options = {'max_cost_price': cost_cap} if cost_cap is not None else {}
     item = reward_catalog.pick_reward(
-        _rule_gift_tiers(rule), cb.branch, exclude_ids=recent_ids,
+        _rule_gift_tiers(rule), cb.branch, exclude_ids=recent_ids, **options,
     )
     if item is None:
         return None, 'no_gift_available'
+    if cost_cap is not None and item.effective_cost_price <= 0:
+        return None, 'unknown_gift_cost'
 
     days = rule.gift_lifetime_days or item.default_lifetime_days or 0
 
@@ -1092,7 +1097,14 @@ def resolve_recipients(rule, now=None) -> list[Candidate]:
 
     # RF-оркестратор (ТЗ v1.1 §5): 72ч / 2 за 14д / 3 за 30д / пауза после
     # визита / заморозка вокруг ДР. Работает только при включённом флаге сети.
-    return _apply_rf_orchestrator(capped, rule.event, now)
+    result = _apply_rf_orchestrator(capped, rule.event, now)
+    if rule.event in _rf_events():
+        from .pilot_controls import limits, remaining_contacts
+        _, daily_limit = limits(_tenant_client_config())
+        slots = remaining_contacts(daily_limit, now, _rf_events())
+        if slots is not None:
+            result = result[:slots]
+    return result
 
 
 def preview_rule(rule, sample: int = 5, now=None) -> dict:
@@ -1116,6 +1128,10 @@ def preview_rule(rule, sample: int = 5, now=None) -> dict:
     }
 
 
+from .pilot_controls import guard_pilot
+
+
+@guard_pilot
 def run_rule(rule, now=None, dry_run: bool = False) -> dict:
     """
     Отправка по правилу. dry_run=True — считает получателей и НЕ шлёт (для E2E).

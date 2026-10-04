@@ -29,6 +29,8 @@
 """
 from __future__ import annotations
 
+from apps.shared.users.feature_permissions import HasFeatureAccess
+
 import json
 import logging
 
@@ -379,7 +381,7 @@ _ERR = OpenApiResponse(inline_serializer(name='ReportError', fields={
 
 class ReportSectionsAPIView(APIView):
     """GET /api/v1/analytics/report/sections/ — 11 секций отчёта."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reports')]
 
     @extend_schema(responses={200: _SECTIONS_OUT}, tags=['v1'])
     def get(self, request):
@@ -397,7 +399,7 @@ class ReportCommentsAPIView(APIView):
     пришёл `updated_at` и он не совпал с тем, что в базе, — `409 conflict` со
     списком разошедшихся секций: значит кто-то сохранил раньше вас.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reports')]
 
     @extend_schema(parameters=[StatsQuerySerializer], responses={200: _COMMENTS_OUT, 400: _ERR},
                    tags=['v1'])
@@ -474,7 +476,7 @@ class GenerateReportCommentSaveAPIView(APIView):
     Промпт и модель — те же, что у живой `generate-comment/` (общая функция).
     `save: true` сохраняет текст в базу как комментарий ИИ.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reports')]
 
     @extend_schema(request=_GENERATE_IN, responses={200: _GENERATE_OUT, 400: _ERR,
                                                     502: _ERR, 503: _ERR}, tags=['v1'])
@@ -528,7 +530,7 @@ class ReportPrintView(APIView):
     только заголовком (JWT): `?token=` в адресе контракт запрещает — он
     остаётся в истории браузера и в логах nginx.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reports')]
 
     @extend_schema(parameters=[StatsQuerySerializer],
                    responses={200: OpenApiResponse(description='text/html'), 400: _ERR},

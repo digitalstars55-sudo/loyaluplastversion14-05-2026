@@ -1,3 +1,4 @@
+from apps.shared.secret_fields import EncryptedSecretField
 from django.db import models
 
 
@@ -195,6 +196,8 @@ class ClientConfig(models.Model):
             'Включайте вместе с запуском RF-правил.'
         ),
     )
+    rf_reward_max_cost_rub = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name='Предел себестоимости RF-подарка, ₽', help_text='0 — без ограничения. Максимальная себестоимость RF-подарка.')
+    rf_daily_contact_limit = models.PositiveSmallIntegerField(default=0, verbose_name='Лимит RF-сообщений в день', help_text='0 — без ограничения. Максимум RF-сообщений в день по сети.')
     story_campaign_start = models.DateField(
         null=True, blank=True,
         verbose_name='Дата начала кампании сториз',
@@ -308,7 +311,7 @@ class ClientConfig(models.Model):
         verbose_name='IIKO Логин',
         help_text='Логин пользователя API из кабинета iiko.',
     )
-    iiko_password = models.CharField(
+    iiko_password = EncryptedSecretField(
         max_length=255,
         blank=True,
         verbose_name='IIKO Пароль',
@@ -321,7 +324,7 @@ class ClientConfig(models.Model):
         verbose_name='Dooglys API URL',
         help_text='Пример: https://api.dooglys.com/v1/',
     )
-    dooglys_api_token = models.CharField(
+    dooglys_api_token = EncryptedSecretField(
         max_length=512,
         blank=True,
         verbose_name='Dooglys API Token',

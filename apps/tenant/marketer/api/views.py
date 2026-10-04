@@ -30,6 +30,8 @@ API у приложения не было вовсе: настройки и по
 """
 from __future__ import annotations
 
+from apps.shared.users.feature_permissions import HasFeatureAccess
+
 import logging
 
 from django.core.cache import cache
@@ -291,7 +293,7 @@ class MarketerSettingsAPIView(APIView):
     `vk_wall_token` не отдаётся и не принимается: в ответе только
     `vk_wall_token_set`.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @extend_schema(responses={200: _SETTINGS_OUT}, tags=['v1'])
     def get(self, request):
@@ -321,7 +323,7 @@ class MarketerSettingsAPIView(APIView):
 
 class MarketerPostListAPIView(APIView):
     """GET /api/v1/marketer/posts/?status=&post_type=&limit=&offset="""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @extend_schema(parameters=[
         OpenApiParameter('status', str, description=' | '.join(MarketerPostStatus.values)),
@@ -364,7 +366,7 @@ class MarketerPostDetailAPIView(APIView):
     У `failed` правка текста статус НЕ меняет: пост остаётся упавшим, пока его
     не опубликуют повторно (иначе из ленты пропадёт след ошибки).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @extend_schema(responses={200: _POST_OUT, 404: _ERR}, tags=['v1'])
     def get(self, request, pk: int):
@@ -406,7 +408,7 @@ class MarketerPostDetailAPIView(APIView):
 
 class MarketerPostContextAPIView(APIView):
     """GET /api/v1/marketer/posts/{id}/context/ — снимок фактов, из которых написан пост."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @extend_schema(responses={200: OpenApiResponse(description='{context}'), 404: _ERR},
                    tags=['v1'])
@@ -428,7 +430,7 @@ class MarketerGenerateAPIView(APIView):
     блокировки → `409 already_generating` (поля «генерируется» в модели нет —
     блокировка живёт в кэше и сама истекает).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @extend_schema(request=None, responses={202: OpenApiResponse(description='{queued: true}'),
                                             403: _ERR, 409: _ERR}, tags=['v1'])
@@ -475,7 +477,7 @@ class MarketerPostPublishAPIView(APIView):
     уже опубликованный пост отвечает `200` и вторым `wall.post` не уходит.
     Ошибку ВК отдаём как есть — `502 vk_error`.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @extend_schema(request=None, responses={200: _POST_OUT, 400: _ERR, 403: _ERR, 404: _ERR,
                                             409: _ERR, 502: _ERR}, tags=['v1'])
@@ -532,7 +534,7 @@ class MarketerPostRejectAPIView(APIView):
     Только из `draft`: отклонять опубликованный пост нечего (его снимают в ВК),
     а у `failed` есть повторная публикация.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @extend_schema(request=None, responses={200: _POST_OUT, 403: _ERR, 404: _ERR, 409: _ERR},
                    tags=['v1'])

@@ -293,6 +293,8 @@ VK_WEB_APP_ID=os.getenv('VK_WEB_APP_ID', 54473505)
 # деплоя фронта с заголовком X-VK-Launch-Params, когда лог покажет ~0 легитимных
 # запросов без подписи (у гостей висит кэш старого бандла).
 VK_SIGN_ENFORCE = os.getenv('VK_SIGN_ENFORCE', 'off')
+# Separate LoyalUP encryption keys; retain old keys when rotating.
+LOYALUP_SECRET_KEYS = tuple(k.strip() for k in os.getenv('LOYALUP_SECRET_KEYS', '').split(',') if k.strip())
 # Домены Телеграм-мини-аппа: тот же фронт-бандл, но подписи ВК там нет —
 # такие запуски enforce не трогает (см. TODO про initData в middleware).
 TELEGRAM_MINI_APP_HOSTS = tuple(

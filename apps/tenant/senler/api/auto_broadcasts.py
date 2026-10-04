@@ -38,6 +38,8 @@
 """
 from __future__ import annotations
 
+from apps.shared.users.feature_permissions import HasFeatureAccess
+
 import logging
 from datetime import date, timedelta
 
@@ -477,7 +479,7 @@ def _check_delay(rule, fields: dict, events: dict):
 
 class AutoBroadcastEventsAPIView(APIView):
     """GET /api/v1/auto-broadcasts/events/ — справочник событий и словарей."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @api_schema.events
     def get(self, request):
@@ -499,7 +501,7 @@ class AutoBroadcastRuleListCreateAPIView(APIView):
     добавлены аддитивно. Без параметра limit отдаётся полный список.
     Архивные скрыты, пока не передан include_archived=1.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @api_schema.rule_list
     def get(self, request):
@@ -654,7 +656,7 @@ class AutoBroadcastRuleDetailAPIView(APIView):
     плоские message_text, is_active, name, delay_days, send_hour_*, active_*,
     priority принимаются ради совместимости с мобилкой.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @api_schema.rule_get
     def get(self, request, pk):
@@ -790,7 +792,7 @@ class AutoBroadcastRulePreviewAPIView(APIView):
     count — та цифра, которую кабинет обязан вернуть в expected_count при
     activate/. Расчёт упал → 409 preview_failed (включать тоже нельзя, ★11).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @api_schema.preview
     def get(self, request, pk):
@@ -884,7 +886,7 @@ class AutoBroadcastRuleActivateAPIView(APIView):
       4) аудитория пересчитывается СВЕЖО (тем же кодом, что и предпросмотр);
       5) пусто → 400 audience_empty, разошлось → 409 audience_changed.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @api_schema.activate
     def post(self, request, pk):
@@ -935,7 +937,7 @@ class AutoBroadcastRuleActivateAPIView(APIView):
 
 class AutoBroadcastRuleDeactivateAPIView(APIView):
     """POST /api/v1/auto-broadcasts/{id}/deactivate/ — выключить (всегда можно)."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @api_schema.deactivate
     def post(self, request, pk):
@@ -960,7 +962,7 @@ class AutoBroadcastRuleLogAPIView(APIView):
     auto_broadcast_rule=rule). Отсева дедупом/кэпом/окном здесь нет: он
     происходит ДО создания получателей.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @api_schema.log
     def get(self, request, pk):
@@ -989,7 +991,7 @@ class AutoBroadcastRuleLogAPIView(APIView):
 
 class AutoBroadcastRuleStatsAPIView(APIView):
     """GET /api/v1/auto-broadcasts/{id}/stats/ — сводка правила и вариантов."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @api_schema.stats
     def get(self, request, pk):
@@ -1006,7 +1008,7 @@ class AutoBroadcastRuleStatsAPIView(APIView):
 
 class AutoBroadcastVariantCreateAPIView(APIView):
     """POST /api/v1/auto-broadcasts/{id}/variants/ — добавить вариант текста."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @api_schema.variant_create
     def post(self, request, pk):
@@ -1031,7 +1033,7 @@ class AutoBroadcastVariantDetailAPIView(APIView):
     статистика и прочтения (BroadcastSend.auto_broadcast_variant). Такой
     вариант выключают (is_active=false), а не удаляют.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     def _load(self, request, pk, vid):
         rule = _load_rule(pk, _allowed_branches(request))
@@ -1088,7 +1090,7 @@ class AutoBroadcastRuleTestSendAPIView(APIView):
 
     Троттл ★37: не чаще раза в минуту на правило (django cache).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     @api_schema.test_send
     def post(self, request, pk):

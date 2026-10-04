@@ -1,3 +1,4 @@
+from apps.shared.secret_fields import EncryptedSecretField
 from django.core.exceptions import ValidationError
 from django.db import models
 
@@ -88,7 +89,7 @@ class SenlerConfig(TimeStampedModel):
         verbose_name='ID группы VK',
         help_text='Числовой ID VK-сообщества (без минуса).',
     )
-    vk_community_token = models.CharField(
+    vk_community_token = EncryptedSecretField(
         max_length=512,
         verbose_name='Токен сообщества VK',
         help_text='Community access token — НЕ пользовательский токен.',
@@ -106,7 +107,7 @@ class SenlerConfig(TimeStampedModel):
         blank=True,
         help_text='VK → Управление → Работа с API → Callback API → Строка для ответа на подтверждение.',
     )
-    vk_callback_secret = models.CharField(
+    vk_callback_secret = EncryptedSecretField(
         'Секрет Callback',
         max_length=64,
         blank=True,

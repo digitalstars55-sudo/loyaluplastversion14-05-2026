@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from apps.shared.users.feature_permissions import HasFeatureAccess
+
 from django.db import transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
@@ -154,7 +156,7 @@ class MobileReviewListAPIView(generics.ListAPIView):
     дней (фильтр по last_message_at). Фильтры и пагинация — review_filters.py;
     без них ответ тот же, что до 16.09.2026 (весь список).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reviews')]
     serializer_class = ReviewListSerializer
 
     def get_serializer_context(self):
@@ -227,7 +229,7 @@ class MobileReviewDetailAPIView(generics.RetrieveAPIView):
     Чужой или несуществующий тред — `404`, а не `403`: по разнице кодов можно
     было бы пересчитать треды соседней точки.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reviews')]
     serializer_class = ReviewListSerializer
     lookup_url_kwarg = 'review_id'
 
@@ -270,7 +272,7 @@ def _check_conv_access(request, conv) -> bool:
 ))
 class MobileReviewMessagesAPIView(generics.ListAPIView):
     """GET /api/v1/mobile/reviews/{id}/messages/"""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reviews')]
     serializer_class = ReviewMessageSerializer
 
     def get_queryset(self):
@@ -308,7 +310,7 @@ class MobileReviewReplyAPIView(APIView):
     ВКонтакте через send_vk_reply (он же сохранит ADMIN_REPLY с vk_message_id
     и обновит conv). Для APP-отзыва (нет VK-канала) — сохраняет ответ локально.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reviews')]
 
     def post(self, request, review_id: int):
         ser = ReviewReplySerializer(data=request.data)
@@ -385,7 +387,7 @@ class MobileReviewResolveAPIView(APIView):
     Сообщение в VK не отправляется. Не разрешено для негативных VK-отзывов
     без ответа — мобайл это валидирует, дублирование тут.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reviews')]
 
     def post(self, request, review_id: int):
         conv = get_object_or_404(TestimonialConversation, pk=review_id)
@@ -447,7 +449,7 @@ class GuestBirthdaysAPIView(APIView):
     Группировка по уникальному vk_id (один гость может быть в нескольких точках —
     берём самый свежий ClientBranch). Сотрудники (is_employee=True) исключены.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('birthdays')]
 
     def get(self, request):
         from datetime import date
@@ -627,7 +629,7 @@ class GuestListAPIView(APIView):
 
     Все гости тенанта с RF-метриками, монетами и датой последнего визита.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('guests')]
 
     _MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 
@@ -753,7 +755,7 @@ class GuestDetailAPIView(APIView):
     Один гость (guest.Client по vk_id) = одна карточка, даже если он состоит
     в нескольких точках сети.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('guests')]
 
     def get(self, request, vk_id: int):
         from django.db.models import Sum, Q
@@ -925,7 +927,7 @@ class AdjustGuestCoinsAPIView(APIView):
     достаточность баланса проверяется по агрегату всех профилей (как его
     видит мобайл). Требует право adjust_coins.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('guests')]
 
     def post(self, request, vk_id: int):
         from django.db.models import Sum, Q
@@ -1046,7 +1048,7 @@ class DailyCodesListAPIView(APIView):
 
     Возвращает коды дня за последние 7 дней по всем активным точкам.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('daily_codes')]
 
     def get(self, request):
         from datetime import timedelta
@@ -1089,7 +1091,7 @@ class GenerateDailyCodeAPIView(APIView):
     Ручной/экстренный триггер: создаёт или перегенерирует 5-значный код
     для (branch, purpose, today). Возвращает обновлённую запись.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('daily_codes')]
 
     def post(self, request):
         import random
@@ -1204,7 +1206,7 @@ class RegenerateReviewDraftAPIView(APIView):
     Генерирует новый AI-черновик ответа для отзыва. Сохраняет в
     TestimonialConversation.ai_draft и сбрасывает ai_draft_rejected=False.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reviews')]
 
     def post(self, request, review_id: int):
         conv = get_object_or_404(TestimonialConversation, pk=review_id)
@@ -1252,7 +1254,7 @@ class RejectReviewDraftAPIView(APIView):
     остаётся в БД (для аудита), но мобайл больше не показывает его до
     регенерации.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reviews')]
 
     def post(self, request, review_id: int):
         conv = get_object_or_404(TestimonialConversation, pk=review_id)
@@ -1285,7 +1287,7 @@ class CancelAutoSendAPIView(APIView):
     200 {'ok': False, 'auto_send_status': '<текущий>'} — отменять было нечего.
     409 — ИИ уже успел отправить ответ.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reviews')]
 
     def post(self, request, pk: int):
         conv = get_object_or_404(TestimonialConversation, pk=pk)
@@ -1350,13 +1352,26 @@ class GlobalSearchAPIView(APIView):
         if len(q) < 2:
             return Response(empty)
 
+        from apps.shared.users.access import user_can_feature, user_allowed_branches, current_schema_name
+        allowed = user_allowed_branches(request.user, current_schema_name())
+
+        def scoped(qs, feature, branch_field, *, shared=False):
+            if not user_can_feature(request.user, feature) or allowed == set():
+                return qs.none()
+            if allowed is None:
+                return qs
+            condition = Q(**{branch_field + '__in': allowed})
+            if shared:
+                condition |= Q(**{branch_field + '__isnull': True})
+            return qs.filter(condition).distinct()
+
         # ── Guests: имя/фамилия/vk_id ──────────────────────────────────────
         client_filter = Q(first_name__icontains=q) | Q(last_name__icontains=q)
         if q.isdigit():
             client_filter |= Q(vk_id=int(q))
         clients = (
-            Client.objects.filter(client_filter, branch_profiles__isnull=False)
-            .distinct()[: self.LIMIT]
+            scoped(Client.objects.filter(client_filter, branch_profiles__isnull=False),
+                   'guests', 'branch_profiles__branch_id').distinct()[: self.LIMIT]
         )
         guests = [
             {
@@ -1376,8 +1391,8 @@ class GlobalSearchAPIView(APIView):
 
         # ── Reviews: текст сообщения ───────────────────────────────────────
         rev_msgs = (
-            TestimonialMessage.objects
-            .filter(text__icontains=q)
+            scoped(TestimonialMessage.objects.filter(text__icontains=q),
+                   'reviews', 'conversation__branch_id', shared=True)
             .select_related('conversation', 'conversation__branch')
             .order_by('-created_at')[: self.LIMIT * 2]
         )
@@ -1402,9 +1417,9 @@ class GlobalSearchAPIView(APIView):
             })
 
         # ── Products ───────────────────────────────────────────────────────
-        prods = Product.objects.filter(
+        prods = scoped(Product.objects.filter(
             Q(name__icontains=q) | Q(description__icontains=q),
-        )[: self.LIMIT]
+        ), 'catalog', 'branches__id')[: self.LIMIT]
         products = [
             {
                 'type':     'product',
@@ -1418,9 +1433,9 @@ class GlobalSearchAPIView(APIView):
         ]
 
         # ── Quests ─────────────────────────────────────────────────────────
-        qsts = Quest.objects.filter(
+        qsts = scoped(Quest.objects.filter(
             Q(name__icontains=q) | Q(description__icontains=q),
-        ).prefetch_related('branches').distinct()[: self.LIMIT]
+        ), 'quests', 'branches__id').prefetch_related('branches').distinct()[: self.LIMIT]
         quests = []
         for qst in qsts:
             branch_names = ', '.join(b.name for b in qst.branches.all()) or '—'
@@ -1434,9 +1449,9 @@ class GlobalSearchAPIView(APIView):
             })
 
         # ── Promotions ─────────────────────────────────────────────────────
-        promos = Promotions.objects.filter(
+        promos = scoped(Promotions.objects.filter(
             Q(title__icontains=q) | Q(discount__icontains=q),
-        ).select_related('branch')[: self.LIMIT]
+        ), 'promotions', 'branch_id').select_related('branch')[: self.LIMIT]
         promotions = [
             {
                 'type':     'promotion',
@@ -1471,7 +1486,7 @@ class AuditLogAPIView(APIView):
     Журнал действий, выполненных через мобильное API.
     Фильтры опциональны. Limit по умолчанию 50, максимум 200.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('audit_log')]
 
     def get(self, request):
         from apps.tenant.branch.models import AuditLog
@@ -1841,7 +1856,7 @@ class StaffListAPIView(APIView):
     Список пользователей с ролями superadmin/network_admin/client, у которых
     есть доступ к текущему тенанту (или они супер-админы — у них доступ ко всем).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('staff')]
 
     def get(self, request):
         from django.contrib.auth import get_user_model
@@ -1875,7 +1890,7 @@ class StaffDetailAPIView(APIView):
     role + is_active; per-action permissions, branch_ids — поля мобильного
     клиента, не персистятся.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('staff')]
 
     def patch(self, request, staff_id: int):
         from django.contrib.auth import get_user_model
@@ -2087,7 +2102,7 @@ class StaffInviteAPIView(APIView):
     Возвращает Staff-объект + одноразовый password (его нужно передать
     приглашённому, чтобы он зашёл в первый раз и сменил его).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('staff')]
 
     def post(self, request):
         import secrets
@@ -2212,7 +2227,7 @@ class StaffLinkExistingAPIView(APIView):
     - role/branch_ids — опционально; если не переданы, ставим viewer + все точки.
     - Если юзер уже в этой сети — 409 (не дублировать).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('staff')]
 
     def post(self, request):
         from django.contrib.auth import get_user_model
@@ -2353,7 +2368,7 @@ def _network_write_forbidden():
 
 class ProductCategoryListCreateAPIView(APIView):
     """GET /api/v1/catalog/categories/?branch_ids= ; POST same URL."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('catalog')]
 
     def get(self, request):
         from django.db.models import Count
@@ -2393,7 +2408,7 @@ class ProductCategoryListCreateAPIView(APIView):
 
 class ProductCategoryDetailAPIView(APIView):
     """PATCH/DELETE /api/v1/catalog/categories/<id>/."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('catalog')]
 
     def patch(self, request, pk: int):
         if _branch_limit(request) is not None:
@@ -2498,7 +2513,7 @@ def _apply_assignments(product, raw):
 
 class ProductListCreateAPIView(APIView):
     """GET /api/v1/catalog/products/ ; POST (multipart) same URL."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('catalog')]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def get(self, request):
@@ -2541,7 +2556,7 @@ class ProductListCreateAPIView(APIView):
 
 class ProductDetailAPIView(APIView):
     """PATCH/DELETE /api/v1/catalog/products/<id>/."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('catalog')]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def patch(self, request, pk: int):
@@ -2611,7 +2626,7 @@ def _serialize_quest(q) -> dict:
 
 class QuestListCreateAPIView(APIView):
     """GET /api/v1/quests/ ; POST same URL."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('quests')]
 
     def get(self, request):
         from django.db.models import Count
@@ -2691,7 +2706,7 @@ class QuestListCreateAPIView(APIView):
 
 class QuestDetailAPIView(APIView):
     """PATCH/DELETE /api/v1/quests/<id>/."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('quests')]
 
     def patch(self, request, pk: int):
         from apps.tenant.quest.models import Quest
@@ -2774,7 +2789,7 @@ def _serialize_promotion(p) -> dict:
 
 class PromotionListCreateAPIView(APIView):
     """GET /api/v1/branch/promotions/ ; POST (multipart) same URL."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('promotions')]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def get(self, request):
@@ -2818,7 +2833,7 @@ class PromotionListCreateAPIView(APIView):
 
 class PromotionDetailAPIView(APIView):
     """PATCH/DELETE /api/v1/branch/promotions/<id>/."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('promotions')]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def patch(self, request, pk: int):
@@ -2889,7 +2904,7 @@ class SupportChatManagerAPIView(APIView):
     everything in one response means new manager replies appear without
     a separate /messages/ fetch.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('chat')]
 
     def get(self, request):
         from django.utils import timezone
@@ -2991,7 +3006,7 @@ class SupportChatMessagesAPIView(APIView):
     GET  /api/v1/support/chat/messages/  — последние 200 сообщений
     POST /api/v1/support/chat/messages/  — отправить сообщение от пользователя
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('chat')]
 
     def get(self, request):
         from django.utils import timezone
@@ -3156,7 +3171,7 @@ class AssistantAskAPIView(APIView):
     body: {question: str, history?: [{role: 'user'|'assistant', content: str}]}
     Возвращает {answer}. AI «Лояльчик» — ответы по системе через Claude (прокси).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
 
     def post(self, request):
         import logging
@@ -3222,7 +3237,7 @@ class AssistantContextAPIView(APIView):
     GET /api/v1/assistant/context/
     Проактивное приветствие Лояльчика по реальной сводке + быстрые вопросы.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
 
     def get(self, request):
         ctx = _assistant_tenant_context()
@@ -3291,7 +3306,7 @@ class AutoBroadcastRulesAPIView(APIView):
     GET  /api/v1/auto-broadcasts/          — список правил авторассылок
     PATCH /api/v1/auto-broadcasts/<id>/    — правка текста / вкл-выкл (см. ниже)
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     def get(self, request):
         from apps.tenant.senler.models import AutoBroadcastRule
@@ -3309,7 +3324,7 @@ class AutoBroadcastRuleDetailAPIView(APIView):
     PATCH /api/v1/auto-broadcasts/<id>/  body: {message_text?, is_active?}
     Мобилка правит только текст и вкл/выкл — условия/аудиторию задают в вебе.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     def patch(self, request, rule_id: int):
         from apps.tenant.senler.models import AutoBroadcastRule
@@ -3346,7 +3361,7 @@ class AutoBroadcastRulePreviewAPIView(APIView):
     GET /api/v1/auto-broadcasts/<id>/preview/
     «Кому уйдёт и сколько» — НИЧЕГО не отправляет. Показывать перед включением.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     def get(self, request, rule_id: int):
         from apps.tenant.senler.engine import preview_rule

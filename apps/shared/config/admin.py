@@ -152,7 +152,7 @@ class ClientConfigAdmin(admin.ModelAdmin):
             'classes': ('collapse',),
         }),
         ('Авторассылки — предохранитель', {
-            'fields': ('auto_broadcast_weekly_cap', 'rf_orchestrator_enabled'),
+            'fields': ('auto_broadcast_weekly_cap', 'rf_orchestrator_enabled', 'rf_reward_max_cost_rub', 'rf_daily_contact_limit'),
             'description': (
                 'Максимум автоматических сообщений одному гостю за 7 дней. Защита от '
                 'того, чтобы несколько правил не завалили человека сообщениями. '

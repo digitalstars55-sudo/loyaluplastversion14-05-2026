@@ -14,6 +14,8 @@ ReviewsAnalyticsView, StatsDetailView) — приёмка волны 1 треб�
 """
 from __future__ import annotations
 
+from apps.shared.users.feature_permissions import HasFeatureAccess
+
 from datetime import timedelta
 
 from django.db import connection
@@ -112,7 +114,7 @@ def _branch_rows(conv_qs, limit: int | None = None) -> list[dict]:
 
 class ReviewsSummaryAPIView(APIView):
     """GET /api/v1/analytics/reviews/summary/?period=30d&branch_ids=1,2"""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reviews')]
 
     @extend_schema(parameters=_QUERY_PARAMS)
     def get(self, request):
@@ -164,7 +166,7 @@ class StatsDetailAPIView(APIView):
     Список гостей за метрикой общей статистики — те же гости, что на
     веб-странице /analytics/stats/detail/ (services.get_stat_clients).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('general_stats')]
 
     @extend_schema(parameters=_QUERY_PARAMS + [
         OpenApiParameter('metric', str, required=True, description='ключ метрики из GET /analytics/stats/ (см. metrics в ответе 400)'),
@@ -220,7 +222,7 @@ class DashboardTodayAPIView(APIView):
     запланированные автоответы, коды дня по точкам, срок оплаты сети, топ точек
     за 30 дней. Один запрос вместо четырёх, которые собирал клиент.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('home')]
 
     @extend_schema(parameters=[_QUERY_PARAMS[0]])
     def get(self, request):

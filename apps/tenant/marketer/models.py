@@ -1,3 +1,4 @@
+from apps.shared.secret_fields import EncryptedSecretField
 from django.db import models
 
 from apps.shared.base import TimeStampedModel
@@ -29,7 +30,7 @@ class MarketerSettings(TimeStampedModel):
         blank=True,
         help_text='Числовой ID сообщества (без минуса). Пусто — берётся из SenlerConfig первой точки.',
     )
-    vk_wall_token = models.CharField(
+    vk_wall_token = EncryptedSecretField(
         'Токен для стены',
         max_length=512,
         blank=True,

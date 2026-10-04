@@ -1,6 +1,8 @@
 """
 Analytics API views — request/response only, no business logic.
 """
+
+from apps.shared.users.feature_permissions import HasFeatureAccess
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -25,7 +27,7 @@ class GeneralStatsAPIView(APIView):
       start      — YYYY-MM-DD  (overrides period)
       end        — YYYY-MM-DD  (overrides period)
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('general_stats')]
 
     @extend_schema(parameters=[StatsQuerySerializer], responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -58,7 +60,7 @@ class ContactPointsAPIView(APIView):
     Воронка по точкам контакта (отслеживаемым QR) для мобильного приложения.
     Параметры как у GeneralStats: branch_ids / period / start / end.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('contact_points')]
 
     @extend_schema(parameters=[StatsQuerySerializer], responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -102,7 +104,7 @@ class RFStatsAPIView(APIView):
       r_score    — when combined with f_score, returns guest list for that cell
       f_score    — see r_score
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
 
     @extend_schema(parameters=[RFQuerySerializer], responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -164,7 +166,7 @@ class RFMigrationsListAPIView(APIView):
     «−» если в более слабый (ослабление). Это позволяет мобайлу
     фильтровать поток «приток / отток».
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
 
     @staticmethod
     def _segment_rank(code: str) -> int:
@@ -209,7 +211,7 @@ class LoyaltyReportAPIView(APIView):
     ai_summary не генерируется здесь (дорого + Anthropic-кредиты), мобайл
     обрабатывает его как опциональный.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reports')]
 
     @extend_schema(parameters=[StatsQuerySerializer], responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -316,7 +318,7 @@ class RecalculateRFView(APIView):
       mode       — restaurant | delivery  (default: restaurant)
       branch_ids — comma-separated Branch PKs (omit = all active branches)
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
 
     @extend_schema(request=RFQuerySerializer, responses={200: OpenApiTypes.OBJECT})
     def post(self, request):
@@ -344,7 +346,7 @@ class RFThresholdsAPIView(APIView):
     Создаёт или обновляет RFSettings в текущей tenant-схеме. post_save-сигнал
     автоматически синхронизирует RFSegment.recency/frequency границы.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
 
     REQUIRED_FIELDS = (
         'r_fresh_max', 'r_warm_max', 'r_cooling_max',
@@ -462,7 +464,7 @@ class AutoReplySettingsAPIView(APIView):
       auto_ack_delay_minutes   — 5 | 15 | 30 | 60 | 120 (окно без ответа человека)
       auto_ack_text            — str 1..300
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('auto_reply')]
 
     SENTIMENT_MAP = {
         'POSITIVE':           'sentiment_positive',
@@ -671,7 +673,7 @@ class EngagementAnalyticsAPIView(APIView):
       period_days  — 1..365 (по умолчанию 30)
       branch_id    — опц., фильтр по торговой точке
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -865,7 +867,7 @@ class CampaignsHistoryAPIView(APIView):
     История запусков рассылок (BroadcastSend) в формате,
     ожидаемом мобильным приложением.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     SEND_STATUS_TO_CAMPAIGN = {
         'pending':   'scheduled',
@@ -952,7 +954,7 @@ class RFSegmentListAPIView(APIView):
     Список RF-сегментов для выбора аудитории рассылки.
     Возвращает глобальные сегменты (branch=null) + число гостей в каждом.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
 
     def get(self, request):
         from apps.tenant.analytics.models import RFSegment, GuestRFScore
@@ -982,7 +984,7 @@ class CampaignDetailAPIView(APIView):
     PATCH /api/v1/analytics/campaigns/<pk>/  — изменить текст рассылки через VK API (24ч окно)
     DELETE /api/v1/analytics/campaigns/<pk>/ — удалить запись рассылки
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
     def patch(self, request, pk: int):
         from apps.tenant.senler.models import BroadcastSend
@@ -1039,7 +1041,7 @@ class SlowStatsAPIView(APIView):
 
     Query params: same as GeneralStatsAPIView (branch_ids, period, start, end)
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('general_stats')]
 
     @extend_schema(parameters=[StatsQuerySerializer], responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -1069,7 +1071,7 @@ class BranchListAPIView(APIView):
 
     Returns all active branches for the branch-filter UI.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('home')]
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -1096,7 +1098,7 @@ class SendSegmentBroadcastAPIView(APIView):
     создаётся Broadcast БЕЗ rf_segments (audience_type=ALL → все оцифрованные
     в данной точке).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics', write_feature='broadcasts')]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT})
@@ -1467,7 +1469,7 @@ class GenerateBroadcastTextAPIView(APIView):
                    с подсказкой по сегменту. Без него — общий текст для всех
                    оцифрованных гостей.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics', write_feature='broadcasts')]
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT, 500: OpenApiTypes.OBJECT})
     def post(self, request):
@@ -1597,7 +1599,7 @@ class GenerateReportCommentAPIView(APIView):
       section_title — section title
       metrics_json  — JSON string of section metrics data
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reports')]
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 500: OpenApiTypes.OBJECT})
     def post(self, request):
@@ -1753,7 +1755,7 @@ class RFMRewardCatalogAPIView(APIView):
     активные, не архивные, available_for_rfm, с привязанным подарком
     (без product гостю нечего показать в «Моих подарках»).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('catalog')]
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -1805,7 +1807,7 @@ class RFMCampaignAPIView(APIView):
     Начисление идёт асинхронно (celery); прогресс — GET detail.
     Snapshot аудитории фиксируется здесь и больше не меняется.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics', write_feature='broadcasts')]
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
@@ -1965,7 +1967,7 @@ class RFMCampaignAPIView(APIView):
 
 class RFMCampaignDetailAPIView(APIView):
     """GET /api/v1/analytics/rf/campaigns/<pk>/ — детали + живые метрики."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics', write_feature='broadcasts')]
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request, pk):
@@ -2022,7 +2024,7 @@ class RFMCampaignCancelAPIView(APIView):
     подарки отзываются с возвратом лимита, баллы откатываются в пределах
     неиспользованного остатка. Активированные подарки остаются у гостей.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics', write_feature='broadcasts')]
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
     def post(self, request, pk):
@@ -2052,7 +2054,7 @@ class RFMCampaignKPIAPIView(APIView):
 
     Период — по дате создания кампании; по умолчанию последние 30 дней.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     @extend_schema(parameters=[
@@ -2152,7 +2154,7 @@ class GiftsExport1CAPIView(APIView):
     «Общая статистика»; точки — только доступные ему (branch_access).
     Что считается выданным — apps/tenant/analytics/gifts_export.py.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reports')]
 
     FORMATS = ('json', 'csv', 'xlsx')
 
