@@ -1,0 +1,11 @@
+[Unit]
+Description=Check new LoyalUP tenant domains every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=60s
+AccuracySec=5s
+Unit=loyalup-tenant-ssl.service
+
+[Install]
+WantedBy=timers.target

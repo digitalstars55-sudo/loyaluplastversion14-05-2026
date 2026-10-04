@@ -1,0 +1,11 @@
+{
+  "cert_name": "levelupapp.ru",
+  "base_domain": "levelupapp.ru",
+  "allowed_ips": ["201.24.51.207", "81.17.154.208"],
+  "excluded_domains": ["api-ya.levelupapp.ru"],
+  "database_container": "database",
+  "state_dir": "/var/lib/loyalup-tenant-ssl",
+  "min_interval_seconds": 900,
+  "failure_retry_seconds": 3600,
+  "weekly_attempt_limit": 40
+}

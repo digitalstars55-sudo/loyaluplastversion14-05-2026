@@ -1,0 +1,10 @@
+[Unit]
+Description=Expand LoyalUP tenant TLS certificate after domain creation
+After=network-online.target docker.service nginx.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/libexec/loyalup-tenant-ssl.py
+TimeoutStartSec=15min
+UMask=0077
