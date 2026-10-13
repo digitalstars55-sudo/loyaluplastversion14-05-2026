@@ -258,6 +258,7 @@ def rule_to_dict(rule, stats: dict | None = None, events: dict | None = None) ->
         },
         'audience_summary':   audience_summary(branch_ids, gender, segments),
         'message_text':       rule.message_text or '',
+        'zero_balance_text':  getattr(rule, 'zero_balance_text', '') or '',
         'image':              None,          # картинки правил в v1.5 не поддержаны
         'reward': {
             'gift_tier':          gift_tier,
@@ -274,6 +275,8 @@ def rule_to_dict(rule, stats: dict | None = None, events: dict | None = None) ->
             'open_rate':   st['open_rate'],
             'sent_30d':    st['sent_30d'],
             'last_run_at': iso(st['last_run_at']),
+            # Разрез по веткам «основное / при нулевом балансе» — не прибавка к итогу.
+            'branches':    st.get('branches'),
         },
         'created_at':         iso(getattr(rule, 'created_at', None)),
         'updated_at':         iso(getattr(rule, 'updated_at', None)),
@@ -311,6 +314,8 @@ def log_row_to_dict(recipient) -> dict:
         'name':    (getattr(client, 'first_name', '') or ''),
         'variant': {'id': variant.pk, 'name': variant.name or ''} if variant is not None else None,
         'status':  recipient.status,
+        'message_branch':  getattr(recipient, 'message_branch', '') or '',
+        'balance_at_send': getattr(recipient, 'balance_at_send', None),
         'read_at': iso(recipient.read_at),
         'error':   recipient.error or '',
     }

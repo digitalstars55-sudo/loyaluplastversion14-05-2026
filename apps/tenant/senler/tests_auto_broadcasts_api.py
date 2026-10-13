@@ -100,6 +100,7 @@ def _rule_mock(**over):
     rule.gift_tier = ''
     rule.gift_lifetime_days = 0
     rule.gift_fallback_text = ''
+    rule.zero_balance_text = ''
     rule.parent_rule_id = None
     rule.follow_up_condition = 'not_read'
     rule.created_at = None

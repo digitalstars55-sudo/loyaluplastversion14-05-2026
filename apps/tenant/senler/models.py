@@ -366,6 +366,19 @@ class BroadcastRecipient(models.Model):
         verbose_name='VK message ID',
         help_text='ID сообщения из ответа messages.send — для отслеживания прочтений.',
     )
+    # Ветка текста авторассылки (ТЗ маркетолога 14.10.2026, п.7): main /
+    # zero_balance; пусто — рассылка без ветки. Баланс — на момент выбора ветки.
+    message_branch = models.CharField(
+        max_length=16,
+        blank=True,
+        default='',
+        db_default='',
+        verbose_name='Ветка текста',
+    )
+    balance_at_send = models.IntegerField(
+        null=True, blank=True,
+        verbose_name='Баланс при отправке',
+    )
     read_at = models.DateTimeField(
         null=True, blank=True,
         verbose_name='Прочитано',
@@ -586,6 +599,19 @@ class AutoBroadcastRule(TimeStampedModel):
         upload_to='auto_broadcasts/',
         blank=True, null=True,
         verbose_name='Изображение',
+    )
+    # ── Ветка «при нулевом балансе» (ТЗ маркетолога 14.10.2026, п.7) ──────────
+    # Пусто — ветки нет, всем уходит основной текст (как было). Задано —
+    # прямо перед отправкой берётся свежий баланс гостя: больше 0 → основной
+    # текст, 0 и меньше → этот. Одно сообщение, без отдельной цепочки.
+    # {баланс} здесь запрещён — сумма «0 б.» гостю ни к чему.
+    zero_balance_text = models.TextField(
+        blank=True,
+        default='',
+        db_default='',
+        verbose_name='Сообщение при нулевом балансе',
+        help_text='Уходит вместо основного, если у гостя 0 баллов. Пусто — всем основной '
+                  'текст. Переменные те же, кроме {баланс}.',
     )
 
     # ── Фаза 5: подарочный шаг (ТЗ RF-авторассылок §8, §15.4) ─────────────────

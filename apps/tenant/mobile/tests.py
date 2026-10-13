@@ -199,3 +199,29 @@ class StaffCheckupGuardTest(TestCase):
         from .api.views import _managed_by_checkup
         self.assertTrue(_managed_by_checkup(self.managed))
         self.assertFalse(_managed_by_checkup(self.admin))
+
+
+class CustomPeriodTest(SimpleTestCase):
+    """Свой период ленты (ТЗ маркетолога 14.10.2026): обе даты включительно, TZ заведения."""
+
+    def test_обе_даты_включительно_по_москве(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from .api.views import _parse_date_range
+        since, until = _parse_date_range('2026-10-01', '2026-10-03')
+        msk = ZoneInfo('Europe/Moscow')
+        self.assertEqual(since, datetime(2026, 10, 1, tzinfo=msk))
+        self.assertEqual(until, datetime(2026, 10, 4, tzinfo=msk))
+
+    def test_один_день(self):
+        from .api.views import _parse_date_range
+        since, until = _parse_date_range('2026-10-05', '2026-10-05')
+        self.assertEqual((until - since).days, 1)
+
+    def test_неверный_диапазон_словами(self):
+        from rest_framework.exceptions import ValidationError
+        from .api.views import _parse_date_range
+        for start, end in (('2026-10-05', '2026-10-01'), ('2026-10-05', None), ('вчера', '2026-10-01')):
+            with self.assertRaises(ValidationError) as ctx:
+                _parse_date_range(start, end)
+            self.assertIn('Свой период', str(ctx.exception.detail))

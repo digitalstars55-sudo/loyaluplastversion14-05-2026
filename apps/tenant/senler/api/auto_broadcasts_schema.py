@@ -150,6 +150,7 @@ def _rule(**kw):
         'audience':           _audience(),
         'audience_summary':   s.CharField(),
         'message_text':       s.CharField(),
+        'zero_balance_text':  s.CharField(allow_blank=True, help_text='текст при 0 баллов; пусто — ветки нет'),
         'image':              s.CharField(allow_null=True, help_text='всегда null — картинки в v1.5 не поддержаны'),
         'reward':             _reward(),
         'reward_summary':     s.CharField(),
@@ -195,6 +196,8 @@ def _rule_write(name: str, create: bool):
         'name':            s.CharField(required=create, max_length=MAX_NAME_LEN),
         'event':           s.ChoiceField(choices=AutoBroadcastType.choices, required=create),
         'message_text':    s.CharField(required=create, max_length=MAX_TEXT_LEN),
+        'zero_balance_text': s.CharField(required=False, allow_blank=True, max_length=MAX_TEXT_LEN,
+                                         help_text='при 0 баллов вместо основного; {баланс} запрещён'),
         'delay_days':      s.IntegerField(required=False, allow_null=True, min_value=0,
                                           help_text='обязателен у событий с delay_required'),
         'send_hour_start': s.IntegerField(required=False, min_value=0, max_value=23),
@@ -296,6 +299,8 @@ VARIANT_PATCH_BODY = _variant_write('AutoBroadcastVariantPatch', create=False)
 
 TEST_SEND_BODY = inline_serializer('AutoBroadcastTestSendRequest', fields={
     'vk_id': s.IntegerField(help_text='VK ID гостя сети (обычно сам сотрудник)'),
+    'balance_branch': s.ChoiceField(choices=['main', 'zero_balance'], required=False,
+                                    help_text='какую версию прислать: баланс больше 0 / баланс 0'),
 })
 TEST_SEND_RESULT = inline_serializer('AutoBroadcastTestSendResult', fields={
     'ok':         s.BooleanField(),
@@ -397,7 +402,7 @@ test_send = extend_schema(
     tags=_TAG, summary='Тест-отправка одному гостю (без записи в лог и статистику)',
     request=TEST_SEND_BODY,
     responses={200: TEST_SEND_RESULT,
-               400: _err('invalid_payload / guest_not_found / not_subscribed'),
+               400: _err('invalid_payload / guest_not_found / not_subscribed / no_zero_balance_text'),
                404: _err('not_found'),
                409: _err('no_vk_token / rate_limited'),
                502: _err('vk_error')},

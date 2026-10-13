@@ -110,6 +110,27 @@ def review_card_queryset(request):
     return qs
 
 
+def _parse_date_range(start_raw, end_raw):
+    """Свой период → [начало первого дня, начало дня после последнего) в TZ заведения.
+
+    Обе даты обязательны, «с» не позже «по». Иначе 400 со словами: молча
+    подставленный пресет показал бы человеку не тот срез.
+    """
+    from datetime import date, datetime, time, timedelta
+    from rest_framework.exceptions import ValidationError
+    try:
+        start = date.fromisoformat(start_raw or '')
+        end = date.fromisoformat(end_raw or '')
+    except ValueError:
+        raise ValidationError({'detail': 'Свой период: нужны обе даты в виде ГГГГ-ММ-ДД.'})
+    if start > end:
+        raise ValidationError({'detail': 'Свой период: дата «с» позже даты «по».'})
+    tz = timezone.get_current_timezone()
+    since = timezone.make_aware(datetime.combine(start, time.min), tz)
+    until = timezone.make_aware(datetime.combine(end + timedelta(days=1), time.min), tz)
+    return since, until
+
+
 # ── Схема OpenAPI (drf-spectacular) — только для среза CheckUp ────────────────
 # Декоратор должен висеть на HTTP-методе (get), а не на list/retrieve: у
 # generic-вьюх (не ViewSet) спектакуляр читает переопределение только с
@@ -119,6 +140,8 @@ def review_card_queryset(request):
 _REVIEW_LIST_PARAMS = [
     OpenApiParameter('branch_ids', str, description='id точек через запятую (пересекается с правами)'),
     OpenApiParameter('period', int, description='дней назад по last_message_at'),
+    OpenApiParameter('start', str, description='свой период: ГГГГ-ММ-ДД включительно, только вместе с end; главнее period'),
+    OpenApiParameter('end', str, description='свой период: ГГГГ-ММ-ДД включительно, только вместе с start'),
     OpenApiParameter('sentiment', str, description='POSITIVE,NEGATIVE,PARTIALLY_NEGATIVE,NEUTRAL,SPAM,WAITING или bad (= весь негатив)'),
     OpenApiParameter('status', str, enum=['unread', 'replied', 'unanswered', 'all'], description='ждёт ответа / отвечен / без ответа'),
     OpenApiParameter('source', str, description='app | vk — есть ли в треде сообщение такого источника'),
@@ -175,6 +198,15 @@ class MobileReviewListAPIView(generics.ListAPIView):
             except ValueError:
                 pass
 
+        # Свой период (ТЗ маркетолога 14.10.2026, п.1): start/end — даты
+        # ГГГГ-ММ-ДД, обе включительно, по часовому поясу заведения. Пара дат
+        # главнее period; неверный диапазон — 400 словами, а не молча 30 дней.
+        start_raw = self.request.query_params.get('start')
+        end_raw = self.request.query_params.get('end')
+        if start_raw or end_raw:
+            since, until = _parse_date_range(start_raw, end_raw)
+            return self._filtered(qs.filter(last_message_at__gte=since, last_message_at__lt=until))
+
         # Фильтр по периоду
         period_raw = self.request.query_params.get('period')
         if period_raw:
@@ -186,13 +218,14 @@ class MobileReviewListAPIView(generics.ListAPIView):
             except (ValueError, TypeError):
                 pass
 
+        return self._filtered(qs)
+
+    def _filtered(self, qs):
         # Серверные фильтры (16.09.2026, контракт платформы №1): тональность,
         # статус ответа, источник, статус жалобы в CheckUp, поиск. Без
         # параметров ничего не меняют.
         from .review_filters import apply_review_filters
-        qs = apply_review_filters(qs, self.request.query_params)
-
-        return qs
+        return apply_review_filters(qs, self.request.query_params)
 
     def list(self, request, *args, **kwargs):
         # Мобайл ожидает {reviews: [...]} а не голый массив. С 16.09 рядом

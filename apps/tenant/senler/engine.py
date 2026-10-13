@@ -620,6 +620,12 @@ def rule_stats(rule) -> dict:
 
     base = BroadcastRecipient.objects.filter(send__auto_broadcast_rule=rule)
     out = _agg(base)
+    # Ветки «основной / при нулевом балансе» — разрез того же итога, не
+    # прибавка к нему (ТЗ п.7: «общий итог сценария не удваивается»).
+    out['branches'] = {
+        MAIN_BRANCH: _agg(base.filter(message_branch=MAIN_BRANCH)),
+        ZERO_BALANCE_BRANCH: _agg(base.filter(message_branch=ZERO_BALANCE_BRANCH)),
+    }
     out['variants'] = [
         {
             'id': v.pk,
@@ -1006,6 +1012,10 @@ def rule_is_due(rule, now) -> tuple[bool, str]:
 
 # ── Текст ────────────────────────────────────────────────────────────────────
 
+MAIN_BRANCH = 'main'                    # BroadcastRecipient.message_branch
+ZERO_BALANCE_BRANCH = 'zero_balance'
+
+
 def _coin_balance(client_branch) -> int:
     """Баланс монет гостя на его точке (баллы пер-точечные)."""
     from django.db.models import Q as _Q, Sum
@@ -1244,6 +1254,25 @@ def run_rule(rule, now=None, dry_run: bool = False) -> dict:
                     continue
                 template_override = fallback
 
+        # ── Ветка «при нулевом балансе» (ТЗ маркетолога 14.10.2026, п.7) ────
+        # Баланс берётся СВЕЖИМ прямо перед отправкой: >0 — основной текст,
+        # 0 и меньше — текст ветки. Не посчитался — гость ждёт следующего
+        # тика (дедуп-лога нет, повтор не задвоит): отсутствие данных ≠ 0.
+        message_branch, balance = '', None
+        zero_text = (getattr(rule, 'zero_balance_text', '') or '').strip()
+        if zero_text and template_override is None:
+            try:
+                balance = _coin_balance(cb)
+            except Exception as exc:
+                logger.warning('Auto-rule %s: баланс vk_id=%s не посчитан (%s) — до следующего тика',
+                               rule.pk, c.vk_id, exc)
+                continue
+            if balance <= 0:
+                template_override = zero_text
+                message_branch = ZERO_BALANCE_BRANCH
+            else:
+                message_branch = MAIN_BRANCH
+
         # №78: под просьбой о номере — кнопка, открывающая мини-апп на панели согласия.
         keyboard = phone_request_keyboard(c) if rule.event == PHONE_REQUEST_EVENT else None
         try:
@@ -1284,6 +1313,7 @@ def run_rule(rule, now=None, dry_run: bool = False) -> dict:
                 send=bs, client_branch=cb, vk_id=c.vk_id,
                 status=RecipientStatus.SENT, sent_at=timezone.now(),
                 vk_message_id=vk_msg_id,
+                message_branch=message_branch, balance_at_send=balance,
             )
             cnt[0] += 1
             sent_count += 1
@@ -1291,6 +1321,7 @@ def run_rule(rule, now=None, dry_run: bool = False) -> dict:
             BroadcastRecipient.objects.create(
                 send=bs, client_branch=cb, vk_id=c.vk_id,
                 status=RecipientStatus.FAILED, error=(err or '')[:512],
+                message_branch=message_branch, balance_at_send=balance,
             )
             cnt[1] += 1
             failed_count += 1

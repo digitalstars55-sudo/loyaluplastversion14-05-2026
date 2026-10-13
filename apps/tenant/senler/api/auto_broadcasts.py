@@ -57,6 +57,7 @@ from apps.shared.users.access import current_schema_name, effective_branch_ids
 from apps.tenant.analytics.models import RFSegment
 from apps.tenant.branch.models import Branch, ClientBranch
 from apps.tenant.senler.engine import (
+    MAIN_BRANCH, ZERO_BALANCE_BRANCH,
     Candidate, get_events, pick_variant, render_text, resolve_recipients, rule_is_due, rule_stats,
 )
 from apps.tenant.senler.models import (
@@ -383,6 +384,24 @@ def _parse_gender(raw) -> str:
     return value
 
 
+def _parse_zero_balance_text(raw) -> str:
+    """Текст ветки «при нулевом балансе»: пусто = ветки нет; {баланс} запрещён (ТЗ п.7)."""
+    text = _parse_text(raw, 'zero_balance_text', MAX_TEXT_LEN, required=False)
+    if '{баланс}' in text:
+        raise PayloadError('zero_balance_text: в тексте при нулевом балансе нельзя {баланс} — '
+                           'у гостя 0 баллов', 'zero_balance_has_balance')
+    return text
+
+
+def _needs_zero_balance_text(rule) -> bool:
+    """Основной текст (или текст активного варианта) обещает баллы, а ветки нет."""
+    if (getattr(rule, 'zero_balance_text', '') or '').strip():
+        return False
+    texts = [rule.message_text or '']
+    texts += [v.message_text or '' for v in rule.variants.all() if v.is_active]
+    return any('{баланс}' in t for t in texts)
+
+
 def _parse_rule_payload(data, *, create: bool) -> dict:
     """
     Разбирает только ПЕРЕДАННЫЕ ключи (годится и для POST, и для PATCH).
@@ -408,6 +427,8 @@ def _parse_rule_payload(data, *, create: bool) -> dict:
         # разослало бы пустые сообщения (мобилка тоже получает 400, как раньше).
         fields['message_text'] = _parse_text(data.get('message_text'), 'message_text',
                                              MAX_TEXT_LEN, required=True)
+    if 'zero_balance_text' in data:
+        fields['zero_balance_text'] = _parse_zero_balance_text(data.get('zero_balance_text'))
     if 'delay_days' in data:
         fields['delay_days'] = _parse_int(data.get('delay_days'), 'delay_days', minimum=0)
     if 'send_hour_start' in data:
@@ -584,6 +605,7 @@ class AutoBroadcastRuleListCreateAPIView(APIView):
                 name=fields['name'],
                 event=fields['event'],
                 message_text=fields['message_text'],
+                zero_balance_text=fields.get('zero_balance_text', ''),
                 delay_days=fields.get('delay_days'),
                 send_hour_start=fields.get('send_hour_start', 9),
                 send_hour_end=fields.get('send_hour_end', 21),
@@ -864,13 +886,23 @@ def _sample_texts(rule, candidates) -> list[dict]:
     variants = [v for v in rule.variants.all() if v.is_active and v.weight > 0]
     if not variants:
         text = render_text(rule, sample) if sample is not None else (rule.message_text or '')
-        return [{'variant_id': None, 'name': 'Основной текст', 'text': text}]
+        return [{'variant_id': None, 'name': 'Основной текст', 'text': text}] + _zero_sample(rule, sample)
     out = []
     for variant in sorted(variants, key=lambda v: v.pk):
         text = (render_text(rule, sample, variant) if sample is not None
                 else (variant.message_text or ''))
         out.append({'variant_id': variant.pk, 'name': variant.name or '', 'text': text})
-    return out
+    return out + _zero_sample(rule, sample)
+
+
+def _zero_sample(rule, sample) -> list[dict]:
+    """Пример текста ветки «при нулевом балансе» — чтобы проверить обе версии до запуска."""
+    zero = (getattr(rule, 'zero_balance_text', '') or '').strip()
+    if not zero:
+        return []
+    text = render_text(rule, sample, template_override=zero) if sample is not None else zero
+    return [{'variant_id': None, 'name': 'При нулевом балансе', 'text': text,
+             'branch': ZERO_BALANCE_BRANCH}]
 
 
 # ── Включение / выключение ────────────────────────────────────────────────────
@@ -899,6 +931,12 @@ class AutoBroadcastRuleActivateAPIView(APIView):
         if rule.is_active:
             return _error('already_active', 'Правило уже включено',
                           http_status.HTTP_409_CONFLICT)
+        if _needs_zero_balance_text(rule):
+            # ТЗ п.7: «нельзя включить, если альтернативный текст пуст» — иначе
+            # гостю с нулём баллов уйдёт «у вас уже 0 б.».
+            return _error('zero_balance_text_required',
+                          'В тексте есть {баланс} — заполните «Сообщение при нулевом балансе»',
+                          http_status.HTTP_400_BAD_REQUEST)
 
         data = request.data or {}
         if data.get('expected_count') in (None, ''):
@@ -979,6 +1017,10 @@ class AutoBroadcastRuleLogAPIView(APIView):
         status_filter = (request.query_params.get('status') or '').strip()
         if status_filter:
             qs = qs.filter(status=status_filter)
+        # «Основное сообщение / При нулевом балансе» (ТЗ п.7).
+        branch_filter = (request.query_params.get('branch') or '').strip()
+        if branch_filter in (MAIN_BRANCH, ZERO_BALANCE_BRANCH):
+            qs = qs.filter(message_branch=branch_filter)
         total = qs.count()
         rows = list(qs[offset:offset + limit])
         return Response({
@@ -1001,6 +1043,7 @@ class AutoBroadcastRuleStatsAPIView(APIView):
         card = _card(rule)
         stats = dict(card['stats'])
         stats['variants'] = card['variants']
+        stats['branches'] = card['stats'].get('branches')
         return Response(stats)
 
 
@@ -1119,9 +1162,21 @@ class AutoBroadcastRuleTestSendAPIView(APIView):
             return _error('no_vk_token', 'У точки гостя нет подключённого сообщества ВК',
                           http_status.HTTP_409_CONFLICT)
 
+        # «Тест себе» с выбором «Баланс больше 0 / Баланс 0» (ТЗ п.7): ветку
+        # задаёт маркетолог, а не настоящий баланс тестового гостя.
+        balance_branch = str(data.get('balance_branch') or MAIN_BRANCH).strip()
+        if balance_branch not in (MAIN_BRANCH, ZERO_BALANCE_BRANCH):
+            return _error('invalid_payload', 'balance_branch: main или zero_balance',
+                          http_status.HTTP_400_BAD_REQUEST)
+        zero = (getattr(rule, 'zero_balance_text', '') or '').strip()
+        if balance_branch == ZERO_BALANCE_BRANCH and not zero:
+            return _error('no_zero_balance_text', 'У правила нет текста при нулевом балансе',
+                          http_status.HTTP_400_BAD_REQUEST)
+
         candidate = Candidate(client_branch=client_branch, vk_id=vk_id)
         variant = pick_variant(rule, vk_id)
-        text = render_text(rule, candidate, variant)
+        text = (render_text(rule, candidate, template_override=zero)
+                if balance_branch == ZERO_BALANCE_BRANCH else render_text(rule, candidate, variant))
 
         cache.set(cache_key, 1, TEST_SEND_TTL)
         ok, err, message_id = send_vk_message(config, vk_id, text, None)
