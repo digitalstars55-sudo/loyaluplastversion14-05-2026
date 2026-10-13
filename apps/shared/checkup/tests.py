@@ -286,6 +286,23 @@ class PerformExchangeTest(TestCase):
             perform_exchange(_good(tenant_schema='nope'))
         self.assertEqual((cm.exception.status, cm.exception.code), (404, 'tenant_not_found'))
 
+    def test_schema_with_capital_letter_is_found(self):
+        # «Birfest»: имя сети приходит строчными, схема заведена с заглавной буквой.
+        _tenant(schema='Mixed_T', client_id=7703)
+        for name in ('Mixed_T', 'mixed_t'):
+            result = perform_exchange(_good(tenant_schema=name))
+            self.assertEqual(result['tenant'].schema_name, 'Mixed_T')
+            self.assertEqual(result['identity'].tenant_schema, 'Mixed_T')
+        self.assertEqual(CheckUpIdentity.objects.filter(tenant_schema='Mixed_T').count(), 1)
+        self.assertEqual(decode_token(result['token'])['tenant'], 'Mixed_T')
+
+    def test_two_schemas_differing_only_by_case_are_not_guessed(self):
+        _tenant(schema='Twin_T', client_id=7704)
+        _tenant(schema='TWIN_T', client_id=7705)
+        with self.assertRaises(ExchangeError) as cm:
+            perform_exchange(_good(tenant_schema='twin_t'))
+        self.assertEqual((cm.exception.status, cm.exception.code), (404, 'tenant_not_found'))
+
     def test_inactive_tenant_404(self):
         _tenant(schema='off_t', client_id=7702, active=False)
         with self.assertRaises(ExchangeError) as cm:

@@ -223,6 +223,13 @@ def resolve_tenant(schema: str, platform: bool = False):
     Tenant = get_tenant_model()
     tenant = Tenant.objects.filter(schema_name=schema).first()
     if tenant is None:
+        # Имя сети приходит сюда строчными (validate_payload), а схема могла быть
+        # заведена с заглавной буквой — «Birfest». 13.10.2026 такая сеть отвечала
+        # CheckUp «сети birfest нет». Ищем без учёта регистра и берём сеть, только
+        # если она одна: две схемы, отличающиеся одним регистром, гадать нельзя.
+        похожие = list(Tenant.objects.filter(schema_name__iexact=schema)[:2])
+        tenant = похожие[0] if len(похожие) == 1 else None
+    if tenant is None:
         raise ExchangeError(404, 'tenant_not_found', f'сети {schema} нет')
     if not tenant.is_active:
         raise ExchangeError(404, 'tenant_inactive', f'сеть {schema} выключена')
@@ -309,7 +316,9 @@ def perform_exchange(data) -> dict:
     # белый список в env (CHECKUP_PLATFORM_ADMINS).
     platform = p['platform'] or is_platform_admin(p['checkup_user_id'])
     tenant = resolve_tenant(p['tenant_schema'], platform=platform)
-    schema = p['tenant_schema']
+    # Дальше — настоящее имя схемы (с её регистром): по нему открывается схема в
+    # базе, хранится личность и подписывается токен.
+    schema = tenant.schema_name
     branch_pks = resolve_branch_pks(schema, p['branch_ids']) if p['role'] == ROLE_CLIENT else None
 
     with transaction.atomic():
