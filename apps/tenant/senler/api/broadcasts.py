@@ -23,8 +23,12 @@ run_broadcast_task, edit/delete_broadcast_send_in_vk.
 3. RBAC по точкам. Видимость черновика — его branch_ids ⊆ доступных точек
    пользователя; видимость запуска — send.broadcast.branch_id среди
    доступных. Чужой объект = 404 (не раскрываем существование).
-4. Картинки в v1 не поддержаны: поле в модели есть, API всегда отдаёт
-   image: null и не принимает файл (multipart не нужен).
+4. Картинка (с 14.10.2026, ТЗ маркетолога п.5) — одна на черновик, грузится
+   отдельной ручкой broadcasts/{id}/image/ (multipart, поле image) и при
+   отправке переходит в каждый Broadcast пачки.
+6. Часть аудитории и A/B с фиксированными группами (ТЗ п.5): группы режутся
+   из ВСЕЙ аудитории сети случайно, но одинаково при каждом пересчёте
+   (seed — id черновика); не попавшие ни в одну группу не получают ничего.
 5. Существующие ручки и сервисы не меняются — модуль только добавляет.
 """
 from __future__ import annotations
@@ -38,6 +42,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import status as http_status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -148,13 +153,41 @@ def _parse_variants(raw) -> list[dict]:
     out: list[dict] = []
     for item in parsed:
         if not isinstance(item, dict):
-            raise PayloadError('variants: каждый вариант — объект {percent, message_text}')
+            raise PayloadError('variants: каждый вариант — объект {percent | count, message_text}')
+        text = (item.get('message_text') or '').strip()
+        if item.get('count') not in (None, ''):
+            try:
+                count = int(item.get('count'))
+            except (TypeError, ValueError):
+                raise PayloadError('variants: count должен быть числом')
+            out.append({'count': count, 'message_text': text})
+            continue
         try:
             percent = int(item.get('percent', 0))
         except (TypeError, ValueError):
             raise PayloadError('variants: percent должен быть числом')
-        out.append({'percent': percent, 'message_text': (item.get('message_text') or '').strip()})
+        out.append({'percent': percent, 'message_text': text})
     return out
+
+
+def _parse_audience_limit(raw) -> tuple[str, int | None]:
+    """{mode: count|percent, value} → поля черновика; пусто/null — вся аудитория."""
+    if raw in (None, '', {}):
+        return '', None
+    if not isinstance(raw, dict):
+        raise PayloadError('audience_limit: ожидается объект {mode, value}')
+    mode = str(raw.get('mode') or '').strip()
+    if mode == '':
+        return '', None
+    if mode not in ('count', 'percent'):
+        raise PayloadError('audience_limit.mode: count или percent')
+    try:
+        value = int(raw.get('value'))
+    except (TypeError, ValueError):
+        raise PayloadError('audience_limit.value: ожидается целое число')
+    if value < 1 or (mode == 'percent' and value > 100):
+        raise PayloadError('audience_limit.value: от 1' + (' до 100' if mode == 'percent' else ''))
+    return mode, value
 
 
 def _parse_int(raw, field: str):
@@ -189,8 +222,19 @@ def _validate_texts(message_text: str, variants: list[dict]) -> str | None:
                 return f'Вариант {i + 1}: текст не может быть пустым'
             if len(text) > MAX_TEXT_LEN:
                 return f'Вариант {i + 1}: превышен лимит {MAX_TEXT_LEN} символов'
-        if len(variants) > 1 and sum(v.get('percent', 0) for v in variants) != 100:
-            return 'Сумма процентов вариантов должна быть 100'
+        if len(variants) > 1:
+            by_count = ['count' in v for v in variants]
+            if any(by_count) and not all(by_count):
+                return 'Размер групп задаётся у всех вариантов одинаково: количеством или процентом'
+            if all(by_count):
+                if any(int(v['count']) < 1 for v in variants):
+                    return 'Размер группы — не меньше 1 гостя'
+            else:
+                if any(int(v.get('percent', 0)) < 1 for v in variants):
+                    return 'Размер группы — не меньше 1%'
+                # Меньше 100 — можно: остальные не получат ничего (ТЗ п.5).
+                if sum(int(v.get('percent', 0)) for v in variants) > 100:
+                    return 'Сумма процентов вариантов больше 100'
         return None
     text = (message_text or '').strip()
     if not text:
@@ -234,6 +278,10 @@ def _parse_payload(data) -> dict:
         values['branch_ids'] = _parse_branch_ids(data.get('branch_ids'))
     if 'variants' in data:
         values['variants'] = _parse_variants(data.get('variants'))
+    if 'audience_limit' in data:
+        mode, value = _parse_audience_limit(data.get('audience_limit'))
+        values['audience_limit_mode'] = mode
+        values['audience_limit_value'] = value
     if 'status' in data:
         st = data.get('status')
         if st not in (DraftStatus.DRAFT, DraftStatus.ARCHIVED):
@@ -312,6 +360,81 @@ def resolve_audience(draft) -> dict:
     return {'total': total, 'by_branch': by_branch}
 
 
+def _group_size(spec: dict, total: int) -> int:
+    if 'count' in spec:
+        return max(0, int(spec['count']))
+    return round(total * int(spec.get('percent', 0)) / 100)
+
+
+def _size_label(spec: dict) -> str:
+    return f'{spec["count"]} чел.' if 'count' in spec else f'{spec.get("percent", 0)}%'
+
+
+def plan_groups(draft, audience: dict) -> dict:
+    """
+    Кто какой текст получит: группы A/B или «часть аудитории», вырезанные из
+    ВСЕЙ аудитории сети. Без A/B и без ограничения — вся аудитория одним
+    текстом, ровно как раньше.
+
+    Перемешивание детерминированное (seed — id черновика): пересчёт охвата
+    и отправка дают ОДНИ И ТЕ ЖЕ группы — «фиксированные группы» ТЗ п.5.
+    Старый случай «проценты в сумме 100» — хвост последнему, как раньше.
+
+    Возвращает {'available', 'planned', 'groups': [{'index', 'label', 'text',
+    'count', 'by_branch': [(row, [cb_ids])]}]}.
+    """
+    variants = list(draft.variants or [])
+    rows = audience['by_branch']
+    flat = [(cb, row) for row in rows for cb in row['cb_ids']]
+    total = len(flat)
+
+    if len(variants) > 1:
+        specs = variants
+    else:
+        text = (variants[0].get('message_text') if variants else (draft.message_text or ''))
+        mode = getattr(draft, 'audience_limit_mode', '') or ''
+        value = getattr(draft, 'audience_limit_value', None)
+        if mode == 'count' and value:
+            specs = [{'count': int(value), 'message_text': text}]
+        elif mode == 'percent' and value:
+            specs = [{'percent': int(value), 'message_text': text}]
+        else:
+            specs = None
+            groups = [{'index': 0, 'label': '', 'text': text, 'count': total,
+                       'by_branch': [(row, list(row['cb_ids'])) for row in rows if row['cb_ids']]}]
+
+    if specs is not None:
+        flat.sort(key=lambda item: item[0])
+        random.Random(int(draft.pk or 0)).shuffle(flat)
+        tail_to_last = (len(specs) > 1 and all('count' not in v for v in specs)
+                        and sum(int(v.get('percent', 0)) for v in specs) == 100)
+        groups, cursor = [], 0
+        for i, spec in enumerate(specs):
+            if tail_to_last and i == len(specs) - 1:
+                chunk = flat[cursor:]
+            else:
+                size = min(_group_size(spec, total), total - cursor)
+                chunk = flat[cursor:cursor + size]
+            cursor += len(chunk)
+            per_branch: dict = {}
+            for cb, row in chunk:
+                per_branch.setdefault(row['branch_id'], (row, []))[1].append(cb)
+            groups.append({
+                'index': i,
+                'label': (f'вариант {i + 1} ({_size_label(spec)})' if len(specs) > 1
+                          else f'часть аудитории ({_size_label(spec)})'),
+                'text': spec.get('message_text') or '',
+                'count': len(chunk),
+                'by_branch': [per_branch[r['branch_id']] for r in rows if r['branch_id'] in per_branch],
+            })
+
+    return {
+        'available': total,
+        'planned': sum(g['count'] for g in groups),
+        'groups': groups,
+    }
+
+
 def _broadcast_label(draft, segment) -> str:
     """Название Broadcast в истории — как в образце, если кабинет не задал своё."""
     if draft.name:
@@ -357,7 +480,7 @@ class BroadcastDraftListCreateAPIView(APIView):
             'total':   total,
             'limit':   limit,
             'offset':  offset,
-            'results': [draft_to_dict(d) for d in rows],
+            'results': [draft_to_dict(d, request) for d in rows],
         })
 
     @api_schema.draft_create
@@ -401,9 +524,11 @@ class BroadcastDraftListCreateAPIView(APIView):
             branch_ids=values['branch_ids'],
             gender_filter=values.get('gender_filter', GenderFilter.ALL),
             variants=values.get('variants', []),
+            audience_limit_mode=values.get('audience_limit_mode', ''),
+            audience_limit_value=values.get('audience_limit_value'),
             created_by=(getattr(request.user, 'username', '') or '')[:150],
         )
-        return Response(draft_to_dict(draft), status=http_status.HTTP_201_CREATED)
+        return Response(draft_to_dict(draft, request), status=http_status.HTTP_201_CREATED)
 
 
 def _load_draft(request, pk):
@@ -430,7 +555,7 @@ class BroadcastDraftDetailAPIView(APIView):
         draft = _load_draft(request, pk)
         if draft is None:
             return _error('not_found', 'Черновик не найден', http_status.HTTP_404_NOT_FOUND)
-        return Response(draft_to_dict(draft))
+        return Response(draft_to_dict(draft, request))
 
     @api_schema.draft_patch
     def patch(self, request, pk):
@@ -472,7 +597,7 @@ class BroadcastDraftDetailAPIView(APIView):
         for field, value in values.items():
             setattr(draft, field, value)
         draft.save()
-        return Response(draft_to_dict(draft))
+        return Response(draft_to_dict(draft, request))
 
     @api_schema.draft_delete
     def delete(self, request, pk):
@@ -501,8 +626,15 @@ class BroadcastDraftPreviewAPIView(APIView):
         if draft is None:
             return _error('not_found', 'Черновик не найден', http_status.HTTP_404_NOT_FOUND)
         audience = resolve_audience(draft)
+        plan = plan_groups(draft, audience)
         return Response({
+            # count — вся аудитория: её сверяет expected_count при отправке.
             'count': audience['total'],
+            # planned — сколько получат сообщение с учётом части аудитории и
+            # групп A/B; остальные (count − planned) не получат ничего.
+            'planned': plan['planned'],
+            'groups': [{'index': g['index'], 'label': g['label'], 'count': g['count']}
+                       for g in plan['groups']],
             'by_branch': [
                 {'branch_id': b['branch_id'], 'name': b['name'], 'count': b['count']}
                 for b in audience['by_branch']
@@ -582,23 +714,19 @@ class BroadcastDraftSendAPIView(APIView):
         triggered_by = _username(request)
         pending: list[dict] = []
 
+        plan = plan_groups(draft, audience)
         with transaction.atomic():
-            for row in audience['by_branch']:
-                cb_ids = list(row['cb_ids'])
-                if not cb_ids:
-                    continue
-                if len(variants) > 1:
-                    pending.extend(self._create_variant_sends(
-                        draft, row, cb_ids, variants, label, segment, triggered_by))
-                else:
-                    text = (variants[0].get('message_text') if variants
-                            else (draft.message_text or ''))
+            for group in plan['groups']:
+                for row, cb_ids in group['by_branch']:
+                    if not cb_ids:
+                        continue
+                    send_label = f'{label} — {group["label"]}'[:255] if group['label'] else label
                     send = self._create_send_for(
-                        draft, row['branch_id'], cb_ids, label, text, segment, triggered_by)
-                    pending.append({
-                        'send': send, 'count': len(cb_ids),
-                        'meta': {'branch_id': row['branch_id'], 'branch_name': row['name']},
-                    })
+                        draft, row['branch_id'], cb_ids, send_label, group['text'], segment, triggered_by)
+                    meta = {'branch_id': row['branch_id'], 'branch_name': row['name']}
+                    if len(variants) > 1:
+                        meta['variant'] = f'#{group["index"] + 1}'
+                    pending.append({'send': send, 'count': len(cb_ids), 'meta': meta})
 
             if not pending:
                 return _error('empty_audience', 'В выбранной аудитории сейчас нет получателей',
@@ -644,6 +772,9 @@ class BroadcastDraftSendAPIView(APIView):
             'queued':           queued,
             'sends':            sends,
             'total_recipients': total_recipients,
+            # Аудитория целиком и сколько из неё не получили ничего (ТЗ п.5).
+            'available':        plan['available'],
+            'not_sent':         plan['available'] - plan['planned'],
         })
 
     # ── helpers ──────────────────────────────────────────────────────────────
@@ -656,6 +787,8 @@ class BroadcastDraftSendAPIView(APIView):
             message_text=text,
             audience_type=AudienceType.SPECIFIC,
             gender_filter=draft.gender_filter,
+            # Тот же файл, без копии: run_broadcast грузит его в ВК сам.
+            image=draft.image.name if draft.image else None,
         )
         broadcast.specific_clients.set(cb_ids)
         if segment is not None:
@@ -663,36 +796,6 @@ class BroadcastDraftSendAPIView(APIView):
             # нужен только чтобы у сегмента обновилась дата последней кампании.
             broadcast.rf_segments.set([segment])
         return create_send(broadcast, triggered_by=triggered_by, trigger_type='manual')
-
-    @classmethod
-    def _create_variant_sends(cls, draft, row, cb_ids, variants, label, segment, triggered_by):
-        """A/B/%-сплит внутри точки — как в образце (analytics.api.views:1341-1393)."""
-        pool = list(cb_ids)
-        random.shuffle(pool)
-        n = len(pool)
-        out: list[dict] = []
-        cursor = 0
-        for i, v in enumerate(variants):
-            if i == len(variants) - 1:
-                chunk = pool[cursor:]                       # хвост — последнему
-            else:
-                size = round(n * int(v.get('percent', 0)) / 100)
-                chunk = pool[cursor:cursor + size]
-                cursor += size
-            variant_label = f'{label} — вариант {i + 1} ({v.get("percent", 0)}%)'[:255]
-            send = cls._create_send_for(
-                draft, row['branch_id'], chunk, variant_label,
-                v.get('message_text') or '', segment, triggered_by,
-            )
-            out.append({
-                'send': send, 'count': len(chunk),
-                'meta': {
-                    'branch_id': row['branch_id'],
-                    'branch_name': row['name'],
-                    'variant': f'#{i + 1} ({v.get("percent", 0)}%)',
-                },
-            })
-        return out
 
 
 # ── История запусков и аварийные действия ─────────────────────────────────────
@@ -854,3 +957,123 @@ class BroadcastSendDeleteInVKAPIView(APIView):
             send.error_message = (send.error_message or '') + '\n[Удалено из ВК через API]'
             send.save(update_fields=['status', 'error_message', 'updated_at'])
         return Response({'ok': True, 'status': send.status, **result})
+
+
+# ── Картинка и «тест себе» (ТЗ маркетолога 14.10.2026, п.5) ───────────────────
+
+IMAGE_TYPES = ('image/jpeg', 'image/png', 'image/webp')
+IMAGE_MAX_BYTES = 5 * 1024 * 1024
+TEST_SEND_TTL = 60          # не чаще раза в минуту на черновик — как у авторассылок
+
+
+class BroadcastDraftImageAPIView(APIView):
+    """
+    POST   /api/v1/broadcasts/{id}/image/  multipart image — поставить/заменить
+    DELETE /api/v1/broadcasts/{id}/image/                   — убрать
+
+    Только у черновика в статусе draft. jpg/png/webp до 5 МБ.
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, pk):
+        draft = _load_draft(request, pk)
+        if draft is None:
+            return _error('not_found', 'Черновик не найден', http_status.HTTP_404_NOT_FOUND)
+        if draft.status != DraftStatus.DRAFT:
+            return _error('not_a_draft', 'Картинку можно менять только у черновика',
+                          http_status.HTTP_409_CONFLICT)
+        f = request.FILES.get('image')
+        if f is None:
+            return _error('invalid_payload', 'Нет файла: поле image', http_status.HTTP_400_BAD_REQUEST)
+        kind = (getattr(f, 'content_type', '') or '').split(';')[0].strip().lower()
+        if kind not in IMAGE_TYPES or f.size > IMAGE_MAX_BYTES:
+            return _error('invalid_image', 'Картинка: только jpg, png или webp до 5 МБ',
+                          http_status.HTTP_400_BAD_REQUEST)
+        draft.image = f
+        draft.save(update_fields=['image', 'updated_at'])
+        return Response(draft_to_dict(draft, request))
+
+    def delete(self, request, pk):
+        draft = _load_draft(request, pk)
+        if draft is None:
+            return _error('not_found', 'Черновик не найден', http_status.HTTP_404_NOT_FOUND)
+        if draft.status != DraftStatus.DRAFT:
+            return _error('not_a_draft', 'Картинку можно менять только у черновика',
+                          http_status.HTTP_409_CONFLICT)
+        # Файл не удаляем: его же могли взять отправленные Broadcast прошлых пачек.
+        draft.image = None
+        draft.save(update_fields=['image', 'updated_at'])
+        return Response(draft_to_dict(draft, request))
+
+
+class BroadcastDraftTestSendAPIView(APIView):
+    """
+    POST /api/v1/broadcasts/{id}/test-send/  {vk_id, variant?}
+
+    Одно сообщение (текст варианта + картинка черновика) от имени сообщества
+    точки гостя. НИЧЕГО не пишет: ни Broadcast, ни BroadcastSend — история и
+    статистика рассылки остаются чистыми. Не чаще раза в минуту на черновик.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.core.cache import cache
+        from apps.tenant.senler.services import send_vk_message, upload_vk_photo
+
+        draft = _load_draft(request, pk)
+        if draft is None:
+            return _error('not_found', 'Черновик не найден', http_status.HTTP_404_NOT_FOUND)
+        data = request.data or {}
+        try:
+            vk_id = int(data.get('vk_id'))
+            if vk_id < 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            return _error('invalid_payload', 'vk_id: ожидается VK ID числом', http_status.HTTP_400_BAD_REQUEST)
+
+        variants = list(draft.variants or [])
+        index = data.get('variant') or 0
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            index = 0
+        if len(variants) > 1:
+            if not 0 <= index < len(variants):
+                return _error('invalid_payload', 'variant: номер варианта с нуля', http_status.HTTP_400_BAD_REQUEST)
+            text = variants[index].get('message_text') or ''
+        else:
+            text = (variants[0].get('message_text') if variants else draft.message_text) or ''
+        if not text.strip():
+            return _error('invalid_payload', 'Текст сообщения пуст', http_status.HTTP_400_BAD_REQUEST)
+
+        cache_key = f'bc-test-send:{current_schema_name()}:{draft.pk}'
+        if cache.get(cache_key):
+            return _error('rate_limited', 'Тестовую отправку можно делать не чаще раза в минуту',
+                          http_status.HTTP_409_CONFLICT)
+
+        allowed = _allowed_branches(request)
+        qs = ClientBranch.objects.filter(client__vk_id=vk_id).select_related('branch')
+        if allowed is not None:
+            qs = qs.filter(branch_id__in=[int(x) for x in allowed])
+        draft_branches = [int(x) for x in (draft.branch_ids or [])]
+        cb = (qs.filter(branch_id__in=draft_branches).first() if draft_branches else None) or qs.first()
+        if cb is None:
+            return _error('guest_not_found', 'Гость с таким VK ID не найден в доступных точках',
+                          http_status.HTTP_400_BAD_REQUEST)
+        config = getattr(cb.branch, 'senler_config', None)
+        if config is None or not config.is_active:
+            return _error('no_vk_token', 'У точки гостя нет подключённого сообщества ВК',
+                          http_status.HTTP_409_CONFLICT)
+
+        cache.set(cache_key, 1, TEST_SEND_TTL)
+        attachment = None
+        if draft.image:
+            attachment, _ = upload_vk_photo(config, draft.image)
+        ok, err, message_id = send_vk_message(config, vk_id, text, attachment)
+        if not ok:
+            if '901' in str(err or ''):
+                return _error('not_subscribed', 'Гость не разрешил сообщения от сообщества',
+                              http_status.HTTP_400_BAD_REQUEST)
+            return _error('vk_error', str(err or 'ВК не принял сообщение'), http_status.HTTP_502_BAD_GATEWAY)
+        return Response({'ok': True, 'message_id': message_id, 'with_image': bool(attachment)})

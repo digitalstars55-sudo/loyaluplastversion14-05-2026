@@ -810,7 +810,8 @@ class BroadcastDraft(TimeStampedModel):
         null=True,
         blank=True,
         verbose_name='Изображение',
-        help_text='Зарезервировано: в первой версии API картинка не поддерживается.',
+        help_text='Одна картинка на рассылку (ТЗ маркетолога 14.10.2026, п.5): '
+                  'грузится ручкой broadcasts/{id}/image/, при отправке переходит в Broadcast.',
     )
 
     # ── Ячейка RF-матрицы ─────────────────────────────────────────────────────
@@ -867,7 +868,24 @@ class BroadcastDraft(TimeStampedModel):
     variants = models.JSONField(
         default=list,
         verbose_name='Варианты текста (A/B)',
-        help_text='[{"percent": 50, "message_text": "..."}] — сумма процентов 100.',
+        help_text='[{"percent": 30, "message_text": "..."}] или [{"count": 300, ...}]. '
+                  'Сумма меньше всей аудитории — остальные не получают ничего '
+                  '(ТЗ маркетолога 14.10.2026, п.5: «A — 300, B — 300, 400 — без сообщения»).',
+    )
+    # Часть аудитории без A/B: count — столько гостей, percent — такая доля.
+    # Пусто — вся аудитория (как было). Кому именно — случайно, но одинаково
+    # при каждом пересчёте черновика (seed — id черновика).
+    audience_limit_mode = models.CharField(
+        max_length=8,
+        blank=True,
+        default='',
+        db_default='',
+        verbose_name='Часть аудитории: как задана',
+        help_text="'' — вся аудитория, count — количеством, percent — процентом.",
+    )
+    audience_limit_value = models.PositiveIntegerField(
+        null=True, blank=True,
+        verbose_name='Часть аудитории: значение',
     )
 
     # ── Состояние ─────────────────────────────────────────────────────────────

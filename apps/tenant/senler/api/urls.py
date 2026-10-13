@@ -32,9 +32,11 @@ from .auto_broadcasts import (
 )
 from .broadcasts import (
     BroadcastDraftDetailAPIView,
+    BroadcastDraftImageAPIView,
     BroadcastDraftListCreateAPIView,
     BroadcastDraftPreviewAPIView,
     BroadcastDraftSendAPIView,
+    BroadcastDraftTestSendAPIView,
     BroadcastSendCancelAPIView,
     BroadcastSendDeleteInVKAPIView,
     BroadcastSendEditInVKAPIView,
@@ -50,6 +52,8 @@ urlpatterns = [
     path('broadcasts/<int:pk>/',                    BroadcastDraftDetailAPIView.as_view(),     name='broadcasts-detail'),
     path('broadcasts/<int:pk>/preview/',            BroadcastDraftPreviewAPIView.as_view(),    name='broadcasts-preview'),
     path('broadcasts/<int:pk>/send/',               BroadcastDraftSendAPIView.as_view(),       name='broadcasts-send'),
+    path('broadcasts/<int:pk>/image/',              BroadcastDraftImageAPIView.as_view(),      name='broadcasts-image'),
+    path('broadcasts/<int:pk>/test-send/',          BroadcastDraftTestSendAPIView.as_view(),   name='broadcasts-test-send'),
 
     # ── Авторассылки (конструктор, контракт №31) ──────────────────────────────
     path('auto-broadcasts/events/',                    AutoBroadcastEventsAPIView.as_view(),         name='auto-broadcasts-events'),

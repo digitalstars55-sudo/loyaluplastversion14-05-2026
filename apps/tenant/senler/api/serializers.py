@@ -29,14 +29,17 @@ def iso(value):
     return value.isoformat() if value else None
 
 
-def draft_to_dict(draft) -> dict:
-    """Карточка черновика. image всегда null — картинки в v1 не поддержаны."""
+def draft_to_dict(draft, request=None) -> dict:
+    """Карточка черновика. image — абсолютная ссылка на картинку или null."""
     segment = draft.segment if draft.segment_id else None
+    image = None
+    if draft.image:
+        image = request.build_absolute_uri(draft.image.url) if request is not None else draft.image.url
     return {
         'id':            draft.pk,
         'name':          draft.name or '',
         'message_text':  draft.message_text or '',
-        'image':         None,
+        'image':         image,
         'mode':          draft.mode,
         'segment':       segment_to_dict(segment),
         'r_score':       draft.r_score,
@@ -45,6 +48,8 @@ def draft_to_dict(draft) -> dict:
         'branch_ids':    list(draft.branch_ids or []),
         'gender_filter': draft.gender_filter,
         'variants':      list(draft.variants or []),
+        'audience_limit': ({'mode': draft.audience_limit_mode, 'value': draft.audience_limit_value}
+                           if getattr(draft, 'audience_limit_mode', '') else None),
         'status':        draft.status,
         'created_by':    draft.created_by or '',
         'sent_at':       iso(draft.sent_at),

@@ -110,12 +110,14 @@ class CreateDraftValidationTest(SimpleTestCase):
         self.assertEqual(resp.data['code'], 'invalid_payload')
 
     def test_variants_percent_sum(self):
+        # С 14.10.2026 (ТЗ маркетолога п.5) сумма МЕНЬШЕ 100 — можно: остальные
+        # не получают ничего. Больше 100 — по-прежнему нельзя.
         resp = self._create({
             'branch_ids': [1],
             'message_text': 'привет',
             'variants': [
-                {'percent': 50, 'message_text': 'а'},
-                {'percent': 40, 'message_text': 'б'},
+                {'percent': 60, 'message_text': 'а'},
+                {'percent': 50, 'message_text': 'б'},
             ],
         })
         self.assertEqual(resp.status_code, 400)
