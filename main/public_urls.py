@@ -3,7 +3,7 @@ from django.conf.urls.static import static
 from django.urls import include, path
 
 from apps.shared.checkup.views import InternalTenantsView
-from apps.shared.checkup.scans_export import ScansExportView
+from apps.shared.checkup.scans_export import CardOrdersExportView, ScansExportView
 from django.views.generic import TemplateView
 
 from drf_spectacular.views import SpectacularAPIView
@@ -36,6 +36,7 @@ urlpatterns = [
     # Сканы QR для ночной сверки CheckUp «скан со стола → официант» (24.09.2026):
     # свой секрет X-LoyalUP-Export-Secret, сеть — в ?tenant_schema, белый список сетей.
     path('api/v1/internal/checkup/scans/', ScansExportView.as_view(), name='checkup-internal-scans'),
+    path('api/v1/internal/checkup/card-orders/', CardOrdersExportView.as_view(), name='checkup-internal-card-orders'),
     # Вердикт по жалобе CheckUp → LoyalUP (контракт 5.2): на публичном хосте сеть — в теле.
     path('api/v1/internal/complaints/', include('apps.shared.relay.complaints_urls')),
 

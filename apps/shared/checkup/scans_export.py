@@ -381,3 +381,52 @@ class ScansExportView(View):
                  payload['start'], payload['end'], q['after_id'], payload['count'],
                  ' (есть ещё)' if payload['has_more'] else '')
         return JsonResponse(payload, json_dumps_params={'ensure_ascii': False})
+
+
+# ── Заказы по карте гостя (режим iikoCard «Карта гостя», 14.10.2026) ────────
+# Тот же секрет, белый список сетей и внутренний адрес, что у выгрузки сканов:
+# CheckUp ночью сверяет заказ с заказом зала по организации, номеру и времени
+# закрытия и засчитывает официанту «скан карты» в пункте KPI «Сканы гостей».
+
+def build_card_orders(q: dict) -> dict:
+    from apps.tenant.analytics.models import PosGuestOrder
+
+    rows = list(PosGuestOrder.objects
+                .select_related('link')
+                .filter(closed_at__gte=q['start'], closed_at__lt=q['end'], id__gt=q['after_id'],
+                        is_delivery=False)
+                .order_by('id')[:q['limit'] + 1])
+    has_more = len(rows) > q['limit']
+    rows = rows[:q['limit']]
+    return {
+        'start': _iso(q['start']), 'end': _iso(q['end']), 'count': len(rows), 'has_more': has_more,
+        'next_after_id': rows[-1].id if rows else q['after_id'],
+        'results': [{
+            'id': o.id, 'pos_order_id': o.pos_order_id, 'order_number': o.order_number,
+            'organization_id': o.organization_id, 'branch_id': o.branch_id,
+            'closed_at': _iso(o.closed_at), 'guest_id': o.link.client_id,
+            'paid_sum': str(o.paid_sum) if o.paid_sum is not None else None,
+        } for o in rows],
+    }
+
+
+class CardOrdersExportView(ScansExportView):
+    """GET /api/v1/internal/checkup/card-orders/?tenant_schema=&from=&to=&after_id=&limit="""
+
+    def get(self, request):
+        if not _is_internal_request(request):
+            return JsonResponse({'code': 'forbidden', 'detail': 'только с внутреннего адреса сервера'},
+                                status=403)
+        if not export_enabled():
+            return JsonResponse({'code': 'export_disabled', 'detail': 'выгрузка выключена'}, status=503)
+        if not secret_matches(request.headers.get(SECRET_HEADER, '')):
+            return JsonResponse({'code': 'bad_secret', 'detail': f'неверный {SECRET_HEADER}'}, status=401)
+        try:
+            q = parse_query(request.GET)
+            resolve_tenant(q['tenant_schema'])
+            with schema_context(q['tenant_schema']):
+                payload = build_card_orders(q)
+        except ExportError as e:
+            return JsonResponse(e.as_dict(), status=e.status)
+        log.info('card-orders-export: %s → %s строк', q['tenant_schema'], payload['count'])
+        return JsonResponse(payload, json_dumps_params={'ensure_ascii': False})
