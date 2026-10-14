@@ -60,7 +60,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 # кросс-доменные запросы «непростыми» → preflight OPTIONS. Без явного разрешения
 # заголовка django-cors-headers его отвергнет и ляжет ВСЁ гостевое API.
 from corsheaders.defaults import default_headers  # noqa: E402
-CORS_ALLOW_HEADERS = (*default_headers, 'x-vk-launch-params', 'x-web-session')
+CORS_ALLOW_HEADERS = (*default_headers, 'x-vk-launch-params', 'x-web-session', 'x-telegram-init-data')
 
 # ---------------------------------------------------------------------------
 # Applications
@@ -296,12 +296,18 @@ VK_SIGN_ENFORCE = os.getenv('VK_SIGN_ENFORCE', 'off')
 # Separate LoyalUP encryption keys; retain old keys when rotating.
 LOYALUP_SECRET_KEYS = tuple(k.strip() for k in os.getenv('LOYALUP_SECRET_KEYS', '').split(',') if k.strip())
 # Домены Телеграм-мини-аппа: тот же фронт-бандл, но подписи ВК там нет —
-# такие запуски enforce не трогает (см. TODO про initData в middleware).
+# такие запуски решает отдельный флаг TELEGRAM_SIGN_ENFORCE (ниже).
 TELEGRAM_MINI_APP_HOSTS = tuple(
     h.strip().lower()
     for h in os.getenv('TELEGRAM_MINI_APP_HOSTS', 'loyalupp.ru,www.loyalupp.ru').split(',')
     if h.strip()
 )
+# Телеграм-мини-апп гостя: токен бота для проверки initData (apps/shared/guest/tg_init.py)
+# и срок годности запуска. TELEGRAM_SIGN_ENFORCE='on' — 403 на `vk_id` без входа через
+# VK ID и на битую initData; 'off' (дефолт) — только строка `vk_sign tg_…` в лог.
+TELEGRAM_GUEST_BOT_TOKEN = os.getenv('TELEGRAM_GUEST_BOT_TOKEN', '')
+TELEGRAM_INIT_DATA_MAX_AGE = int(os.getenv('TELEGRAM_INIT_DATA_MAX_AGE', '86400'))
+TELEGRAM_SIGN_ENFORCE = os.getenv('TELEGRAM_SIGN_ENFORCE', 'off')
 # Аварийный клапан: префиксы гостевых путей, которые enforce не проверяет вовсе
 # (например если после включения 'on' всплывёт легитимный флоу без подписи).
 VK_SIGN_EXEMPT_PATHS = tuple(

@@ -19,6 +19,7 @@ from django.utils import timezone
 
 from . import web_session
 from .middleware import VKLaunchParamsMiddleware
+from .tg_init import telegram_user_id, verify_init_data
 from .vk_sign import calc_sign, extract_vk_user_id, verify_launch_params
 from .web_session import issue_web_token, verify_web_token
 
@@ -39,6 +40,31 @@ BASE_PARAMS = {
     'vk_ts': '1755950000',
     'vk_user_id': '200002444631',
 }
+
+
+TG_TOKEN = '123456:test-bot-token-not-the-real-one'
+
+
+def tg_init_data(user_id: int = 42, token: str = TG_TOKEN, auth_date: int | None = None,
+                 extra: dict | None = None) -> str:
+    """initData так, как её подписывает Телеграм (см. tg_init.py)."""
+    import hashlib
+    import hmac
+    fields = {
+        'auth_date': str(int(time.time()) if auth_date is None else auth_date),
+        'query_id': 'AAH',
+        'user': json.dumps({'id': user_id, 'first_name': 'Гость'}, ensure_ascii=False,
+                           separators=(',', ':')),
+    }
+    fields.update(extra or {})
+    check = '\n'.join(f'{k}={fields[k]}' for k in sorted(fields))
+    secret = hmac.new(b'WebAppData', token.encode(), hashlib.sha256).digest()
+    fields['hash'] = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    return urlencode(fields)
+
+
+def make_web_token(vk_id: int) -> str:
+    return issue_web_token(vk_id)[0]
 
 
 def launch_query(params: dict | None = None, secret: str = SECRET,
@@ -212,25 +238,64 @@ class VKLaunchParamsMiddlewareTest(SimpleTestCase):
 
     # ── Телеграм и не-гостевые пути ───────────────────────────────────────────
 
-    @override_settings(VK_SIGN_ENFORCE='on')
-    def test_telegram_launch_is_not_enforced(self):
-        # Без ТГ-признака тот же запрос блокируется — сравниваем поведение.
+    @override_settings(VK_SIGN_ENFORCE='on', TELEGRAM_SIGN_ENFORCE='off')
+    def test_telegram_launch_passes_while_telegram_enforce_off(self):
+        # Без ТГ-признака тот же запрос блокируется флагом ВК — сравниваем поведение.
         self.assertEqual(self._get(vk_id='111').status_code, 403)
 
         request = self.factory.get(
             '/api/v1/client/', {'vk_id': '111'}, HTTP_ORIGIN='https://loyalupp.ru'
         )
-        response = self.middleware(request)
+        with self.assertLogs('apps.shared.guest.middleware', 'WARNING') as logs:
+            response = self.middleware(request)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.seen['status'], 'telegram')
+        self.assertIn('tg_unproven', logs.output[0])
 
-    @override_settings(VK_SIGN_ENFORCE='on')
-    def test_telegram_init_data_header_is_not_enforced(self):
+    @override_settings(VK_SIGN_ENFORCE='off', TELEGRAM_SIGN_ENFORCE='on')
+    def test_telegram_origin_with_vk_id_blocked_when_enforced(self):
+        # Подделать Origin может кто угодно: VK ID без входа через VK ID не принимаем.
         request = self.factory.get(
-            '/api/v1/client/', {'vk_id': '111'}, HTTP_X_TELEGRAM_INIT_DATA='user=%7B%7D&hash=x'
+            '/api/v1/client/', {'vk_id': '111'}, HTTP_ORIGIN='https://loyalupp.ru'
+        )
+        response = self.middleware(request)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(json.loads(response.content)['code'], 'vk_sign_invalid')
+
+    @override_settings(TELEGRAM_SIGN_ENFORCE='on', TELEGRAM_GUEST_BOT_TOKEN=TG_TOKEN)
+    def test_telegram_without_vk_id_passes_when_enforced(self):
+        request = self.factory.get(
+            '/api/v1/client/', HTTP_X_TELEGRAM_INIT_DATA=tg_init_data(user_id=42)
         )
         self.assertEqual(self.middleware(request).status_code, 200)
         self.assertEqual(self.seen['status'], 'telegram')
+
+    @override_settings(TELEGRAM_SIGN_ENFORCE='on', TELEGRAM_GUEST_BOT_TOKEN=TG_TOKEN)
+    def test_valid_init_data_does_not_prove_vk_id(self):
+        request = self.factory.get(
+            '/api/v1/client/', {'vk_id': '111'}, HTTP_X_TELEGRAM_INIT_DATA=tg_init_data(user_id=42)
+        )
+        self.assertEqual(self.middleware(request).status_code, 403)
+        self.assertIsNone(self.seen.get('vk_user_id'))
+
+    @override_settings(TELEGRAM_SIGN_ENFORCE='on', TELEGRAM_GUEST_BOT_TOKEN=TG_TOKEN)
+    def test_forged_init_data_blocked_when_enforced(self):
+        request = self.factory.get(
+            '/api/v1/client/', HTTP_X_TELEGRAM_INIT_DATA='user=%7B%7D&auth_date=1&hash=x'
+        )
+        self.assertEqual(self.middleware(request).status_code, 403)
+
+    @override_settings(TELEGRAM_SIGN_ENFORCE='on', TELEGRAM_GUEST_BOT_TOKEN=TG_TOKEN)
+    def test_web_session_still_wins_in_telegram(self):
+        request = self.factory.get(
+            '/api/v1/client/', {'vk_id': '200002444631'},
+            HTTP_ORIGIN='https://loyalupp.ru',
+            HTTP_X_WEB_SESSION=make_web_token(200002444631),
+            HTTP_X_TELEGRAM_INIT_DATA=tg_init_data(user_id=42),
+        )
+        self.assertEqual(self.middleware(request).status_code, 200)
+        self.assertEqual(self.seen['status'], 'web')
+        self.assertEqual(self.seen['vk_user_id'], 200002444631)
 
     @override_settings(VK_SIGN_ENFORCE='on')
     def test_non_guest_paths_are_skipped(self):
@@ -505,3 +570,35 @@ class WebSessionMiddlewareTest(SimpleTestCase):
         response = self._get(path='/api/v1/vk/auth/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.seen['status'], 'skipped')
+
+
+@override_settings(TELEGRAM_GUEST_BOT_TOKEN=TG_TOKEN, TELEGRAM_INIT_DATA_MAX_AGE=86400)
+class TelegramInitDataTest(SimpleTestCase):
+    def test_valid_init_data(self):
+        fields = verify_init_data(tg_init_data(user_id=777))
+        self.assertIsNotNone(fields)
+        self.assertEqual(telegram_user_id(fields), 777)
+
+    def test_other_bot_token_rejected(self):
+        self.assertIsNone(verify_init_data(tg_init_data(token='999:other-bot')))
+
+    def test_tampered_user_rejected(self):
+        raw = tg_init_data(user_id=777).replace('777', '778')
+        self.assertIsNone(verify_init_data(raw))
+
+    def test_stale_launch_rejected(self):
+        old = int(time.time()) - 2 * 86400
+        self.assertIsNone(verify_init_data(tg_init_data(auth_date=old)))
+
+    def test_duplicate_key_rejected(self):
+        raw = tg_init_data() + '&auth_date=1'
+        self.assertIsNone(verify_init_data(raw))
+
+    def test_missing_hash_or_garbage(self):
+        for raw in ('', 'user=%7B%7D&auth_date=1', '%%%', 'a' * 5000):
+            with self.subTest(raw=raw[:20]):
+                self.assertIsNone(verify_init_data(raw))
+
+    @override_settings(TELEGRAM_GUEST_BOT_TOKEN='')
+    def test_without_token_nothing_is_valid(self):
+        self.assertIsNone(verify_init_data(tg_init_data()))

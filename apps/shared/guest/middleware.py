@@ -20,6 +20,11 @@ VK ID OAuth (`POST /api/v1/vk/auth/`) и получает собственный
   web          — веб-токен (`X-Web-Session`) валиден, `request.vk_user_id` заполнен;
   web_invalid  — веб-токен есть, но подпись не сошлась или он протух;
   telegram     — запуск из Телеграм-мини-аппа (loyalupp.ru) без веб-токена;
+                 `request.tg_user_id` заполнен, только если initData сошлась
+                 (см. tg_init.py). VK ID Телеграм не доказывает: запрос с
+                 `vk_id` без веб-токена — нарушение `tg_unproven`, битая
+                 initData — `tg_invalid`. Блокирует их отдельный флаг
+                 `TELEGRAM_SIGN_ENFORCE` (дефолт off — только лог `vk_sign tg_`);
   unconfigured — не задан `VK_SECRET`, проверять нечем (никогда не блокируем);
   skipped      — путь не гостевой (мобилка, аналитика, вебхуки, админка).
 
@@ -38,6 +43,7 @@ from urllib.parse import urlparse
 from django.conf import settings
 from django.http import JsonResponse
 
+from .tg_init import telegram_user_id, verify_init_data
 from .vk_sign import extract_vk_user_id, verify_launch_params
 from .web_session import verify_web_token
 
@@ -99,6 +105,7 @@ class VKLaunchParamsMiddleware:
     def __call__(self, request):
         request.vk_user_id = None
         request.vk_sign_status = 'skipped'
+        request.tg_user_id = None
 
         if request.method == 'OPTIONS' or not self._is_guest_api(request.path or ''):
             return self.get_response(request)
@@ -116,7 +123,8 @@ class VKLaunchParamsMiddleware:
         if violation is None:
             return self.get_response(request)
 
-        enforce = str(getattr(settings, 'VK_SIGN_ENFORCE', 'off')).strip().lower() == 'on'
+        flag = 'TELEGRAM_SIGN_ENFORCE' if violation.startswith('tg_') else 'VK_SIGN_ENFORCE'
+        enforce = str(getattr(settings, flag, 'off')).strip().lower() == 'on'
         logger.warning(
             'vk_sign %s path=%s method=%s status=%s vk_user_id=%s claimed_vk_id=%s '
             'origin=%s enforce=%s',
@@ -164,9 +172,7 @@ class VKLaunchParamsMiddleware:
             return self._inspect_web_session(request, web_raw)
 
         if self._is_telegram(request):
-            # TODO: валидировать Telegram initData (HMAC от токена бота) и
-            # включать ТГ в enforce отдельным флагом.
-            return 'telegram', None, None, []
+            return self._inspect_telegram(request)
 
         if not (getattr(settings, 'VK_SECRET', '') or ''):
             return 'unconfigured', None, None, []
@@ -214,6 +220,23 @@ class VKLaunchParamsMiddleware:
         if any(value != vk_user_id for value in claimed):
             return 'web', vk_user_id, 'vk_id_mismatch', claimed
         return 'web', vk_user_id, None, claimed
+
+    def _inspect_telegram(self, request) -> tuple[str, int | None, str | None, list[int]]:
+        """
+        Ветка Телеграма без веб-токена. initData проверяется (HMAC от токена бота),
+        доказанный id Телеграма кладётся в `request.tg_user_id`. VK ID отсюда не
+        берётся никогда: гость, заявивший `vk_id`, должен войти через VK ID.
+        """
+        claimed = self._claimed_vk_ids(request)
+        raw = (request.META.get(TELEGRAM_INIT_DATA_HEADER, '') or '').strip()
+        if raw:
+            fields = verify_init_data(raw)
+            if fields is None:
+                return 'telegram', None, 'tg_invalid', claimed
+            request.tg_user_id = telegram_user_id(fields)
+        if claimed:
+            return 'telegram', None, 'tg_unproven', claimed
+        return 'telegram', None, None, claimed
 
     def _is_telegram(self, request) -> bool:
         """
@@ -274,6 +297,8 @@ _VIOLATION_DETAIL = {
     'missing': 'Запуск без подписи ВКонтакте.',
     'invalid': 'Подпись запуска ВКонтакте не прошла проверку.',
     'vk_id_mismatch': 'vk_id не совпадает с подписью запуска.',
+    'tg_invalid': 'Запуск из Телеграма не прошёл проверку — откройте приложение из бота заново.',
+    'tg_unproven': 'Войдите через VK ID, чтобы открыть свои баллы.',
 }
 
 # Те же нарушения, но для веб-сессии (X-Web-Session) — текст без «подписи ВК».
