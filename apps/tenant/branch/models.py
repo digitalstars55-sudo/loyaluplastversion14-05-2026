@@ -861,6 +861,7 @@ class TransactionSource(models.TextChoices):
     PHONE    = 'phone',    'Номер телефона'   # №78: спасибо за номер, данный через ВК
     RECEIPT  = 'receipt',  'Чек'              # скан QR фискального чека
     POS      = 'pos',      'Заказ на кассе'   # заказ по карте гостя в iikoCard
+    REVIEW   = 'review',   'Отзыв на картах'  # волна 3: подтверждённый скриншот отзыва
 
 
 class CoinTransactionManager(models.Manager):
@@ -1947,3 +1948,49 @@ class ReceiptScan(models.Model):
             models.Index(fields=['client', 'created_at'], name='receipt_client_time_idx'),
             models.Index(fields=['status', 'created_at'], name='receipt_status_time_idx'),
         ]
+
+
+
+class ReviewProof(models.Model):
+    """
+    Скриншот отзыва гостя на Яндекс.Картах / 2ГИС (волна 3 ТЗ маркетолога, 14.10.2026).
+
+    Воронка: гость написал отзыв → ушёл на карты → приложил скриншот (PENDING) →
+    менеджер проверил → APPROVED (баллы начислены ОДИН раз, `coins` и `transaction`)
+    или REJECTED с причиной. Один гость — один скриншот на площадку и точку за
+    `COOLDOWN_DAYS` (кроме отклонённых), чтобы не было двойных баллов.
+    """
+
+    COOLDOWN_DAYS = 30
+
+    class Platform(models.TextChoices):
+        YANDEX = 'yandex', 'Яндекс.Карты'
+        GIS = '2gis', '2ГИС'
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'На проверке'
+        APPROVED = 'approved', 'Подтверждён'
+        REJECTED = 'rejected', 'Отклонён'
+
+    client = models.ForeignKey(ClientBranch, on_delete=models.CASCADE,
+                               related_name='review_proofs', verbose_name='Гость в точке')
+    platform = models.CharField(max_length=8, choices=Platform.choices, verbose_name='Площадка')
+    image = models.ImageField(upload_to='review_proofs/', verbose_name='Скриншот')
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING,
+                              db_index=True, verbose_name='Статус')
+    coins = models.PositiveIntegerField(default=0, verbose_name='Начислено баллов')
+    transaction = models.ForeignKey('CoinTransaction', on_delete=models.SET_NULL, null=True,
+                                    blank=True, related_name='+', verbose_name='Начисление')
+    reject_reason = models.CharField(max_length=255, blank=True, default='',
+                                     verbose_name='Причина отказа')
+    reviewed_by = models.CharField(max_length=150, blank=True, default='', verbose_name='Проверил')
+    reviewed_at = models.DateTimeField(null=True, blank=True, verbose_name='Когда проверен')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name='Прислан')
+
+    class Meta:
+        verbose_name = 'Скриншот отзыва'
+        verbose_name_plural = 'Скриншоты отзывов'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.get_platform_display()} · {self.get_status_display()} · {self.created_at:%d.%m.%Y}'

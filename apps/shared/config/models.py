@@ -258,6 +258,20 @@ class ClientConfig(models.Model):
         ),
     )
 
+    # --- Волна 3 (14.10.2026): скриншот отзыва на картах → баллы после проверки ---
+    review_proof_enabled = models.BooleanField(
+        default=False, db_default=False,
+        verbose_name='Баллы за отзыв на картах (по скриншоту)',
+        help_text='После отзыва гость прикладывает скриншот с Яндекс.Карт или 2ГИС; менеджер '
+                  'проверяет в очереди и подтверждает — баллы начисляются один раз. Выключено — '
+                  'кнопки нет, как раньше.',
+    )
+    review_proof_coins = models.PositiveSmallIntegerField(
+        default=0, db_default=0,
+        verbose_name='Баллы за подтверждённый отзыв',
+        help_text='Сколько баллов начислить на счёт точки после подтверждения. 0 — только учёт.',
+    )
+
     # --- Скан QR фискального чека (волна 2, 14.10.2026) ---
     receipt_scan_enabled = models.BooleanField(
         default=False, db_default=False,

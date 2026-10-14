@@ -3,6 +3,9 @@ from django.urls import path
 from .client_phone import ClientPhoneView
 from .client_pos_card import ClientPosCardView
 from .client_receipt import ClientReceiptView
+from .review_proofs import (
+    ClientReviewProofView, ReviewProofApproveView, ReviewProofListView, ReviewProofRejectView,
+)
 from .views import (
     BranchInfoView, ClientView, EmployeeView, PromotionView, TransactionsView,
     TestimonialCreateView, VKAuthView, VKCallbackView, VKStoryView, VKSyncView,
@@ -16,6 +19,11 @@ urlpatterns = [
     path('client/phone/',             ClientPhoneView.as_view(), name='client-phone'),
     # Скан QR фискального чека (волна 2, 14.10.2026) — client_receipt.py
     path('client/receipt/',           ClientReceiptView.as_view(), name='client-receipt'),
+    # Скриншот отзыва на картах (волна 3, 14.10.2026) — review_proofs.py
+    path('client/review-proof/',      ClientReviewProofView.as_view(), name='client-review-proof'),
+    path('review-proofs/',            ReviewProofListView.as_view(), name='review-proofs'),
+    path('review-proofs/<int:pk>/approve/', ReviewProofApproveView.as_view(), name='review-proof-approve'),
+    path('review-proofs/<int:pk>/reject/',  ReviewProofRejectView.as_view(), name='review-proof-reject'),
     # Карта гостя для кассы, режим iikoCard «Карта гостя» — client_pos_card.py
     path('client/pos-card/',          ClientPosCardView.as_view(), name='client-pos-card'),
     path('client/vk-sync/',           VKSyncView.as_view(),      name='client-vk-sync'),

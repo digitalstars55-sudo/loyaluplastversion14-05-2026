@@ -65,6 +65,10 @@ def get_tenant_domain(client_id: int) -> dict:
         'receipt_scan_enabled': bool(getattr(config, 'receipt_scan_enabled', False)),
         'receipt_cashback_percent': int(getattr(config, 'receipt_cashback_percent', 0) or 0)
         if getattr(config, 'receipt_scan_enabled', False) else 0,
+        # Волна 3: скриншот отзыва на картах → баллы после проверки менеджером.
+        'review_proof_enabled': bool(getattr(config, 'review_proof_enabled', False)),
+        'review_proof_coins': int(getattr(config, 'review_proof_coins', 0) or 0)
+        if getattr(config, 'review_proof_enabled', False) else 0,
         # Режим iikoCard «Карта гостя»: мини-апп показывает карту для кассира.
         'pos_card_enabled': _pos_card_enabled(config),
     }
