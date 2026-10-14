@@ -955,7 +955,83 @@ class GuestDetailAPIView(APIView):
             # iikoCard (волна 2): None — связь не проверяли (режим выключен или
             # гостя ещё не обошли). «Нет связи» — не ноль заказов.
             'pos':              _pos_summary(client.pk),
+            # Вкладки карточки (ТЗ маркетолога п.3, 14.10.2026): заказы, подарки,
+            # рассылки, средний чек и частота за 30 дней. Сбой блока — None.
+            **_guest_tabs(client, cb_ids, cb_by_id),
         })
+
+
+def _guest_tabs(client, cb_ids, cb_by_id) -> dict:
+    out = {'orders': None, 'order_stats': None, 'prizes': None, 'broadcasts': None}
+    try:
+        out.update(_guest_orders(client, cb_ids))
+    except Exception:                              # noqa: BLE001
+        logger.warning('guest card: orders failed for client %s', client.pk, exc_info=True)
+    try:
+        from apps.tenant.inventory.models import InventoryItem
+        items = (InventoryItem.objects.filter(client_branch_id__in=cb_ids)
+                 .select_related('product', 'catalog_item').order_by('-created_at')[:20])
+        out['prizes'] = [{
+            'title': str(i.catalog_item or i.product or i.description or 'Подарок')[:120],
+            'received_at': i.created_at.isoformat(),
+            'activated_at': i.activated_at.isoformat() if i.activated_at else None,
+            'used_at': i.used_at.isoformat() if i.used_at else None,
+            'branch_name': cb_by_id[i.client_branch_id].branch.name if i.client_branch_id in cb_by_id else '',
+        } for i in items]
+    except Exception:                              # noqa: BLE001
+        logger.warning('guest card: prizes failed for client %s', client.pk, exc_info=True)
+    try:
+        from apps.tenant.senler.models import BroadcastRecipient
+        rows = (BroadcastRecipient.objects.filter(client_branch_id__in=cb_ids)
+                .select_related('send__broadcast', 'send__auto_broadcast_rule', 'send__draft')
+                .order_by('-id')[:20])
+        out['broadcasts'] = [{
+            'name': (r.send.draft.name if r.send.draft_id and r.send.draft.name else
+                     r.send.auto_broadcast_rule.name if r.send.auto_broadcast_rule_id else
+                     r.send.broadcast.name if r.send.broadcast_id else 'Рассылка'),
+            'kind': 'auto' if r.send.auto_broadcast_rule_id else 'broadcast',
+            'status': r.status,
+            'sent_at': r.sent_at.isoformat() if r.sent_at else None,
+            'read_at': r.read_at.isoformat() if r.read_at else None,
+            'message_branch': r.message_branch or '',
+        } for r in rows]
+    except Exception:                              # noqa: BLE001
+        logger.warning('guest card: broadcasts failed for client %s', client.pk, exc_info=True)
+    return out
+
+
+def _guest_orders(client, cb_ids) -> dict:
+    """Покупки гостя: засчитанные чеки и заказы по карте iikoCard. Нет ни одной — средний чек None."""
+    from datetime import timedelta
+    from django.utils import timezone as tz
+    from apps.tenant.analytics.models import PosGuestOrder
+    from apps.tenant.branch.models import Branch, ClientBranchVisit, ReceiptScan, ReceiptScanStatus
+
+    names = dict(Branch.objects.values_list('branch_id', 'name'))
+    rows = [{
+        'source': 'receipt', 'at': r.receipt_at, 'amount': r.amount,
+        'branch_name': r.branch.name if r.branch_id else '',
+    } for r in ReceiptScan.objects.filter(client=client, status=ReceiptScanStatus.CREDITED)
+                                  .select_related('branch').order_by('-receipt_at')[:50]]
+    rows += [{
+        'source': 'pos', 'at': o.closed_at, 'amount': o.paid_sum if o.paid_sum is not None else o.order_sum,
+        'branch_name': names.get(o.branch_id, ''),
+    } for o in PosGuestOrder.objects.filter(link__client=client).order_by('-closed_at')[:50]]
+    rows.sort(key=lambda r: r['at'], reverse=True)
+    since = tz.now() - timedelta(days=30)
+    amounts = [r['amount'] for r in rows if r['amount'] is not None]
+    stats = {
+        'orders_total': len(rows),
+        'avg_check': float(round(sum(amounts) / len(amounts))) if amounts else None,
+        'orders_30d': sum(1 for r in rows if r['at'] >= since),
+        'visits_30d': ClientBranchVisit.objects.filter(client_id__in=cb_ids, visited_at__gte=since).count(),
+        'favorite_dish': None,          # позиций заказа iikoCard не отдаёт — нет данных
+    }
+    return {
+        'orders': [{**r, 'at': r['at'].isoformat(), 'amount': float(r['amount']) if r['amount'] is not None else None}
+                   for r in rows[:20]],
+        'order_stats': stats,
+    }
 
 
 def _pos_summary(client_id):
