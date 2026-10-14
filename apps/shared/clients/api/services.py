@@ -61,7 +61,18 @@ def get_tenant_domain(client_id: int) -> dict:
         # (settings.GUEST_PHONE_ENABLED) И флаг сети (ClientConfig). Выкл — как раньше.
         'guest_phone_enabled': _guest_phone_enabled(config),
         'guest_phone_reward_coins': int(getattr(config, 'guest_phone_reward_coins', 0) or 0) if _guest_phone_enabled(config) else 0,
+        # Волна 2 (14.10.2026): «Отсканировать чек». Выкл — кнопки нет, как раньше.
+        'receipt_scan_enabled': bool(getattr(config, 'receipt_scan_enabled', False)),
+        'receipt_cashback_percent': int(getattr(config, 'receipt_cashback_percent', 0) or 0)
+        if getattr(config, 'receipt_scan_enabled', False) else 0,
+        # Режим iikoCard «Карта гостя»: мини-апп показывает карту для кассира.
+        'pos_card_enabled': _pos_card_enabled(config),
     }
+
+
+def _pos_card_enabled(config) -> bool:
+    return (getattr(config, 'iiko_card_mode', '') == 'card'
+            and bool(getattr(config, 'iiko_cloud_api_login', '')) and bool(getattr(config, 'iiko_cloud_organization_id', '')))
 
 
 def _guest_phone_enabled(config) -> bool:

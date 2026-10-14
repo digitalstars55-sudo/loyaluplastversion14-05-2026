@@ -117,6 +117,36 @@ class IikoCloudClient:
             return None
         raise IikoCloudError(f'customer/info: HTTP {resp.status_code} {text[:120]}')
 
+    def customer_by_id(self, organization_id: str, customer_id: str) -> dict | None:
+        resp = self.post('loyalty/iiko/customer/info',
+                         {'organizationId': organization_id, 'type': 'id', 'id': customer_id})
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code == 400 and 'There is no user' in (resp.text or ''):
+            return None
+        raise IikoCloudError(f'customer/info: HTTP {resp.status_code} {(resp.text or "")[:120]}')
+
+    def create_customer(self, organization_id: str, card_number: str, *, phone: str = '', name: str = '') -> str:
+        """Новый гость iikoCard с картой (режим «Карта гостя»). Возвращает id гостя."""
+        body = {'organizationId': organization_id, 'cardTrack': card_number, 'cardNumber': card_number}
+        if phone:
+            body['phone'] = phone
+        if name:
+            body['name'] = name[:60]
+        resp = self.post('loyalty/iiko/customer/create_or_update', body)
+        customer_id = (resp.json() or {}).get('id') if resp.status_code == 200 else None
+        if not customer_id:
+            raise IikoCloudError(f'create_or_update: HTTP {resp.status_code} {(resp.text or "")[:120]}')
+        return customer_id
+
+    def add_card(self, organization_id: str, customer_id: str, card_number: str) -> None:
+        resp = self.post('loyalty/iiko/customer/card/add', {
+            'organizationId': organization_id, 'customerId': customer_id,
+            'cardTrack': card_number, 'cardNumber': card_number,
+        })
+        if resp.status_code != 200:
+            raise IikoCloudError(f'card/add: HTTP {resp.status_code} {(resp.text or "")[:120]}')
+
     def transactions(self, organization_id: str, customer_id: str,
                      revision: int | None, last_transaction_id: str) -> dict:
         body = {'organizationId': organization_id, 'customerId': customer_id,
@@ -202,8 +232,13 @@ def link_guest(client, config, api: IikoCloudClient, now=None):
     return link
 
 
-def sync_orders(link, config, api: IikoCloudClient, now=None) -> int:
-    """Новые закрытые заказы гостя с курсора. Возвращает, сколько заказов добавлено."""
+def sync_orders(link, config, api: IikoCloudClient, now=None, branches: dict | None = None) -> int:
+    """
+    Новые закрытые заказы гостя с курсора. Возвращает, сколько заказов добавлено.
+
+    `branches` — {организация iiko: Branch}: точка заказа и, в режиме «Карта
+    гостя», баллы за заказы после выдачи карты (`pos_cashback_percent`).
+    """
     from apps.tenant.analytics.models import PosGuestOrder
 
     now = now or timezone.now()
@@ -220,19 +255,24 @@ def sync_orders(link, config, api: IikoCloudClient, now=None) -> int:
                 closed_at = _dt(t.get('whenCreated'))
                 if order_sum is None or closed_at is None:
                     continue
-                _, created = PosGuestOrder.objects.get_or_create(
+                org_id = str(t.get('organizationId') or '')[:64]
+                branch = (branches or {}).get(org_id)
+                order, created = PosGuestOrder.objects.get_or_create(
                     link=link, pos_order_id=str(t['posOrderId']),
                     defaults={
+                        'branch_id': branch.branch_id if branch is not None else None,
                         'order_number': str(t.get('orderNumber') or '')[:32],
                         'order_sum': order_sum,
                         'paid_sum': _money(t.get('sum')),
                         'is_delivery': bool(t.get('isDelivery')),
-                        'organization_id': str(t.get('organizationId') or '')[:64],
+                        'organization_id': org_id,
                         'terminal_group_id': str(t.get('terminalGroupId') or '')[:64],
                         'closed_at': closed_at,
                     },
                 )
                 added += int(created)
+                if created and branch is not None:
+                    _credit_order(link, order, branch, config)
             if page.get('lastRevision'):
                 link.last_revision = page['lastRevision']
                 link.last_transaction_id = page.get('lastTransactionId') or ''
@@ -241,6 +281,94 @@ def sync_orders(link, config, api: IikoCloudClient, now=None) -> int:
         if len(rows) < PAGE_SIZE:
             break
     return added
+
+
+def _credit_order(link, order, branch, config) -> int:
+    """Баллы за заказ по карте гостя: только режим «Карта гостя» и только после выдачи карты."""
+    from apps.shared.config.models import IikoCardMode
+    from apps.tenant.branch.models import ClientBranch, CoinTransaction, TransactionSource, TransactionType
+
+    percent = int(getattr(config, 'pos_cashback_percent', 0) or 0)
+    if (getattr(config, 'iiko_card_mode', '') != IikoCardMode.CARD or percent <= 0
+            or not link.card_issued_at or order.closed_at < link.card_issued_at):
+        return 0
+    base = order.paid_sum if order.paid_sum is not None else order.order_sum
+    coins = int(base * percent // 100)
+    if coins <= 0:
+        return 0
+    cb, _ = ClientBranch.objects.get_or_create(client_id=link.client_id, branch=branch)
+    CoinTransaction.objects.create_transfer(
+        cb, coins, TransactionType.INCOME, TransactionSource.POS,
+        description=f'Заказ iiko №{order.order_number or order.pos_order_id}',
+    )
+    order.coins = coins
+    order.save(update_fields=['coins'])
+    return coins
+
+
+def branches_by_organization() -> dict:
+    from apps.tenant.branch.models import Branch
+    return {b.iiko_organization_id: b for b in Branch.objects.exclude(iiko_organization_id='')}
+
+
+CARD_PREFIX = '77'
+
+
+def card_number_for(client) -> str:
+    """Номер карты гостя LoyalUP в iikoCard: 77 + id гостя (12 цифр, читается любым сканером)."""
+    return f'{CARD_PREFIX}{int(client.pk):010d}'
+
+
+def _customer_card(customer: dict) -> str:
+    for card in customer.get('cards') or []:
+        value = card.get('track') or card.get('number')
+        if value:
+            return str(value)
+    return ''
+
+
+def issue_card(client, config, api: IikoCloudClient, now=None):
+    """
+    Режим «Карта гостя»: номер, который гость показывает кассиру. Если гость уже
+    есть в iikoCard (по связи или телефону с согласием) — его карта, а нет карты —
+    добавляем нашу; иначе создаём гостя iikoCard с нашей картой. Возвращает PosGuestLink.
+    """
+    from apps.tenant.analytics.models import PosGuestLink, PosGuestLinkStatus
+
+    now = now or timezone.now()
+    org = config.iiko_cloud_organization_id
+    link = PosGuestLink.objects.filter(client=client).first() or PosGuestLink(client=client, checked_at=now)
+    if link.card_number and link.iiko_customer_id:
+        return link
+
+    customer = None
+    if link.status == PosGuestLinkStatus.LINKED and link.iiko_customer_id:
+        customer = api.customer_by_id(org, link.iiko_customer_id)
+    elif client.phone and client.phone_consent_at:
+        customer = api.customer_by_phone(org, client.phone)
+
+    if customer is not None:
+        number = _customer_card(customer)
+        if not number:
+            number = card_number_for(client)
+            api.add_card(org, customer['id'], number)
+        link.iiko_customer_id = customer.get('id') or ''
+        link.wallets = _wallets(customer)
+    else:
+        number = card_number_for(client)
+        phone = client.phone if client.phone_consent_at else ''
+        link.iiko_customer_id = api.create_customer(org, number, phone=phone,
+                                                    name=getattr(client, 'first_name', '') or '')
+        link.wallets = []
+    link.status = PosGuestLinkStatus.LINKED
+    link.card_number = number
+    link.card_issued_at = now
+    link.linked_at = link.linked_at or now
+    link.phone_checked = client.phone or ''
+    link.checked_at = now
+    link.error = ''
+    link.save()
+    return link
 
 
 def guests_to_link(now=None):
@@ -255,6 +383,8 @@ def guests_to_link(now=None):
             .exclude(phone='')
             .filter(branch_profiles__isnull=False)
             .distinct())
+    # Гость с выданной картой связан навсегда: смена телефона карту не отвязывает.
+    base = base.exclude(pos_link__card_issued_at__isnull=False)
     return base.filter(
         Q(pos_link__isnull=True)
         | ~Q(pos_link__phone_checked=F('phone'))
@@ -281,9 +411,10 @@ def run_tenant(config, *, link_limit=200, sync_limit=200, api: IikoCloudClient |
         return out
     synced = (PosGuestLink.objects.filter(status=PosGuestLinkStatus.LINKED)
               .order_by(F('orders_synced_at').asc(nulls_first=True))[:sync_limit])
+    branches = branches_by_organization()
     for link in synced:
         try:
-            out['orders_added'] += sync_orders(link, config, api, now)
+            out['orders_added'] += sync_orders(link, config, api, now, branches=branches)
         except IikoCloudRateLimited as exc:
             out['stopped'] = str(exc)
             break

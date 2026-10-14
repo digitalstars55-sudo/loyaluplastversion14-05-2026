@@ -1346,6 +1346,11 @@ class PosGuestLink(models.Model):
     last_transaction_id = models.CharField(max_length=64, blank=True, default='',
                                            verbose_name='Последняя операция')
     orders_synced_at = models.DateTimeField(null=True, blank=True, verbose_name='Заказы забраны')
+    # Режим «Карта гостя»: номер, который гость показывает кассиру QR-кодом.
+    card_number = models.CharField(max_length=32, blank=True, default='', db_default='',
+                                   verbose_name='Карта гостя (номер)')
+    card_issued_at = models.DateTimeField(null=True, blank=True, verbose_name='Карта выдана',
+                                          help_text='Баллы начисляются только за заказы после этой даты.')
 
     class Meta:
         verbose_name = 'Связь гостя с iikoCard'
@@ -1370,6 +1375,9 @@ class PosGuestOrder(models.Model):
     organization_id = models.CharField(max_length=64, blank=True, default='', verbose_name='Организация iiko')
     terminal_group_id = models.CharField(max_length=64, blank=True, default='', verbose_name='Касса iiko')
     closed_at = models.DateTimeField(db_index=True, verbose_name='Закрыт')
+    branch_id = models.PositiveIntegerField(null=True, blank=True, verbose_name='Точка (branch_id)',
+                                            help_text='По организации iiko заказа.')
+    coins = models.PositiveIntegerField(default=0, db_default=0, verbose_name='Начислено баллов')
 
     class Meta:
         verbose_name = 'Заказ гостя (iiko)'

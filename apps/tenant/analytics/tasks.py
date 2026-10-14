@@ -522,7 +522,7 @@ def sync_iiko_card_all_tenants_task() -> dict:
     summary = {}
     for tenant in beat_tenants().select_related('config'):
         config = getattr(tenant, 'config', None)
-        if config is None or config.iiko_card_mode != IikoCardMode.LINK:
+        if config is None or config.iiko_card_mode not in (IikoCardMode.LINK, IikoCardMode.CARD):
             continue
         if not (config.iiko_cloud_api_login and config.iiko_cloud_organization_id):
             summary[tenant.schema_name] = 'не настроено'

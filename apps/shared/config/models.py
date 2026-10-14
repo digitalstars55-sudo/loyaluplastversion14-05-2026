@@ -5,6 +5,7 @@ from django.db import models
 class IikoCardMode(models.TextChoices):
     OFF = 'off', 'Выключено'
     LINK = 'link', 'Только связь (чтение)'
+    CARD = 'card', 'Карта гостя: QR на кассе'
 
 
 class POSType(models.TextChoices):
@@ -371,6 +372,12 @@ class ClientConfig(models.Model):
         db_default='',
         verbose_name='iiko Cloud: организация',
         help_text='UUID любой организации сети в iiko Cloud: гость iikoCard общий на сеть.',
+    )
+    pos_cashback_percent = models.PositiveSmallIntegerField(
+        default=0, db_default=0,
+        verbose_name='Баллы за заказ по карте гостя, %',
+        help_text='Только в режиме «Карта гостя»: сколько процентов оплаченной суммы заказа, '
+                  'где кассир отсканировал карту гостя, начислить баллами LoyalUP. 0 — без баллов.',
     )
 
     # Dooglys

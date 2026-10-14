@@ -234,10 +234,13 @@ class ClientConfigAdmin(admin.ModelAdmin):
             'classes': ('collapse',),
         }),
         ('iikoCard: связь гостей с картой iiko', {
-            'fields': ('iiko_card_mode', 'iiko_cloud_api_login', 'iiko_cloud_organization_id'),
+            'fields': ('iiko_card_mode', 'iiko_cloud_api_login', 'iiko_cloud_organization_id',
+                       'pos_cashback_percent'),
             'description': 'По телефону, который гость дал в мини-приложении с согласием, находим его '
-                           'карту iikoCard и раз в 30 минут забираем заказы зала и доставки. В iiko '
-                           'ничего не пишется. Выключено — всё как раньше.',
+                           'карту iikoCard и раз в 30 минут забираем заказы зала и доставки. «Только связь» '
+                           '— в iiko ничего не пишется. «Карта гостя» — гость показывает кассиру QR своей '
+                           'карты; если гостя нет в iikoCard, он создаётся с картой 77…; за заказы после '
+                           'выдачи карты — баллы LoyalUP по проценту ниже. Выключено — всё как раньше.',
             'classes': ('collapse',),
         }),
     )

@@ -16,3 +16,8 @@ class TenantDomainResponseSerializer(serializers.Serializer):
     guest_phone_enabled = serializers.BooleanField(default=False)
     # №78: баллы за номер (0 — без награды); мини-апп показывает «+N баллов» в панели согласия.
     guest_phone_reward_coins = serializers.IntegerField(default=0)
+    # Волна 2 (14.10.2026): скан QR фискального чека; процент — подпись «N % баллами».
+    receipt_scan_enabled = serializers.BooleanField(default=False)
+    receipt_cashback_percent = serializers.IntegerField(default=0)
+    # Режим iikoCard «Карта гостя»: показывать карту для кассира.
+    pos_card_enabled = serializers.BooleanField(default=False)

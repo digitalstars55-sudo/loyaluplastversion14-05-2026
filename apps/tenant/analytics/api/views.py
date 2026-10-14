@@ -2232,7 +2232,66 @@ class PosLinkCoverageAPIView(APIView):
                 'errors': links.filter(status=PosGuestLinkStatus.ERROR).count(),
                 'guests_with_orders': links.filter(orders__isnull=False).distinct().count(),
                 'orders_count': PosGuestOrder.objects.count(),
+                'cards_issued': links.filter(card_issued_at__isnull=False).count(),
             })
             last = links.aggregate(m=Max('orders_synced_at'))['m']
             out['last_sync_at'] = last.isoformat() if last else None
+        return Response(out)
+
+
+class PosCardScansAPIView(APIView):
+    """
+    GET /api/v1/analytics/pos-card-scans/?start=YYYY-MM-DD&end=YYYY-MM-DD
+
+    Заказы, к которым кассир привязал гостя LoyalUP (карта или телефон в
+    iikoCard), по точкам и дням — для премии «за скан» в CheckUp. Плюс сами
+    заказы (номер, время, точка), чтобы CheckUp нашёл кассира заказа у себя.
+    Режим iikoCard выключен → mode=off и пустые списки.
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
+    MAX_ORDERS = 5000
+
+    def get(self, request):
+        from datetime import date, datetime, time, timedelta
+        from django.db import connection
+        from django.db.models import Count, Sum
+        from django.db.models.functions import TruncDate
+        from django.utils import timezone as tz
+        from apps.shared.config.models import IikoCardMode
+        from apps.tenant.analytics.models import PosGuestOrder
+        from apps.tenant.branch.models import Branch
+
+        config = getattr(connection.tenant, 'config', None)
+        mode = getattr(config, 'iiko_card_mode', IikoCardMode.OFF) or IikoCardMode.OFF
+        try:
+            end = date.fromisoformat(request.query_params.get('end') or tz.localdate().isoformat())
+            start = date.fromisoformat(request.query_params.get('start') or (end - timedelta(days=30)).isoformat())
+        except ValueError:
+            return Response({'detail': 'Даты — в виде ГГГГ-ММ-ДД.'}, status=400)
+        if start > end or (end - start).days > 92:
+            return Response({'detail': 'Период — не длиннее 92 дней.'}, status=400)
+        out = {'mode': mode, 'start': start.isoformat(), 'end': end.isoformat(), 'rows': [], 'orders': []}
+        if mode == IikoCardMode.OFF:
+            return Response(out)
+        zone = tz.get_current_timezone()
+        qs = PosGuestOrder.objects.filter(
+            closed_at__gte=tz.make_aware(datetime.combine(start, time.min), zone),
+            closed_at__lt=tz.make_aware(datetime.combine(end + timedelta(days=1), time.min), zone),
+            is_delivery=False,
+        )
+        names = dict(Branch.objects.values_list('branch_id', 'name'))
+        rows = (qs.annotate(day=TruncDate('closed_at', tzinfo=zone))
+                .values('day', 'branch_id')
+                .annotate(scans=Count('id'), guests=Count('link', distinct=True),
+                          paid=Sum('paid_sum'), coins=Sum('coins'))
+                .order_by('day', 'branch_id'))
+        out['rows'] = [{
+            'date': r['day'].isoformat(), 'branch_id': r['branch_id'], 'branch': names.get(r['branch_id']),
+            'scans': r['scans'], 'guests': r['guests'], 'paid_sum': float(r['paid'] or 0), 'coins': r['coins'] or 0,
+        } for r in rows]
+        out['orders'] = [{
+            'pos_order_id': o.pos_order_id, 'order_number': o.order_number, 'branch_id': o.branch_id,
+            'organization_id': o.organization_id, 'closed_at': o.closed_at.isoformat(),
+            'paid_sum': float(o.paid_sum) if o.paid_sum is not None else None,
+        } for o in qs.order_by('closed_at')[:self.MAX_ORDERS]]
         return Response(out)

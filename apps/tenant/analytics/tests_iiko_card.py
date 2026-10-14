@@ -226,3 +226,92 @@ class TaskTest(SimpleTestCase):
             out = tasks.sync_iiko_card_all_tenants_task()
         run.assert_not_called()
         self.assertEqual(out, {'asap': 'не настроено'})
+
+
+class CardModeTest(SimpleTestCase):
+    """Режим «Карта гостя»: выдача карты и баллы за заказ после выдачи."""
+
+    def setUp(self):
+        p = patch.object(ic, 'cache', _Cache())
+        p.start()
+        self.addCleanup(p.stop)
+        self.link = SimpleNamespace(card_number='', iiko_customer_id='', status='', linked_at=None,
+                                    save=MagicMock())
+        model = MagicMock()
+        model.objects.filter.return_value.first.return_value = self.link
+        mp = patch('apps.tenant.analytics.models.PosGuestLink', model)
+        mp.start()
+        self.addCleanup(mp.stop)
+        self.config = SimpleNamespace(iiko_cloud_organization_id='org', iiko_card_mode='card',
+                                      pos_cashback_percent=5)
+
+    def test_номер_карты(self):
+        self.assertEqual(ic.card_number_for(SimpleNamespace(pk=42)), '770000000042')
+
+    def test_новый_гость_создаётся_с_картой(self):
+        api, http = _api({'loyalty/iiko/customer/create_or_update': _Resp(200, {'id': 'new'})})
+        guest = SimpleNamespace(pk=42, phone='', phone_consent_at=None, first_name='Аня')
+        link = ic.issue_card(guest, self.config, api)
+        self.assertEqual((link.card_number, link.iiko_customer_id, link.status), ('770000000042', 'new', 'linked'))
+        body = [c[1] for c in http.calls if c[0].endswith('create_or_update')][0]
+        self.assertNotIn('phone', body)                 # телефона без согласия в iiko не отдаём
+        self.assertEqual(body['cardTrack'], '770000000042')
+
+    def test_гость_с_картой_iiko_получает_свою(self):
+        self.link.status, self.link.iiko_customer_id = 'linked', 'c1'
+        api, http = _api({'loyalty/iiko/customer/info': _Resp(200, {
+            'id': 'c1', 'cards': [{'track': '000123', 'number': '123'}], 'walletBalances': []})})
+        link = ic.issue_card(SimpleNamespace(pk=42, phone='+7900', phone_consent_at='x'), self.config, api)
+        self.assertEqual(link.card_number, '000123')
+        self.assertFalse(any(c[0].endswith('card/add') for c in http.calls))
+
+    def test_гость_без_карты_получает_нашу(self):
+        api, http = _api({
+            'loyalty/iiko/customer/info': _Resp(200, {'id': 'c2', 'cards': []}),
+            'loyalty/iiko/customer/card/add': _Resp(200, {}),
+        })
+        link = ic.issue_card(SimpleNamespace(pk=7, phone='+7900', phone_consent_at='x'), self.config, api)
+        self.assertEqual((link.card_number, link.iiko_customer_id), ('770000000007', 'c2'))
+        self.assertTrue(any(c[0].endswith('card/add') for c in http.calls))
+
+    def test_выданная_карта_не_перевыдаётся(self):
+        self.link.card_number, self.link.iiko_customer_id = '770000000042', 'c1'
+        api, http = _api({})
+        self.assertEqual(ic.issue_card(SimpleNamespace(pk=42), self.config, api).card_number, '770000000042')
+        self.assertEqual(http.calls, [])
+
+
+class CreditOrderTest(SimpleTestCase):
+
+    def setUp(self):
+        self.transfers = []
+        cb = MagicMock()
+        cb.objects.get_or_create.return_value = ('CB', True)
+        tx = MagicMock()
+        tx.objects.create_transfer.side_effect = lambda *a, **kw: self.transfers.append(a)
+        for name, val in (('ClientBranch', cb), ('CoinTransaction', tx)):
+            p = patch(f'apps.tenant.branch.models.{name}', val)
+            p.start()
+            self.addCleanup(p.stop)
+        from datetime import datetime, timezone as dtz
+        self.issued = datetime(2026, 10, 14, 10, tzinfo=dtz.utc)
+        self.link = SimpleNamespace(client_id=1, card_issued_at=self.issued)
+        self.config = SimpleNamespace(iiko_card_mode='card', pos_cashback_percent=5)
+
+    def _order(self, hours, paid=Decimal('999.00')):
+        from datetime import timedelta
+        return SimpleNamespace(closed_at=self.issued + timedelta(hours=hours), paid_sum=paid,
+                               order_sum=Decimal('1100.00'), order_number='12', pos_order_id='p',
+                               save=MagicMock())
+
+    def test_после_выдачи_процент_от_оплаченного(self):
+        order = self._order(1)
+        self.assertEqual(ic._credit_order(self.link, order, 'B', self.config), 49)
+        self.assertEqual(order.coins, 49)
+        self.assertEqual(self.transfers[0][:2], ('CB', 49))
+
+    def test_до_выдачи_и_в_режиме_связи_не_начисляем(self):
+        self.assertEqual(ic._credit_order(self.link, self._order(-1), 'B', self.config), 0)
+        self.config.iiko_card_mode = 'link'
+        self.assertEqual(ic._credit_order(self.link, self._order(1), 'B', self.config), 0)
+        self.assertEqual(self.transfers, [])
