@@ -226,6 +226,13 @@ class ClientConfigAdmin(admin.ModelAdmin):
             'fields': ('dooglys_api_url', 'dooglys_api_token'),
             'classes': ('pos-section', 'pos-dooglys'),
         }),
+        ('Скан QR с чека', {
+            'fields': ('receipt_scan_enabled', 'receipt_cashback_percent', 'receipt_max_age_hours',
+                       'receipt_daily_limit'),
+            'description': 'Гость сканирует QR кассового чека в мини-приложении и получает баллы. '
+                           'Засчитываются чеки касс, чьи ФН указаны у точек. Выключено — всё как раньше.',
+            'classes': ('collapse',),
+        }),
         ('iikoCard: связь гостей с картой iiko', {
             'fields': ('iiko_card_mode', 'iiko_cloud_api_login', 'iiko_cloud_organization_id'),
             'description': 'По телефону, который гость дал в мини-приложении с согласием, находим его '

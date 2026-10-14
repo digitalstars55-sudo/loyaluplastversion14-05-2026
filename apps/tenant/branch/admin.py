@@ -18,6 +18,7 @@ from .models import (
     Cooldown, CooldownFeature,
     DailyCode, DailyCodePurpose, Promotions,
     QRCode, QRScan,
+    ReceiptScan,
     ReviewAutoReplyConfig,
     TestimonialConversation, TestimonialMessage,
 )
@@ -182,6 +183,11 @@ class BranchAdmin(admin.ModelAdmin):
             'fields': ('branch_id', 'name', 'description', 'is_active', 'story_image'),
         })
 
+        receipts = ('Кассы точки (скан QR с чека)', {
+            'fields': ('fiscal_fns',),
+            'classes': ('collapse',),
+        })
+
         reviews = ('Ссылки на отзыв-площадки', {
             'fields': ('review_link_yandex', 'review_link_2gis', 'review_links_default'),
             'description': 'Подставляются кнопкой «Вставить ссылки» в ответ ТОЛЬКО на позитивные отзывы. «Основная точка» — её ссылки берутся для отзывов сети без привязки к кафе.',
@@ -195,6 +201,7 @@ class BranchAdmin(admin.ModelAdmin):
                     'description': 'UUID организации из личного кабинета iiko.',
                 }),
                 reviews,
+                receipts,
             ]
 
         if pos_type == POSType.DOOGLYS:
@@ -205,6 +212,7 @@ class BranchAdmin(admin.ModelAdmin):
                     'description': 'Идентификаторы точки в системе Dooglys.',
                 }),
                 reviews,
+                receipts,
             ]
 
         # POS не настроен — показываем оба блока свёрнутыми
@@ -219,6 +227,7 @@ class BranchAdmin(admin.ModelAdmin):
                 'classes': ('collapse',),
             }),
             reviews,
+            receipts,
         ]
 
     @admin.display(description='Касса')
@@ -1356,3 +1365,18 @@ class ReviewAutoReplyConfigAdmin(admin.ModelAdmin):
                 args=[obj.pk],
             )
         )
+
+
+@admin.register(ReceiptScan, site=tenant_admin)
+class ReceiptScanAdmin(admin.ModelAdmin):
+    """Чеки, отсканированные гостями. «ФН не знаком» — касса, которую надо добавить точке."""
+    list_display = ('created_at', 'client', 'branch', 'amount', 'receipt_at', 'status', 'coins', 'fn', 'fd')
+    list_filter = ('status', 'branch')
+    search_fields = ('fn', 'fd', 'client__vk_id')
+    readonly_fields = [f.name for f in ReceiptScan._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

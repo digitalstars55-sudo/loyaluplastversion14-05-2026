@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .client_phone import ClientPhoneView
+from .client_receipt import ClientReceiptView
 from .views import (
     BranchInfoView, ClientView, EmployeeView, PromotionView, TransactionsView,
     TestimonialCreateView, VKAuthView, VKCallbackView, VKStoryView, VKSyncView,
@@ -12,6 +13,8 @@ urlpatterns = [
     path('client/',                   ClientView.as_view(),      name='client'),
     # №78: телефон гостя с согласия через ВК — client_phone.py (префикс /api/v1/client/ уже под подписью запуска)
     path('client/phone/',             ClientPhoneView.as_view(), name='client-phone'),
+    # Скан QR фискального чека (волна 2, 14.10.2026) — client_receipt.py
+    path('client/receipt/',           ClientReceiptView.as_view(), name='client-receipt'),
     path('client/vk-sync/',           VKSyncView.as_view(),      name='client-vk-sync'),
     path('client/vk-subscription-status/', VKSubscriptionStatusView.as_view(), name='client-vk-subscription-status'),
     path('employees/',                EmployeeView.as_view(),    name='employees'),

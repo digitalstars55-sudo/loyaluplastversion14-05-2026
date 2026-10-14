@@ -60,6 +60,17 @@ class Branch(TimeStampedModel):
         help_text='ID кассовой точки в Dooglys.',
     )
 
+    # Скан QR с фискального чека (волна 2, 14.10.2026): номера фискальных
+    # накопителей касс точки. Чек засчитывается, только если его ФН — здесь.
+    fiscal_fns = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='ФН касс точки',
+        help_text='Номера фискальных накопителей (16 цифр) касс этой точки, через запятую или с новой строки. '
+                  'Чек с другим ФН гость сканирует без баллов — номер появится в «Чеки гостей» со статусом '
+                  '«ФН не знаком», его можно добавить сюда.',
+    )
+
     story_image = models.ImageField(
         upload_to='branch/stories/',
         blank=True,
@@ -831,6 +842,8 @@ class TransactionSource(models.TextChoices):
     MANUAL   = 'manual',   'Вручную'
     RFM      = 'rfm',      'RFM-кампания'
     PHONE    = 'phone',    'Номер телефона'   # №78: спасибо за номер, данный через ВК
+    RECEIPT  = 'receipt',  'Чек'              # скан QR фискального чека
+    POS      = 'pos',      'Заказ на кассе'   # заказ по карте гостя в iikoCard
 
 
 class CoinTransactionManager(models.Manager):
@@ -1868,3 +1881,52 @@ class StaffProfile(TimeStampedModel):
     class Meta:
         verbose_name = 'Профиль сотрудника'
         verbose_name_plural = 'Профили сотрудников'
+
+
+# ── ReceiptScan ───────────────────────────────────────────────────────────────
+
+class ReceiptScanStatus(models.TextChoices):
+    CREDITED   = 'credited',   'Засчитан'
+    UNKNOWN_FN = 'unknown_fn', 'ФН не знаком'
+
+
+class ReceiptScan(models.Model):
+    """
+    Скан гостем QR-кода с фискального чека (волна 2, 14.10.2026).
+
+    Один чек = пара (ФН, номер фискального документа), засчитывается один раз.
+    Точка определяется по ФН (`Branch.fiscal_fns`); чек с незнакомым ФН
+    хранится без баллов — по нему видно, какой номер кассы добавить точке.
+    """
+
+    client = models.ForeignKey(
+        'guest.Client', on_delete=models.CASCADE, related_name='receipt_scans', verbose_name='Гость',
+    )
+    branch = models.ForeignKey(
+        Branch, on_delete=models.SET_NULL, null=True, blank=True, related_name='receipt_scans',
+        verbose_name='Точка',
+    )
+    fn = models.CharField('ФН', max_length=20, db_index=True)
+    fd = models.CharField('Номер ФД', max_length=12)
+    fp = models.CharField('ФП', max_length=12, blank=True, default='')
+    receipt_at = models.DateTimeField('Время чека')
+    amount = models.DecimalField('Сумма чека', max_digits=12, decimal_places=2)
+    status = models.CharField('Статус', max_length=12, choices=ReceiptScanStatus.choices)
+    coins = models.PositiveIntegerField('Начислено баллов', default=0)
+    raw = models.CharField('Строка QR', max_length=255)
+    created_at = models.DateTimeField('Отсканирован', auto_now_add=True, db_index=True)
+
+    def __str__(self):
+        return f'ФН {self.fn} №{self.fd} — {self.amount} ₽'
+
+    class Meta:
+        verbose_name = 'Чек гостя'
+        verbose_name_plural = 'Чеки гостей'
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['fn', 'fd'], name='receipt_scan_fn_fd_uniq'),
+        ]
+        indexes = [
+            models.Index(fields=['client', 'created_at'], name='receipt_client_time_idx'),
+            models.Index(fields=['status', 'created_at'], name='receipt_status_time_idx'),
+        ]

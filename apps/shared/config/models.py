@@ -257,6 +257,29 @@ class ClientConfig(models.Model):
         ),
     )
 
+    # --- Скан QR фискального чека (волна 2, 14.10.2026) ---
+    receipt_scan_enabled = models.BooleanField(
+        default=False, db_default=False,
+        verbose_name='Скан QR с чека',
+        help_text='В мини-приложении появляется «Отсканировать чек»: гость наводит камеру на QR '
+                  'фискального чека и получает баллы. Засчитываются только чеки касс, чей ФН указан '
+                  'у точки. Выключено — как раньше.',
+    )
+    receipt_cashback_percent = models.PositiveSmallIntegerField(
+        default=0, db_default=0,
+        verbose_name='Баллы за чек, % от суммы',
+        help_text='Сколько процентов суммы чека начислить баллами (с округлением вниз). 0 — чек '
+                  'засчитывается без баллов (только для статистики).',
+    )
+    receipt_max_age_hours = models.PositiveSmallIntegerField(
+        default=48, db_default=48,
+        verbose_name='Чек не старше, часов',
+    )
+    receipt_daily_limit = models.PositiveSmallIntegerField(
+        default=3, db_default=3,
+        verbose_name='Чеков в день на гостя',
+    )
+
     # --- Отзывы из ВК: точка по последнему скану (09.09.2026) ---
     # ВК-группа одна на всю сеть → у сообщений гостя в группу точки нет вообще.
     # Флаг разрешает подставлять точку последнего скана QR как ПОДСКАЗКУ.
