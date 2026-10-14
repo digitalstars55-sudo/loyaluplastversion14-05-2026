@@ -2358,3 +2358,13 @@ class RFTransitionsAPIView(APIView):
         branch_ids = effective_branch_ids(request.user, current_schema_name(), requested or None)
         return Response({'start': start.isoformat(), 'end': end.isoformat(), 'mode': mode,
                          **rf_transitions.build(branch_ids, start, end, mode)})
+
+
+class SetupCheckAPIView(APIView):
+    """GET /api/v1/analytics/setup-check/ — «Чекап» сети: блоки подключения ok / warn / off (ТЗ п.10)."""
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
+
+    def get(self, request):
+        from django.db import connection
+        from apps.tenant.analytics import setup_check
+        return Response(setup_check.build(getattr(connection.tenant, 'config', None)))

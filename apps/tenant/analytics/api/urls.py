@@ -3,7 +3,7 @@ from .summary import DashboardTodayAPIView, ReviewsSummaryAPIView, StatsDetailAP
 from .views import (
     GeneralStatsAPIView, RFStatsAPIView, BranchListAPIView,
     RecalculateRFView, RFThresholdsAPIView, SlowStatsAPIView,
-    AutoReplySettingsAPIView, CampaignStatsAPIView, EngagementAnalyticsAPIView, PosCardScansAPIView, RFTransitionsAPIView, PosLinkCoverageAPIView,
+    AutoReplySettingsAPIView, CampaignStatsAPIView, EngagementAnalyticsAPIView, SetupCheckAPIView, PosCardScansAPIView, RFTransitionsAPIView, PosLinkCoverageAPIView,
     CampaignsHistoryAPIView, CampaignDetailAPIView,
     RFSegmentListAPIView,
     SendSegmentBroadcastAPIView, GenerateBroadcastTextAPIView,
@@ -19,6 +19,7 @@ urlpatterns = [
     path('analytics/report/',           LoyaltyReportAPIView.as_view(), name='analytics-report-json'),
     path('analytics/stats/slow/',       SlowStatsAPIView.as_view(),    name='analytics-stats-slow'),
     path('analytics/rf/',               RFStatsAPIView.as_view(),      name='analytics-rf'),
+    path('analytics/setup-check/',      SetupCheckAPIView.as_view(), name='analytics-setup-check'),
     path('analytics/rf/transitions/',   RFTransitionsAPIView.as_view(), name='analytics-rf-transitions'),
     path('analytics/campaigns/stats/',  CampaignStatsAPIView.as_view(), name='analytics-campaign-stats'),
     path('analytics/rf/migrations/',    RFMigrationsListAPIView.as_view(), name='analytics-rf-migrations'),
