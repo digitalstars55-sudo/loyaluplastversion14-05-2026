@@ -2,6 +2,11 @@ from apps.shared.secret_fields import EncryptedSecretField
 from django.db import models
 
 
+class IikoCardMode(models.TextChoices):
+    OFF = 'off', 'Выключено'
+    LINK = 'link', 'Только связь (чтение)'
+
+
 class POSType(models.TextChoices):
     NONE = 'none', 'Не подключено'
     IIKO = 'iiko', 'iiko'
@@ -316,6 +321,33 @@ class ClientConfig(models.Model):
         blank=True,
         verbose_name='IIKO Пароль',
         help_text='Пароль пользователя API из кабинета iiko.',
+    )
+
+    # iikoCard — связь гостя LoyalUP с его картой iiko (волна 2 ТЗ маркетолога,
+    # решение владельца 14.10.2026: за флагом сети, по умолчанию выключено).
+    # «Только связь» — читаем гостя и его заказы, ничего в iiko не пишем.
+    iiko_card_mode = models.CharField(
+        max_length=10,
+        choices=IikoCardMode.choices,
+        default=IikoCardMode.OFF,
+        db_default=IikoCardMode.OFF,
+        verbose_name='iikoCard: режим',
+        help_text='Выключено — как раньше. «Только связь» — по телефону гостя (с его согласия) '
+                  'находим его карту iikoCard и забираем заказы зала и доставки; в iiko ничего не пишем.',
+    )
+    iiko_cloud_api_login = EncryptedSecretField(
+        max_length=255,
+        blank=True,
+        verbose_name='iiko Cloud: API-ключ (apiLogin)',
+        help_text='Ключ iikoTransport из кабинета iiko с правом «Гости: информация».',
+    )
+    iiko_cloud_organization_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        db_default='',
+        verbose_name='iiko Cloud: организация',
+        help_text='UUID любой организации сети в iiko Cloud: гость iikoCard общий на сеть.',
     )
 
     # Dooglys

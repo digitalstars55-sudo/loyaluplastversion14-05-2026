@@ -17,6 +17,11 @@ class ClientConfigForm(forms.ModelForm):
         widget=forms.PasswordInput(render_value=True),
         label='Dooglys API Token',
     )
+    iiko_cloud_api_login = forms.CharField(
+        required=False,
+        widget=forms.PasswordInput(render_value=True),
+        label='iiko Cloud: API-ключ (apiLogin)',
+    )
 
     class Meta:
         model = ClientConfig
@@ -59,6 +64,13 @@ class ClientConfigForm(forms.ModelForm):
             for field in ('dooglys_api_url', 'dooglys_api_token'):
                 if not cleaned_data.get(field):
                     self.add_error(field, 'Обязательное поле для Dooglys.')
+
+        # iikoCard: включённый режим без ключа и организации ничего не сделает
+        # молча — лучше сказать сразу.
+        if cleaned_data.get('iiko_card_mode') not in (None, '', 'off'):
+            for field in ('iiko_cloud_api_login', 'iiko_cloud_organization_id'):
+                if not cleaned_data.get(field):
+                    self.add_error(field, 'Нужно для связи гостей с iikoCard.')
 
         return cleaned_data
 
@@ -213,6 +225,13 @@ class ClientConfigAdmin(admin.ModelAdmin):
         ('Dooglys', {
             'fields': ('dooglys_api_url', 'dooglys_api_token'),
             'classes': ('pos-section', 'pos-dooglys'),
+        }),
+        ('iikoCard: связь гостей с картой iiko', {
+            'fields': ('iiko_card_mode', 'iiko_cloud_api_login', 'iiko_cloud_organization_id'),
+            'description': 'По телефону, который гость дал в мини-приложении с согласием, находим его '
+                           'карту iikoCard и раз в 30 минут забираем заказы зала и доставки. В iiko '
+                           'ничего не пишется. Выключено — всё как раньше.',
+            'classes': ('collapse',),
         }),
     )
 

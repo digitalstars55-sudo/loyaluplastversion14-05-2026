@@ -1302,3 +1302,79 @@ class LoyaltyReportComment(models.Model):
             models.Index(fields=['period_start', 'period_end', 'branch_key'],
                          name='report_comment_period_idx'),
         ]
+
+
+# ── iikoCard: гость LoyalUP ↔ карта iiko (волна 2 ТЗ маркетолога, 14.10.2026) ──
+#
+# Включается настройкой сети ClientConfig.iiko_card_mode (по умолчанию выкл).
+# Гость связывается по телефону, который он сам дал в мини-приложении с
+# согласием (guest.Client.phone_consent_at). В iiko ничего не пишется.
+# «Нет связи» — не ноль заказов: отчёты обязаны говорить «нет данных».
+
+
+class PosGuestLinkStatus(models.TextChoices):
+    LINKED = 'linked', 'Связан'
+    NOT_FOUND = 'not_found', 'В iikoCard нет такого телефона'
+    ERROR = 'error', 'Ошибка проверки'
+
+
+class PosGuestLink(models.Model):
+    """Результат поиска гостя в iikoCard. Одна строка на гостя в сети."""
+
+    client = models.OneToOneField(
+        'guest.Client',
+        on_delete=models.CASCADE,
+        related_name='pos_link',
+        verbose_name='Гость',
+    )
+    status = models.CharField(max_length=16, choices=PosGuestLinkStatus.choices, db_index=True,
+                              verbose_name='Статус')
+    phone_checked = models.CharField(max_length=20, blank=True, default='',
+                                     verbose_name='Телефон при проверке',
+                                     help_text='Сменился телефон гостя — проверяем заново.')
+    iiko_customer_id = models.CharField(max_length=64, blank=True, default='', db_index=True,
+                                        verbose_name='Гость iikoCard (id)')
+    wallets = models.JSONField(default=list, blank=True, verbose_name='Счета iikoCard (снимок)',
+                               help_text='[{"name", "type", "balance"}] на момент проверки.')
+    first_order_at = models.DateTimeField(null=True, blank=True, verbose_name='Первый заказ (iiko)')
+    last_order_at = models.DateTimeField(null=True, blank=True, verbose_name='Последний заказ (iiko)')
+    checked_at = models.DateTimeField(verbose_name='Проверен')
+    linked_at = models.DateTimeField(null=True, blank=True, verbose_name='Связан')
+    error = models.CharField(max_length=255, blank=True, default='', verbose_name='Ошибка')
+    # Курсор операций iikoCard: следующая страница — от этой пары.
+    last_revision = models.BigIntegerField(null=True, blank=True, verbose_name='Ревизия операций')
+    last_transaction_id = models.CharField(max_length=64, blank=True, default='',
+                                           verbose_name='Последняя операция')
+    orders_synced_at = models.DateTimeField(null=True, blank=True, verbose_name='Заказы забраны')
+
+    class Meta:
+        verbose_name = 'Связь гостя с iikoCard'
+        verbose_name_plural = 'Связи гостей с iikoCard'
+
+    def __str__(self):
+        return f'{self.client_id}: {self.get_status_display()}'
+
+
+class PosGuestOrder(models.Model):
+    """Закрытый заказ гостя в iiko (операция CloseOrder iikoCard). Повтор не задваивает."""
+
+    link = models.ForeignKey(PosGuestLink, on_delete=models.CASCADE, related_name='orders',
+                             verbose_name='Связь')
+    pos_order_id = models.CharField(max_length=64, verbose_name='Заказ iiko (id)')
+    order_number = models.CharField(max_length=32, blank=True, default='', verbose_name='Номер')
+    order_sum = models.DecimalField(max_digits=12, decimal_places=2, verbose_name='Сумма заказа',
+                                    help_text='orderSum iiko — до скидок.')
+    paid_sum = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
+                                   verbose_name='Оплачено', help_text='sum операции CloseOrder — после скидок.')
+    is_delivery = models.BooleanField(default=False, verbose_name='Доставка')
+    organization_id = models.CharField(max_length=64, blank=True, default='', verbose_name='Организация iiko')
+    terminal_group_id = models.CharField(max_length=64, blank=True, default='', verbose_name='Касса iiko')
+    closed_at = models.DateTimeField(db_index=True, verbose_name='Закрыт')
+
+    class Meta:
+        verbose_name = 'Заказ гостя (iiko)'
+        verbose_name_plural = 'Заказы гостей (iiko)'
+        ordering = ['-closed_at']
+        constraints = [
+            models.UniqueConstraint(fields=['link', 'pos_order_id'], name='uniq_pos_guest_order'),
+        ]

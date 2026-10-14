@@ -508,4 +508,33 @@ def run_rfm_campaign_task(self, schema_name: str, campaign_id: int, requeue_dept
 # здесь нужен, чтобы celery-воркер её ЗАРЕГИСТРИРОВАЛ: autodiscover_tasks()
 # сканирует только tasks.py установленных приложений, а apps.shared.relay
 # в INSTALLED_APPS нет (это urls+views, не Django-app).
+@shared_task(soft_time_limit=1500, time_limit=1600)
+def sync_iiko_card_all_tenants_task() -> dict:
+    """
+    iikoCard «только связь» (волна 2 ТЗ маркетолога): по сетям с
+    ClientConfig.iiko_card_mode=link связать новых гостей с телефоном и
+    забрать заказы связанных. Выключено у сети — сеть пропускается целиком.
+    """
+    from django_tenants.utils import schema_context
+    from apps.shared.config.models import IikoCardMode
+    from apps.tenant.analytics.iiko_card import IikoCloudError, run_tenant
+
+    summary = {}
+    for tenant in beat_tenants().select_related('config'):
+        config = getattr(tenant, 'config', None)
+        if config is None or config.iiko_card_mode != IikoCardMode.LINK:
+            continue
+        if not (config.iiko_cloud_api_login and config.iiko_cloud_organization_id):
+            summary[tenant.schema_name] = 'не настроено'
+            continue
+        try:
+            with schema_context(tenant.schema_name):
+                summary[tenant.schema_name] = run_tenant(config)
+        except IikoCloudError as exc:
+            logger.warning('iikoCard %s: %s', tenant.schema_name, exc)
+            summary[tenant.schema_name] = f'ошибка: {exc}'
+    logger.info('iikoCard sync: %s', summary)
+    return summary
+
+
 from apps.shared.relay.checkup_complaints import relay_complaint_to_checkup_task  # noqa: E402,F401

@@ -2197,3 +2197,42 @@ class GiftsExport1CAPIView(APIView):
                 'headers':    list(gx.HEADERS),
             },
         })
+
+
+class PosLinkCoverageAPIView(APIView):
+    """
+    GET /api/v1/analytics/pos-link/ — «связь с кассой» по сети (iikoCard, волна 2).
+
+    Метрики полноты базы из ТЗ маркетолога: гостей в базе, указали телефон,
+    связаны с POS, есть заказы. mode=off — сеть связь не включала; тогда
+    числа связи не считаются вовсе (не «0», а «нет данных»).
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
+
+    def get(self, request):
+        from django.db.models import Max
+        from apps.shared.config.models import IikoCardMode
+        from apps.shared.guest.models import Client as GuestClient
+        from django.db import connection
+        from apps.tenant.analytics.models import PosGuestLink, PosGuestLinkStatus, PosGuestOrder
+
+        config = getattr(connection.tenant, 'config', None)
+        mode = getattr(config, 'iiko_card_mode', IikoCardMode.OFF) or IikoCardMode.OFF
+        guests = GuestClient.objects.filter(is_active=True, branch_profiles__isnull=False).distinct()
+        total = guests.count()
+        with_phone = guests.filter(phone_consent_at__isnull=False).exclude(phone='').count()
+        out = {'mode': mode, 'guests_total': total, 'with_phone': with_phone,
+               'linked': None, 'not_found': None, 'errors': None,
+               'guests_with_orders': None, 'orders_count': None, 'last_sync_at': None}
+        if mode != IikoCardMode.OFF:
+            links = PosGuestLink.objects.all()
+            out.update({
+                'linked': links.filter(status=PosGuestLinkStatus.LINKED).count(),
+                'not_found': links.filter(status=PosGuestLinkStatus.NOT_FOUND).count(),
+                'errors': links.filter(status=PosGuestLinkStatus.ERROR).count(),
+                'guests_with_orders': links.filter(orders__isnull=False).distinct().count(),
+                'orders_count': PosGuestOrder.objects.count(),
+            })
+            last = links.aggregate(m=Max('orders_synced_at'))['m']
+            out['last_sync_at'] = last.isoformat() if last else None
+        return Response(out)

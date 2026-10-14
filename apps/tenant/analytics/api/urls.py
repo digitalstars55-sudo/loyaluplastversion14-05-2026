@@ -3,7 +3,7 @@ from .summary import DashboardTodayAPIView, ReviewsSummaryAPIView, StatsDetailAP
 from .views import (
     GeneralStatsAPIView, RFStatsAPIView, BranchListAPIView,
     RecalculateRFView, RFThresholdsAPIView, SlowStatsAPIView,
-    AutoReplySettingsAPIView, EngagementAnalyticsAPIView,
+    AutoReplySettingsAPIView, EngagementAnalyticsAPIView, PosLinkCoverageAPIView,
     CampaignsHistoryAPIView, CampaignDetailAPIView,
     RFSegmentListAPIView,
     SendSegmentBroadcastAPIView, GenerateBroadcastTextAPIView,
@@ -24,6 +24,7 @@ urlpatterns = [
     path('analytics/rf/thresholds/',    RFThresholdsAPIView.as_view(), name='analytics-rf-thresholds'),
     path('analytics/auto-reply/settings/', AutoReplySettingsAPIView.as_view(), name='analytics-auto-reply-settings'),
     path('analytics/engagement/',          EngagementAnalyticsAPIView.as_view(), name='analytics-engagement'),
+    path('analytics/pos-link/',            PosLinkCoverageAPIView.as_view(),     name='analytics-pos-link'),
     path('analytics/campaigns/',           CampaignsHistoryAPIView.as_view(),    name='analytics-campaigns'),
     path('analytics/campaigns/<int:pk>/', CampaignDetailAPIView.as_view(),       name='analytics-campaign-detail'),
     path('analytics/segments/',           RFSegmentListAPIView.as_view(),       name='analytics-segments'),

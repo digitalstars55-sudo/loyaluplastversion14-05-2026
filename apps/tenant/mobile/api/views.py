@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from apps.shared.users.feature_permissions import HasFeatureAccess
 
+import logging
+
 from django.db import transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
@@ -64,6 +66,9 @@ class MobileBranchListAPIView(generics.ListAPIView):
 # Карточка отзыва собирается из этих двух кусков и в списке, и в ручке одного
 # отзыва (18.09.2026, контракт платформы): форма ответа обязана совпадать, иначе
 # CheckUp увидит в детали не то, что в ленте.
+logger = logging.getLogger(__name__)
+
+
 def review_card_context(ctx: dict) -> dict:
     """Контекст сериализатора карточки: фолбэк-ссылки точки + подпись автоответа."""
     # Фолбэк-ссылки основной точки — для отзывов без привязки к кафе.
@@ -947,7 +952,19 @@ class GuestDetailAPIView(APIView):
             'prizes_received':  prizes_received,
             'prizes_activated': prizes_activated,
             'reviews_count':    reviews_count,
+            # iikoCard (волна 2): None — связь не проверяли (режим выключен или
+            # гостя ещё не обошли). «Нет связи» — не ноль заказов.
+            'pos':              _pos_summary(client.pk),
         })
+
+
+def _pos_summary(client_id):
+    try:
+        from apps.tenant.analytics.iiko_card import pos_summary
+        return pos_summary(client_id)
+    except Exception:                          # noqa: BLE001 — карточка гостя важнее блока
+        logger.warning('guest card: pos summary failed for client %s', client_id, exc_info=True)
+        return None
 
 
 class AdjustGuestCoinsAPIView(APIView):

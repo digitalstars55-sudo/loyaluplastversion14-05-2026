@@ -17,6 +17,12 @@ app.autodiscover_tasks()
 # ── Periodic schedule ──────────────────────────────────────────────────────────
 
 app.conf.beat_schedule = {
+    # iikoCard «только связь»: гости с телефоном ↔ карта iiko и их заказы.
+    # Сети с выключенным режимом задача пропускает (по умолчанию выключено у всех).
+    'sync-iiko-card': {
+        'task': 'apps.tenant.analytics.tasks.sync_iiko_card_all_tenants_task',
+        'schedule': 1800.0,
+    },
     # Poll VK group messages every 2 minutes (резерв — основной канал теперь
     # VK Callback message_new/message_reply в реальном времени; поллинг лишь
     # подстраховка, чтобы не теребить VK API частыми запросами).
