@@ -64,8 +64,8 @@ MAX_LIMIT = 2000
 DEFAULT_WINDOW_MIN = 60
 MAX_WINDOW_MIN = 24 * 60
 # Режимы «на месте»: скан доставки и сайта к столу и смене отношения не имеет.
-DEFAULT_MODES = ('cafe', 'review')
-ALL_MODES = ('cafe', 'review', 'delivery', 'delivery_network', 'website')
+DEFAULT_MODES = ('cafe', 'review', 'staff')
+ALL_MODES = ('cafe', 'review', 'staff', 'delivery', 'delivery_network', 'website')
 ACTION_KINDS = ('game', 'subscribe', 'review')
 _SCHEMA_RE = re.compile(r'^[a-z][a-z0-9_-]{0,62}$')
 
@@ -248,6 +248,10 @@ def assemble_row(scan, facts: dict, employee_guests: set, window_min: int) -> di
             'table_external_id': getattr(qr, 'table_external_id', '') or '',
             'table_hall': getattr(qr, 'table_hall', '') or '',
         },
+        # Волна 3: личный QR сотрудника — чей он. Это сотрудник, не гость:
+        # имя и VK ID отдаём, как у `served_by`.
+        'staff': ({'vk_id': str(qr.staff_vk_id), 'name': getattr(qr, 'staff_name', '') or ''}
+                  if getattr(qr, 'mode', '') == 'staff' and getattr(qr, 'staff_vk_id', None) else None),
         'branch': {'id': qr.branch_id, 'branch_id': qr.branch.branch_id, 'name': qr.branch.name},
         'guest_id': guest_id,
         'is_employee': bool(getattr(profile, 'is_employee', False) or guest_id in employee_guests),

@@ -39,7 +39,8 @@ class _Mode:
     DELIVERY_NETWORK = 'delivery_network'
     WEBSITE = 'website'
     REVIEW = 'review'
-    values = ['cafe', 'delivery', 'delivery_network', 'website', 'review']
+    STAFF = 'staff'
+    values = ['cafe', 'delivery', 'delivery_network', 'website', 'review', 'staff']
 
 
 class _QRCodeStub:
@@ -749,3 +750,39 @@ class MaterialsCafeTableTest(SimpleTestCase):
         cafe = resp.data['qr']['cafe']
         self.assertEqual((cafe[0]['table_number'], cafe[0]['table_hall']), (7, 'Зал'))
         self.assertNotIn('table_number', cafe[1])
+
+
+
+@patch(CPP + 'current_schema_name', return_value='dev')
+@patch(CPP + 'current_company_id', return_value=COMPANY)
+@patch(CPP + 'effective_branch_ids', return_value=None)
+@patch(CPP + 'QRCode', _QRCodeStub)
+class StaffQrCreateTest(SimpleTestCase):
+    """Волна 3: личный QR сотрудника — VK ID и имя обязательны, у других режимов запрещены."""
+
+    def setUp(self):
+        _QRCodeStub.objects.reset_mock()
+
+    def _post(self, payload):
+        return _call(CP.ContactPointListCreateAPIView, 'post', '/api/v1/contact-points/', data=payload)
+
+    def test_staff_requires_vk_and_name(self, *_):
+        for payload in ({'staff_name': 'Анна Иванова'}, {'staff_vk_id': 'abc', 'staff_name': 'А'},
+                        {'staff_vk_id': 15, 'staff_name': ''}):
+            resp = self._post({'branch_id': 3, 'name': 'QR Анны', 'mode': 'staff', **payload})
+            self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'), payload)
+
+    def test_staff_fields_forbidden_elsewhere(self, *_):
+        resp = self._post({'branch_id': 3, 'name': 'X', 'mode': 'cafe', 'staff_vk_id': 15})
+        self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+
+    @patch(CPP + '_branch_or_none')
+    def test_staff_created(self, branch_or_none, *_):
+        branch_or_none.return_value = _branch()
+        _QRCodeStub.objects.create.side_effect = None
+        _QRCodeStub.objects.create.return_value = _qr(mode='staff', key='s1')
+        resp = self._post({'branch_id': 3, 'name': 'QR Анны', 'mode': 'staff',
+                           'staff_vk_id': '15', 'staff_name': 'Анна Иванова'})
+        self.assertEqual(resp.status_code, 201, resp.data)
+        kwargs = _QRCodeStub.objects.create.call_args.kwargs
+        self.assertEqual((kwargs['staff_vk_id'], kwargs['staff_name']), (15, 'Анна Иванова'))

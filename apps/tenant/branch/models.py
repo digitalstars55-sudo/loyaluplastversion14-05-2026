@@ -413,6 +413,7 @@ class QRCode(TimeStampedModel):
         WEBSITE = 'website', 'С сайта (сетевой подарок)'
         # Ссылка ведёт сразу на форму отзыва (#/review) с привязкой к столу.
         REVIEW = 'review', 'Отзыв со стола'
+        STAFF = 'staff', 'Личный QR сотрудника'
 
     branch = models.ForeignKey(
         Branch,
@@ -480,6 +481,20 @@ class QRCode(TimeStampedModel):
                   'разных залах повторяются — без зала «стол 1» неоднозначен.',
     )
 
+    # Волна 3 ТЗ маркетолога (14.10.2026): личный QR сотрудника — показывает
+    # с телефона или бейджа, скан засчитывается ЕМУ в KPI CheckUp «Сканы гостей».
+    # Человек — по VK ID (по нему CheckUp узнаёт своего сотрудника) и имени.
+    staff_vk_id = models.BigIntegerField(
+        null=True, blank=True,
+        verbose_name='VK ID сотрудника',
+        help_text='Только для «Личного QR сотрудника»: чей это QR.',
+    )
+    staff_name = models.CharField(
+        max_length=150, blank=True, default='',
+        verbose_name='Сотрудник',
+        help_text='Только для «Личного QR сотрудника»: имя и фамилия, как в CheckUp.',
+    )
+
     # Режимы, у которых есть стол. У «Отзыва со стола» он обязателен, у «В
     # кафе» — по желанию (QR, наклеенный на стол). Доставка и сайт — не места
     # в зале, стол у них бессмысленен.
@@ -487,6 +502,8 @@ class QRCode(TimeStampedModel):
 
     def clean(self):
         from django.core.exceptions import ValidationError
+        if self.mode == self.Mode.STAFF and not self.staff_vk_id:
+            raise ValidationError({'staff_vk_id': 'Для личного QR укажите VK ID сотрудника.'})
         if self.mode == self.Mode.REVIEW and not self.table_number:
             raise ValidationError({
                 'table_number': 'Для типа «Отзыв со стола» укажите номер стола — '

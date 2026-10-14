@@ -201,6 +201,9 @@ def _row(qr, company_id: str, scans: dict, funnel: dict) -> dict:
         # строки, собранные до миграции 0038 (и стабы тестов), полей не имеют.
         'table_external_id': getattr(qr, 'table_external_id', '') or '',
         'table_hall': getattr(qr, 'table_hall', '') or '',
+        # Волна 3: чей личный QR (только режим staff).
+        'staff_vk_id': getattr(qr, 'staff_vk_id', None),
+        'staff_name': getattr(qr, 'staff_name', '') or '',
         'src': qr.key,
         'url': build_qr_link(qr, company_id),
         'is_active': qr.is_active,
@@ -286,6 +289,26 @@ def _parse_table_number(value, mode: str):
                            'table_number: только для режимов cafe («в кафе», QR на столе) '
                            'и review («отзыв со стола»)')
     return table
+
+
+def _parse_staff(data, mode: str):
+    """(staff_vk_id, staff_name): обязательны у режима staff, запрещены у остальных."""
+    raw_vk = data.get('staff_vk_id')
+    raw_name = str(data.get('staff_name') or '').strip()
+    if mode != QRCode.Mode.STAFF:
+        if raw_vk not in (None, '') or raw_name:
+            raise PayloadError('invalid_payload',
+                               'staff_vk_id / staff_name: только для личного QR сотрудника (mode: staff)')
+        return None, ''
+    try:
+        vk = int(raw_vk)
+    except (TypeError, ValueError):
+        raise PayloadError('invalid_payload', 'staff_vk_id: VK ID сотрудника — целое число')
+    if vk <= 0:
+        raise PayloadError('invalid_payload', 'staff_vk_id: положительное число')
+    if not raw_name or len(raw_name) > 150:
+        raise PayloadError('invalid_payload', 'staff_name: имя и фамилия сотрудника, до 150 символов')
+    return vk, raw_name
 
 
 def _parse_table_external_id(value, mode: str) -> str:
@@ -407,6 +430,7 @@ class ContactPointListCreateAPIView(APIView):
                 raise PayloadError('invalid_payload',
                                    'table_external_id / table_hall: сначала номер стола — '
                                    'без него стол кассы не к чему привязать')
+            staff_vk_id, staff_name = _parse_staff(data, mode)
         except PayloadError as exc:
             return _error(exc.code, exc.detail, http_status.HTTP_400_BAD_REQUEST)
 
@@ -421,6 +445,9 @@ class ContactPointListCreateAPIView(APIView):
             extra['table_external_id'] = table_external_id
         if table_hall:
             extra['table_hall'] = table_hall
+        if staff_vk_id:
+            extra['staff_vk_id'] = staff_vk_id
+            extra['staff_name'] = staff_name
         qr = QRCode.objects.create(branch=branch, name=name, mode=mode,
                                    table_number=table_number,
                                    is_active=_parse_is_active(data.get('is_active', True)),

@@ -63,7 +63,7 @@ class ParseQueryTest(SimpleTestCase):
         q = self._q()
         self.assertEqual(q['start'].isoformat(), '2026-09-20T00:00:00+03:00')
         self.assertEqual(q['end'].isoformat(), '2026-09-21T00:00:00+03:00')
-        self.assertEqual(q['modes'], ('cafe', 'review'))
+        self.assertEqual(q['modes'], ('cafe', 'review', 'staff'))
         self.assertEqual((q['after_id'], q['limit'], q['window']),
                          (0, SE.DEFAULT_LIMIT, SE.DEFAULT_WINDOW_MIN))
 
@@ -101,7 +101,7 @@ class AssembleRowTest(SimpleTestCase):
     def test_shape_has_no_guest_personal_data(self):
         row = SE.assemble_row(_scan(), {}, set(), 60)
         self.assertEqual(set(row), {'scan_id', 'scanned_at', 'qr', 'branch', 'guest_id',
-                                    'is_employee', 'actions', 'first_action', 'served_by'})
+                                    'is_employee', 'actions', 'first_action', 'served_by', 'staff'})
         self.assertEqual(row['guest_id'], 500)
         self.assertEqual(row['scanned_at'], '2026-09-20T12:00:00+03:00')
         self.assertEqual(row['qr'], {'id': 11, 'src': 'k11', 'mode': 'cafe', 'name': 'Зал · стол 7',
@@ -111,7 +111,15 @@ class AssembleRowTest(SimpleTestCase):
         self.assertEqual(row['actions'], [])
         self.assertIsNone(row['first_action'])
         self.assertIsNone(row['served_by'])
+        self.assertIsNone(row['staff'])
         self.assertFalse(row['is_employee'])
+
+    def test_staff_qr_carries_owner(self):
+        scan = _scan(mode='staff', table=None, ext='', hall='')
+        scan.qr.staff_vk_id = 15
+        scan.qr.staff_name = 'Анна Иванова'
+        row = SE.assemble_row(scan, {}, set(), 60)
+        self.assertEqual(row['staff'], {'vk_id': '15', 'name': 'Анна Иванова'})
 
     def test_only_actions_after_scan_and_inside_window(self):
         facts = {
