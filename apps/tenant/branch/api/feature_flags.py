@@ -54,6 +54,8 @@ FLAG_FIELDS = (
     'guest_phone_enabled', 'guest_phone_reward_coins',
     'code_prompt_message', 'quest_show_message',
     'brand_color', 'brand_color_secondary',
+    # Волна 3 (14.10.2026): баллы за отзыв на картах по скриншоту.
+    'review_proof_enabled', 'review_proof_coins',
 )
 
 # Только чтение: платформенные переключатели пилотов и каталога ВК — включает
@@ -62,6 +64,9 @@ READONLY_FLAGS = frozenset({
     'vk_catalog_enabled', 'vk_catalog_city', 'vk_review_branch_inference',
     'vk_review_branch_inference_hours', 'web_entry_enabled', 'degrade_enabled',
     'guest_phone_enabled',
+    # Волны 2–4 включаются по сетям только после окончания всех волн (слово
+    # владельца 14.10.2026) — до этого из кабинета сети не переключаются.
+    'review_proof_enabled',
 })
 EDITABLE_FLAGS = tuple(f for f in FLAG_FIELDS if f not in READONLY_FLAGS)
 # Пара в BranchConfig есть только у этих флагов (переопределение точки).
