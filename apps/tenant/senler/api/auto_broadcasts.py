@@ -336,6 +336,22 @@ def _parse_reward(raw) -> dict:
     return {'gift_tier': tier, 'gift_lifetime_days': days, 'gift_fallback_text': fallback}
 
 
+MAX_CHAIN_DEPTH = 20
+
+
+def creates_cycle(rule_pk, parent) -> bool:
+    """Волна 4 (цепочки): поставить `parent` родителем правила `rule_pk` = круг,
+    если, поднимаясь от `parent` по родителям, встретим само правило. Глубину
+    ограничиваем: битая цепочка в базе не должна повесить запрос."""
+    node, depth = parent, 0
+    while node is not None and depth < MAX_CHAIN_DEPTH:
+        if int(node.pk) == int(rule_pk):
+            return True
+        node = getattr(node, 'parent_rule', None)
+        depth += 1
+    return depth >= MAX_CHAIN_DEPTH
+
+
 def _parse_follow_up(raw):
     """None — очистить связку; иначе {'parent_rule_id', 'condition'}."""
     if raw in (None, '', {}):
@@ -735,6 +751,10 @@ class AutoBroadcastRuleDetailAPIView(APIView):
             parent = _load_rule(follow_up['parent_rule_id'], allowed)
             if parent is None:
                 return _not_found()
+            if creates_cycle(rule.pk, parent):
+                return _error('invalid_payload',
+                              'follow_up.parent_rule_id: получится круг — это правило уже стоит выше '
+                              'в цепочке выбранного', http_status.HTTP_400_BAD_REQUEST)
 
         update_fields: list[str] = []
         for name, value in fields.items():
