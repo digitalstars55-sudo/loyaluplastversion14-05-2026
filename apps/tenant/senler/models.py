@@ -245,6 +245,16 @@ class BroadcastSend(TimeStampedModel):
         related_name='sends',
         verbose_name='Рассылка',
     )
+    # Черновик внешнего кабинета, из которого пошёл запуск (14.10.2026): по нему
+    # статистика кампаний собирает все точки и A/B-группы одной рассылки.
+    draft = models.ForeignKey(
+        'senler.BroadcastDraft',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sends',
+        verbose_name='Черновик',
+    )
     auto_broadcast_template = models.ForeignKey(
         'senler.AutoBroadcastTemplate',
         on_delete=models.SET_NULL,
@@ -887,6 +897,14 @@ class BroadcastDraft(TimeStampedModel):
         null=True, blank=True,
         verbose_name='Часть аудитории: значение',
     )
+    # Контрольная группа «без воздействия» (ТЗ маркетолога п.6, 14.10.2026):
+    # столько процентов аудитории не получают ничего — с ними сравнивается
+    # возврат получивших. 0 — без отдельной группы (хвост «части аудитории»
+    # всё равно сохраняется контрольной группой: он выбран случайно).
+    control_percent = models.PositiveSmallIntegerField(
+        default=0, db_default=0,
+        verbose_name='Контрольная группа, %',
+    )
 
     # ── Состояние ─────────────────────────────────────────────────────────────
 
@@ -923,3 +941,17 @@ class BroadcastDraft(TimeStampedModel):
         verbose_name = 'Черновик рассылки (внешний кабинет)'
         verbose_name_plural = 'Черновики рассылок (внешний кабинет)'
         ordering = ['-updated_at']
+
+
+class BroadcastControlMember(models.Model):
+    """Гость контрольной группы рассылки: был в аудитории, сообщения не получил."""
+
+    draft = models.ForeignKey(BroadcastDraft, on_delete=models.CASCADE, related_name='control_members',
+                              verbose_name='Рассылка')
+    client_branch = models.ForeignKey('branch.ClientBranch', on_delete=models.CASCADE,
+                                      related_name='broadcast_controls', verbose_name='Гость')
+
+    class Meta:
+        verbose_name = 'Контрольная группа рассылки'
+        verbose_name_plural = 'Контрольные группы рассылок'
+        constraints = [models.UniqueConstraint(fields=['draft', 'client_branch'], name='bcontrol_uniq')]

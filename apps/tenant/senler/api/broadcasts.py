@@ -282,6 +282,13 @@ def _parse_payload(data) -> dict:
         mode, value = _parse_audience_limit(data.get('audience_limit'))
         values['audience_limit_mode'] = mode
         values['audience_limit_value'] = value
+    if 'control_percent' in data:
+        cp = _parse_int(data.get('control_percent'), 'control_percent')
+        if cp is None:
+            cp = 0
+        if not 0 <= cp <= 50:
+            raise PayloadError('control_percent: от 0 до 50')
+        values['control_percent'] = cp
     if 'status' in data:
         st = data.get('status')
         if st not in (DraftStatus.DRAFT, DraftStatus.ARCHIVED):
@@ -394,6 +401,10 @@ def plan_groups(draft, audience: dict) -> dict:
         text = (variants[0].get('message_text') if variants else (draft.message_text or ''))
         mode = getattr(draft, 'audience_limit_mode', '') or ''
         value = getattr(draft, 'audience_limit_value', None)
+        control = int(getattr(draft, 'control_percent', 0) or 0)
+        if not mode and control:
+            # Вся аудитория минус контрольная группа.
+            mode, value = 'percent', 100 - control
         if mode == 'count' and value:
             specs = [{'count': int(value), 'message_text': text}]
         elif mode == 'percent' and value:
@@ -428,10 +439,13 @@ def plan_groups(draft, audience: dict) -> dict:
                 'by_branch': [per_branch[r['branch_id']] for r in rows if r['branch_id'] in per_branch],
             })
 
+    planned = sum(g['count'] for g in groups)
     return {
         'available': total,
-        'planned': sum(g['count'] for g in groups),
+        'planned': planned,
         'groups': groups,
+        # Кто остался без сообщения — контрольная группа (выбран случайно).
+        'control_cb_ids': [cb for cb, _ in flat[planned:]] if specs is not None else [],
     }
 
 
@@ -526,6 +540,7 @@ class BroadcastDraftListCreateAPIView(APIView):
             variants=values.get('variants', []),
             audience_limit_mode=values.get('audience_limit_mode', ''),
             audience_limit_value=values.get('audience_limit_value'),
+            control_percent=values.get('control_percent', 0),
             created_by=(getattr(request.user, 'username', '') or '')[:150],
         )
         return Response(draft_to_dict(draft, request), status=http_status.HTTP_201_CREATED)
@@ -732,6 +747,13 @@ class BroadcastDraftSendAPIView(APIView):
                 return _error('empty_audience', 'В выбранной аудитории сейчас нет получателей',
                               http_status.HTTP_400_BAD_REQUEST)
 
+            control_ids = plan.get('control_cb_ids') or []
+            if control_ids:
+                from apps.tenant.senler.models import BroadcastControlMember
+                BroadcastControlMember.objects.bulk_create(
+                    [BroadcastControlMember(draft=draft, client_branch_id=cb) for cb in control_ids],
+                    ignore_conflicts=True,
+                )
             draft.status = DraftStatus.SENT
             draft.sent_at = timezone.now()
             draft.last_send = pending[0]['send']
@@ -795,7 +817,10 @@ class BroadcastDraftSendAPIView(APIView):
             # На SPECIFIC-рассылке сегмент на аудиторию НЕ влияет (services.py:56):
             # нужен только чтобы у сегмента обновилась дата последней кампании.
             broadcast.rf_segments.set([segment])
-        return create_send(broadcast, triggered_by=triggered_by, trigger_type='manual')
+        send = create_send(broadcast, triggered_by=triggered_by, trigger_type='manual')
+        send.draft = draft
+        send.save(update_fields=['draft'])
+        return send
 
 
 # ── История запусков и аварийные действия ─────────────────────────────────────

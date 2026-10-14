@@ -2300,3 +2300,61 @@ class PosCardScansAPIView(APIView):
             'paid_sum': float(o.paid_sum) if o.paid_sum is not None else None,
         } for o in qs.order_by('closed_at')[:self.MAX_ORDERS]]
         return Response(out)
+
+
+def _period(request, default_days=30):
+    from datetime import date, timedelta
+    from django.utils import timezone as tz
+    end = date.fromisoformat(request.query_params.get('end') or tz.localdate().isoformat())
+    start = date.fromisoformat(request.query_params.get('start') or (end - timedelta(days=default_days)).isoformat())
+    if start > end or (end - start).days > 366:
+        raise ValueError
+    return start, end
+
+
+class CampaignStatsAPIView(APIView):
+    """
+    GET /api/v1/analytics/campaigns/stats/?start=&end= — статистика рекламных кампаний
+    (ТЗ п.6): окно 14 дней, атрибуция к последней отправке, деньги — только
+    известные, с покрытием; контрольная группа и «+N ₽», где они есть.
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
+
+    def get(self, request):
+        from datetime import datetime, time, timedelta
+        from django.utils import timezone as tz
+        from apps.tenant.analytics import campaign_stats
+
+        try:
+            start, end = _period(request)
+        except ValueError:
+            return Response({'detail': 'Период: start ≤ end, ГГГГ-ММ-ДД, не длиннее года.'}, status=400)
+        zone = tz.get_current_timezone()
+        # Управляющий с доступом к части точек видит только своих получателей.
+        branch_ids = effective_branch_ids(request.user, current_schema_name(), None)
+        out = campaign_stats.build(tz.make_aware(datetime.combine(start, time.min), zone),
+                                   tz.make_aware(datetime.combine(end + timedelta(days=1), time.min), zone),
+                                   branch_ids=branch_ids or None)
+        return Response({'start': start.isoformat(), 'end': end.isoformat(), **out})
+
+
+class RFTransitionsAPIView(APIView):
+    """GET /api/v1/analytics/rf/transitions/?start=&end=&mode=&branch_ids= — остыли / потеплели (ТЗ п.4)."""
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
+
+    def get(self, request):
+        from apps.tenant.analytics import rf_transitions
+
+        try:
+            start, end = _period(request)
+        except ValueError:
+            return Response({'detail': 'Период: start ≤ end, ГГГГ-ММ-ДД, не длиннее года.'}, status=400)
+        mode = 'delivery' if request.query_params.get('mode') == 'delivery' else 'restaurant'
+        raw = request.query_params.get('branch_ids') or ''
+        try:
+            requested = [int(x) for x in raw.split(',') if x.strip()]
+        except ValueError:
+            return Response({'detail': 'branch_ids: числа через запятую.'}, status=400)
+        branch_ids = effective_branch_ids(request.user, current_schema_name(), requested or None)
+        return Response({'start': start.isoformat(), 'end': end.isoformat(), 'mode': mode,
+                         **rf_transitions.build(branch_ids, start, end, mode)})

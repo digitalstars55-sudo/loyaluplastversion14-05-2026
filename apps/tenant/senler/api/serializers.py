@@ -50,6 +50,7 @@ def draft_to_dict(draft, request=None) -> dict:
         'variants':      list(draft.variants or []),
         'audience_limit': ({'mode': draft.audience_limit_mode, 'value': draft.audience_limit_value}
                            if getattr(draft, 'audience_limit_mode', '') else None),
+        'control_percent': int(getattr(draft, 'control_percent', 0) or 0),
         'status':        draft.status,
         'created_by':    draft.created_by or '',
         'sent_at':       iso(draft.sent_at),
