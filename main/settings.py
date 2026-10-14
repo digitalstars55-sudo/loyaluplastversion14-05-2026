@@ -308,6 +308,13 @@ VK_SIGN_EXEMPT_PATHS = tuple(
     p.strip() for p in os.getenv('VK_SIGN_EXEMPT_PATHS', '').split(',') if p.strip()
 )
 
+# ── Распределитель входа /go/ (apps/shared/guest/go.py) ──────────────────────
+# Куда вести гостя из браузера: веб-версия мини-аппа (тот же бандл).
+GUEST_WEB_BASE_URL = os.getenv('GUEST_WEB_BASE_URL', 'https://loyalupp.ru')
+# Телеграм-мини-апп гостя: `https://t.me/<бот>/<приложение>`. Пусто — в Телеграме
+# открывается веб-версия (если веб-вход у сети включён).
+TELEGRAM_GUEST_APP_URL = os.getenv('TELEGRAM_GUEST_APP_URL', '')
+
 # ── Веб-сессия гостя вне ВК (apps/shared/guest/web_session.py) ────────────────
 # Сколько дней живёт токен, который выдаёт POST /api/v1/vk/auth/ и который гость
 # шлёт заголовком X-Web-Session. Уменьшение = более частый повторный вход через

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{ company_name }}</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f6f4ef; --fg:#1b2838; --muted:#6b6450; --card:#fff; --line:#e0d7bf; --vk:#0077ff; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14181f; --fg:#eef0f3; --muted:#a8a28f; --card:#1e242d; --line:#2f3743; } }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { width:100%; max-width:380px; padding:24px 16px; box-sizing:border-box; display:flex; flex-direction:column; gap:12px; }
+  h1 { margin:0 0 4px; font-size:22px; }
+  p { margin:0 0 8px; color:var(--muted); font-size:15px; }
+  a.btn { display:flex; align-items:center; justify-content:center; min-height:52px; border-radius:14px; text-decoration:none; font-weight:600; border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  a.btn.primary { background:var(--vk); border-color:var(--vk); color:#fff; }
+  small { color:var(--muted); font-size:13px; text-align:center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>{{ company_name }}</h1>
+  <p>Где открыть бонусы? Баланс и подарки одни и те же везде.</p>
+  {% for item in choices %}
+  <a class="btn{% if item.primary %} primary{% endif %}" href="{{ item.href }}" rel="nofollow">{{ item.title }}</a>
+  {% endfor %}
+  <small>Запомним выбор — в следующий раз откроется сразу.</small>
+</main>
+</body>
+</html>
