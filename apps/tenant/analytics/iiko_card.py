@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 from datetime import timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 
@@ -41,10 +42,20 @@ PAGE_SIZE = 100
 MAX_PAGES = 20                     # за один проход на гостя; остальное — следующим тиком
 NOT_FOUND_RECHECK = timedelta(days=7)
 CLOSE_ORDER = 'CloseOrder'
+# iiko Cloud режет частые запросы (429). 14.10.2026 первый проход LevOne: 99
+# поисков подряд прошли, а заказы на 34-м госте получили 429. Между запросами —
+# пауза; на 429 — ждём и пробуем ещё раз; не помогло — проход останавливается
+# до следующего тика (не «долбим» дальше).
+MIN_INTERVAL = 0.5
+RATE_LIMIT_WAITS = (3, 10)
 
 
 class IikoCloudError(Exception):
     """Сбой iiko Cloud (сеть, 5xx, неожиданный ответ). Гость остаётся до следующего тика."""
+
+
+class IikoCloudRateLimited(IikoCloudError):
+    """iiko просит подождать даже после повторов — проход прекращаем."""
 
 
 class IikoCloudClient:
@@ -54,6 +65,14 @@ class IikoCloudClient:
         self.api_login = api_login
         self.http = http or httpx.Client(timeout=30)
         self._key = 'iikocloud:token:' + hashlib.sha1(api_login.encode()).hexdigest()
+        self._last = 0.0
+        self.sleep = time.sleep
+
+    def _pace(self):
+        wait = MIN_INTERVAL - (time.monotonic() - self._last)
+        if wait > 0:
+            self.sleep(wait)
+        self._last = time.monotonic()
 
     def _auth(self) -> str:
         resp = self.http.post(f'{BASE_URL}/access_token', json={'apiLogin': self.api_login})
@@ -65,16 +84,26 @@ class IikoCloudClient:
         cache.set(self._key, token, TOKEN_TTL)
         return token
 
+    def _send(self, path: str, body: dict, token: str) -> httpx.Response:
+        self._pace()
+        return self.http.post(f'{BASE_URL}/{path}', json=body,
+                              headers={'Authorization': f'Bearer {token}'})
+
     def post(self, path: str, body: dict) -> httpx.Response:
         token = cache.get(self._key) or self._auth()
         try:
-            resp = self.http.post(f'{BASE_URL}/{path}', json=body,
-                                  headers={'Authorization': f'Bearer {token}'})
+            resp = self._send(path, body, token)
             if resp.status_code == 401:
-                resp = self.http.post(f'{BASE_URL}/{path}', json=body,
-                                      headers={'Authorization': f'Bearer {self._auth()}'})
+                resp = self._send(path, body, self._auth())
+            for wait in RATE_LIMIT_WAITS:
+                if resp.status_code != 429:
+                    break
+                self.sleep(wait)
+                resp = self._send(path, body, cache.get(self._key) or self._auth())
         except httpx.HTTPError as exc:
             raise IikoCloudError(f'{path}: {exc.__class__.__name__}') from exc
+        if resp.status_code == 429:
+            raise IikoCloudRateLimited(f'{path}: iiko просит подождать (429)')
         return resp
 
     def customer_by_phone(self, organization_id: str, phone: str) -> dict | None:
@@ -141,6 +170,8 @@ def link_guest(client, config, api: IikoCloudClient, now=None):
     link.checked_at = now
     try:
         customer = api.customer_by_phone(config.iiko_cloud_organization_id, phone)
+    except IikoCloudRateLimited:
+        raise
     except IikoCloudError as exc:
         link.status = PosGuestLinkStatus.ERROR
         link.error = str(exc)[:255]
@@ -240,15 +271,22 @@ def run_tenant(config, *, link_limit=200, sync_limit=200, api: IikoCloudClient |
     now = now or timezone.now()
     api = api or IikoCloudClient(config.iiko_cloud_api_login)
     out = {'checked': 0, 'linked': 0, 'not_found': 0, 'errors': 0, 'orders_added': 0}
-    for client in guests_to_link(now)[:link_limit]:
-        link = link_guest(client, config, api, now)
-        out['checked'] += 1
-        out[{'linked': 'linked', 'not_found': 'not_found'}.get(link.status, 'errors')] += 1
+    try:
+        for client in guests_to_link(now)[:link_limit]:
+            link = link_guest(client, config, api, now)
+            out['checked'] += 1
+            out[{'linked': 'linked', 'not_found': 'not_found'}.get(link.status, 'errors')] += 1
+    except IikoCloudRateLimited as exc:
+        out['stopped'] = str(exc)
+        return out
     synced = (PosGuestLink.objects.filter(status=PosGuestLinkStatus.LINKED)
               .order_by(F('orders_synced_at').asc(nulls_first=True))[:sync_limit])
     for link in synced:
         try:
             out['orders_added'] += sync_orders(link, config, api, now)
+        except IikoCloudRateLimited as exc:
+            out['stopped'] = str(exc)
+            break
         except IikoCloudError as exc:
             out['errors'] += 1
             logger.warning('iikoCard: заказы гостя %s не забраны: %s', link.client_id, exc)

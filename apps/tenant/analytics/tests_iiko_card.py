@@ -55,7 +55,9 @@ class _Cache(dict):
 
 def _api(routes):
     http = _Http({'access_token': _Resp(200, {'token': 'T1'}), **routes})
-    return ic.IikoCloudClient('key', http=http), http
+    api = ic.IikoCloudClient('key', http=http)
+    api.sleep = lambda s: None          # без настоящих пауз в тестах
+    return api, http
 
 
 class ClientTest(SimpleTestCase):
@@ -85,6 +87,26 @@ class ClientTest(SimpleTestCase):
         api.customer_by_phone('org', '+7900')
         api.customer_by_phone('org', '+7900')
         self.assertEqual([c[0] for c in http.calls].count('access_token'), 1)
+
+    def test_429_ждём_и_повторяем(self):
+        api, _ = _api({'loyalty/iiko/customer/info': [_Resp(429, text='slow'), _Resp(200, {'id': 'c1'})]})
+        waits = []
+        api.sleep = waits.append
+        self.assertEqual(api.customer_by_phone('org', '+7900'), {'id': 'c1'})
+        self.assertIn(ic.RATE_LIMIT_WAITS[0], waits)
+
+    def test_429_не_проходит_проход_останавливается(self):
+        api, _ = _api({'loyalty/iiko/customer/info': _Resp(429, text='slow')})
+        with self.assertRaises(ic.IikoCloudRateLimited):
+            api.customer_by_phone('org', '+7900')
+
+    def test_пауза_между_запросами(self):
+        api, _ = _api({'loyalty/iiko/customer/info': _Resp(200, {'id': 'c1'})})
+        waits = []
+        api.sleep = waits.append
+        api.customer_by_phone('org', '+7900')
+        api.customer_by_phone('org', '+7900')
+        self.assertTrue(any(0 < w <= ic.MIN_INTERVAL for w in waits))
 
     def test_разбор_времени_и_денег(self):
         self.assertEqual(ic._dt('2026-06-30T10:50:39.097557Z').utcoffset().total_seconds(), 0)
