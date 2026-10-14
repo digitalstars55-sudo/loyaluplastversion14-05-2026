@@ -211,3 +211,25 @@ def build_content_plan_task(self, schema_name: str, slots: list[str], author: st
             created.append(post.pk)
     logger.info('marketer content plan %s: %s posts, %s failed', schema_name, len(created), failed)
     return {'schema': schema_name, 'created': created, 'failed': failed}
+
+
+@shared_task(bind=True, ignore_result=True)
+def generate_post_image_task(self, schema_name: str, post_id: int) -> dict:
+    """Волна 4: картинка к посту в фоне (ИИ рисует до минуты)."""
+    from django_tenants.utils import schema_context
+
+    from apps.tenant.marketer.images import ImageError, generate_for_post
+    from apps.tenant.marketer.models import MarketerPost
+
+    with schema_context(schema_name):
+        post = MarketerPost.objects.filter(pk=post_id).first()
+        if post is None:
+            return {'skipped': 'no_post'}
+        try:
+            generate_for_post(post)
+        except (ImageError, Exception) as e:
+            post.error = f'Картинка не получилась: {str(e)[:500]}'
+            post.save(update_fields=['error', 'updated_at'])
+            logger.warning('marketer image failed %s/%s: %s', schema_name, post_id, e)
+            return {'error': str(e)}
+    return {'ok': True}

@@ -745,3 +745,55 @@ class MarketerContentPlanAPIView(APIView):
         log.info('marketer content plan queued: %s slots=%s by=%s', schema, len(slots), _author(request.user))
         return Response({'queued': True, 'slots': [s.isoformat() for s in slots]},
                         status=http_status.HTTP_202_ACCEPTED)
+
+
+
+# ── Волна 4: калькулятор стоимости и картинка ИИ ──────────────────────────────
+
+class MarketerEstimateAPIView(APIView):
+    """GET /api/v1/marketer/posts/estimate/?count=&image=0|1&video_seconds= — сколько обойдётся,
+    ДО генерации. ИИ не вызывается."""
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
+
+    def get(self, request):
+        from apps.tenant.marketer.costs import estimate
+        q = request.query_params
+        try:
+            count = max(1, min(int(q.get('count') or 1), 62))
+            video = max(0, min(int(q.get('video_seconds') or 0), 300))
+        except ValueError:
+            return _error('invalid_payload', 'count и video_seconds — числа', http_status.HTTP_400_BAD_REQUEST)
+        image = str(q.get('image') or '').lower() in ('1', 'true', 'yes')
+        return Response(estimate(count=count, image=image, video_seconds=video))
+
+
+class MarketerPostGenerateImageAPIView(APIView):
+    """POST /api/v1/marketer/posts/{id}/generate-image/ — ИИ рисует картинку к посту (202)."""
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
+
+    def post(self, request, pk: int):
+        if not _may_write(request.user):
+            return _error('role_not_allowed', 'картинку заказывает администратор сети',
+                          http_status.HTTP_403_FORBIDDEN)
+        post = _post_or_none(pk)
+        if post is None:
+            return _error('not_found', 'Пост не найден', http_status.HTTP_404_NOT_FOUND)
+        if post.status not in EDITABLE_STATUSES:
+            return _error('not_editable', f'пост в статусе «{post.get_status_display()}»',
+                          http_status.HTTP_409_CONFLICT, status=post.status)
+        if not _settings_row().is_enabled:
+            return _error('marketer_disabled', 'AI-маркетолог выключен в настройках',
+                          http_status.HTTP_409_CONFLICT)
+        schema = current_schema_name()
+        key = f'marketer-image:{schema}:{pk}'
+        if not cache.add(key, '1', 180):
+            return _error('already_generating', 'картинка уже рисуется', http_status.HTTP_409_CONFLICT)
+        from apps.tenant.marketer.tasks import generate_post_image_task
+        try:
+            generate_post_image_task.delay(schema, pk)
+        except Exception as exc:
+            cache.delete(key)
+            return _error('queue_unavailable', f'не удалось поставить задачу: {exc}',
+                          http_status.HTTP_503_SERVICE_UNAVAILABLE)
+        from apps.tenant.marketer.costs import image_rub
+        return Response({'queued': True, 'cost_rub': float(image_rub())}, status=http_status.HTTP_202_ACCEPTED)

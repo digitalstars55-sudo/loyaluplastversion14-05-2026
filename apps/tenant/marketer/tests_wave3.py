@@ -155,3 +155,38 @@ class DuePublishTaskTest(SimpleTestCase):
             result = T.publish_due_marketer_posts_task.run()
         self.assertEqual(result['published'], 1)
         publish.assert_called_once_with(post)
+
+
+class EstimateTest(SimpleTestCase):
+    def test_text_image_and_video_not_configured(self):
+        from apps.tenant.marketer import costs
+        with self.settings(MARKETER_USD_RUB=100, MARKETER_VIDEO_RUB_PER_SEC=''):
+            e = costs.estimate(count=3, image=True, video_seconds=20)
+        self.assertGreater(e['text_rub'], 0)
+        self.assertAlmostEqual(e['image_rub'], 6.33, places=2)   # 1568×40 + 120×5 за 1 млн × 100 ₽
+        self.assertIsNone(e['video_rub'])
+        self.assertEqual(e['total_rub'], round((e['text_rub'] + e['image_rub']) * 3, 2))
+        self.assertTrue(e['notes'])
+
+    def test_video_priced_when_configured(self):
+        from apps.tenant.marketer import costs
+        with self.settings(MARKETER_VIDEO_RUB_PER_SEC='12.5'):
+            e = costs.estimate(video_seconds=10)
+        self.assertEqual(e['video_rub'], 125.0)
+
+    def test_estimate_endpoint(self):
+        resp = _call(M.MarketerEstimateAPIView, 'get', '/x/', params={'count': '4', 'image': '1'})
+        self.assertEqual((resp.status_code, resp.data['count']), (200, 4))
+
+
+class GenerateImageApiTest(SimpleTestCase):
+    def test_queues_once(self):
+        task = MagicMock()
+        objects_patch, _ = _posts_patch(_post())
+        with objects_patch, _settings_patch(_cfg()), patch(MP + 'cache', _Cache()), \
+             patch(MP + 'current_schema_name', return_value='levone'), \
+             patch('apps.tenant.marketer.tasks.generate_post_image_task', task):
+            r1 = _call(M.MarketerPostGenerateImageAPIView, 'post', '/x/', pk=7)
+            r2 = _call(M.MarketerPostGenerateImageAPIView, 'post', '/x/', pk=7)
+        self.assertEqual((r1.status_code, r2.status_code), (202, 409))
+        task.delay.assert_called_once_with('levone', 7)
