@@ -29,6 +29,16 @@ def iso(value):
     return value.isoformat() if value else None
 
 
+def _variant_out(v: dict, request=None) -> dict:
+    """Вариант A/B: путь картинки остаётся (его фронт шлёт обратно), рядом — ссылка."""
+    out = dict(v)
+    if v.get('image'):
+        from django.core.files.storage import default_storage
+        url = default_storage.url(v['image'])
+        out['image_url'] = request.build_absolute_uri(url) if request is not None else url
+    return out
+
+
 def draft_to_dict(draft, request=None) -> dict:
     """Карточка черновика. image — абсолютная ссылка на картинку или null."""
     segment = draft.segment if draft.segment_id else None
@@ -47,7 +57,7 @@ def draft_to_dict(draft, request=None) -> dict:
         'period':        {'start': iso(draft.start), 'end': iso(draft.end)},
         'branch_ids':    list(draft.branch_ids or []),
         'gender_filter': draft.gender_filter,
-        'variants':      list(draft.variants or []),
+        'variants':      [_variant_out(v, request) for v in (draft.variants or [])],
         'audience_limit': ({'mode': draft.audience_limit_mode, 'value': draft.audience_limit_value}
                            if getattr(draft, 'audience_limit_mode', '') else None),
         'control_percent': int(getattr(draft, 'control_percent', 0) or 0),

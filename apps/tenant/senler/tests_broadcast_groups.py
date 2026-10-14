@@ -109,3 +109,35 @@ class PayloadTest(SimpleTestCase):
     def test_проценты_меньше_100_можно(self):
         v = b._parse_variants([{'percent': 30, 'message_text': 'A'}, {'percent': 30, 'message_text': 'B'}])
         self.assertIsNone(b._validate_texts('', v))
+
+
+class ControlAndVariantImageTest(SimpleTestCase):
+    """Волна 2 (14.10.2026): контрольная группа и своя картинка у варианта A/B."""
+
+    def test_контрольная_группа_процентом(self):
+        d = _draft()
+        d.control_percent = 10
+        plan = b.plan_groups(d, _audience([600, 400]))
+        self.assertEqual((plan['planned'], len(plan['control_cb_ids'])), (900, 100))
+        self.assertFalse(_ids(plan['groups'][0]) & set(plan['control_cb_ids']))
+
+    def test_хвост_части_аудитории_контрольная(self):
+        plan = b.plan_groups(_draft(mode='count', value=300), _audience([1000]))
+        self.assertEqual(len(plan['control_cb_ids']), 700)
+
+    def test_вся_аудитория_без_контроля(self):
+        self.assertEqual(b.plan_groups(_draft(), _audience([50]))['control_cb_ids'], [])
+
+    def test_картинка_варианта_только_своя(self):
+        out = b._parse_variants([
+            {'count': 10, 'message_text': 'A', 'image': 'broadcasts/variants/a1.png'},
+            {'count': 10, 'message_text': 'B', 'image': '../../etc/passwd'},
+            {'count': 10, 'message_text': 'C', 'image': 'broadcasts/variants/x/../y.png'},
+        ])
+        self.assertEqual([v.get('image') for v in out], ['broadcasts/variants/a1.png', None, None])
+
+    def test_группа_несёт_картинку(self):
+        d = _draft(variants=[{'count': 5, 'message_text': 'A', 'image': 'broadcasts/variants/a.png'},
+                             {'count': 5, 'message_text': 'B'}])
+        groups = b.plan_groups(d, _audience([20]))['groups']
+        self.assertEqual([g['image'] for g in groups], ['broadcasts/variants/a.png', ''])

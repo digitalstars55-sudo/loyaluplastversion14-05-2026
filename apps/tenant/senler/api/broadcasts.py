@@ -155,19 +155,38 @@ def _parse_variants(raw) -> list[dict]:
         if not isinstance(item, dict):
             raise PayloadError('variants: каждый вариант — объект {percent | count, message_text}')
         text = (item.get('message_text') or '').strip()
+        image = _variant_image(item.get('image'))
+        extra = {'image': image} if image else {}
         if item.get('count') not in (None, ''):
             try:
                 count = int(item.get('count'))
             except (TypeError, ValueError):
                 raise PayloadError('variants: count должен быть числом')
-            out.append({'count': count, 'message_text': text})
+            out.append({'count': count, 'message_text': text, **extra})
             continue
         try:
             percent = int(item.get('percent', 0))
         except (TypeError, ValueError):
             raise PayloadError('variants: percent должен быть числом')
-        out.append({'percent': percent, 'message_text': text})
+        out.append({'percent': percent, 'message_text': text, **extra})
     return out
+
+
+VARIANT_IMAGE_DIR = 'broadcasts/variants/'
+
+
+def _variant_image(raw) -> str:
+    """Путь картинки варианта — только тот, что выдала ручка загрузки (без чужих путей)."""
+    value = str(raw or '').strip()
+    if value.startswith(VARIANT_IMAGE_DIR) and '..' not in value and '/' not in value[len(VARIANT_IMAGE_DIR):]:
+        return value
+    return ''
+
+
+def variant_image_file(draft, path: str):
+    """FieldFile картинки варианта, чтобы отдать её туда же, куда и картинку черновика."""
+    from django.db.models.fields.files import FieldFile
+    return FieldFile(draft, BroadcastDraft._meta.get_field('image'), path)
 
 
 def _parse_audience_limit(raw) -> tuple[str, int | None]:
@@ -431,6 +450,7 @@ def plan_groups(draft, audience: dict) -> dict:
             for cb, row in chunk:
                 per_branch.setdefault(row['branch_id'], (row, []))[1].append(cb)
             groups.append({
+                'image': _variant_image(spec.get('image')),
                 'index': i,
                 'label': (f'вариант {i + 1} ({_size_label(spec)})' if len(specs) > 1
                           else f'часть аудитории ({_size_label(spec)})'),
@@ -737,7 +757,8 @@ class BroadcastDraftSendAPIView(APIView):
                         continue
                     send_label = f'{label} — {group["label"]}'[:255] if group['label'] else label
                     send = self._create_send_for(
-                        draft, row['branch_id'], cb_ids, send_label, group['text'], segment, triggered_by)
+                        draft, row['branch_id'], cb_ids, send_label, group['text'], segment, triggered_by,
+                        image=group.get('image') or '')
                     meta = {'branch_id': row['branch_id'], 'branch_name': row['name']}
                     if len(variants) > 1:
                         meta['variant'] = f'#{group["index"] + 1}'
@@ -802,7 +823,7 @@ class BroadcastDraftSendAPIView(APIView):
     # ── helpers ──────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _create_send_for(draft, branch_id, cb_ids, label, text, segment, triggered_by):
+    def _create_send_for(draft, branch_id, cb_ids, label, text, segment, triggered_by, image=''):
         broadcast = Broadcast.objects.create(
             branch_id=branch_id,
             name=label,
@@ -810,7 +831,8 @@ class BroadcastDraftSendAPIView(APIView):
             audience_type=AudienceType.SPECIFIC,
             gender_filter=draft.gender_filter,
             # Тот же файл, без копии: run_broadcast грузит его в ВК сам.
-            image=draft.image.name if draft.image else None,
+            # Своя картинка варианта A/B сильнее общей картинки черновика.
+            image=image or (draft.image.name if draft.image else None),
         )
         broadcast.specific_clients.set(cb_ids)
         if segment is not None:
@@ -991,6 +1013,18 @@ IMAGE_MAX_BYTES = 5 * 1024 * 1024
 TEST_SEND_TTL = 60          # не чаще раза в минуту на черновик — как у авторассылок
 
 
+def _variant_index(request, draft):
+    """?variant=N — картинка варианта A/B; нет параметра — общая картинка (None)."""
+    raw = request.query_params.get('variant')
+    if raw in (None, ''):
+        return None
+    try:
+        index = int(raw)
+    except ValueError:
+        return 'bad'
+    return index if 0 <= index < len(draft.variants or []) else 'bad'
+
+
 class BroadcastDraftImageAPIView(APIView):
     """
     POST   /api/v1/broadcasts/{id}/image/  multipart image — поставить/заменить
@@ -1015,6 +1049,19 @@ class BroadcastDraftImageAPIView(APIView):
         if kind not in IMAGE_TYPES or f.size > IMAGE_MAX_BYTES:
             return _error('invalid_image', 'Картинка: только jpg, png или webp до 5 МБ',
                           http_status.HTTP_400_BAD_REQUEST)
+        index = _variant_index(request, draft)
+        if index == 'bad':
+            return _error('invalid_payload', 'variant: номер варианта с нуля', http_status.HTTP_400_BAD_REQUEST)
+        if index is not None:
+            import uuid
+            from django.core.files.storage import default_storage
+            ext = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}.get(kind, 'jpg')
+            path = default_storage.save(f'{VARIANT_IMAGE_DIR}{uuid.uuid4().hex}.{ext}', f)
+            variants = list(draft.variants or [])
+            variants[index] = {**variants[index], 'image': path}
+            draft.variants = variants
+            draft.save(update_fields=['variants', 'updated_at'])
+            return Response(draft_to_dict(draft, request))
         draft.image = f
         draft.save(update_fields=['image', 'updated_at'])
         return Response(draft_to_dict(draft, request))
@@ -1026,6 +1073,15 @@ class BroadcastDraftImageAPIView(APIView):
         if draft.status != DraftStatus.DRAFT:
             return _error('not_a_draft', 'Картинку можно менять только у черновика',
                           http_status.HTTP_409_CONFLICT)
+        index = _variant_index(request, draft)
+        if index == 'bad':
+            return _error('invalid_payload', 'variant: номер варианта с нуля', http_status.HTTP_400_BAD_REQUEST)
+        if index is not None:
+            variants = list(draft.variants or [])
+            variants[index] = {k: v for k, v in variants[index].items() if k != 'image'}
+            draft.variants = variants
+            draft.save(update_fields=['variants', 'updated_at'])
+            return Response(draft_to_dict(draft, request))
         # Файл не удаляем: его же могли взять отправленные Broadcast прошлых пачек.
         draft.image = None
         draft.save(update_fields=['image', 'updated_at'])
@@ -1093,8 +1149,10 @@ class BroadcastDraftTestSendAPIView(APIView):
 
         cache.set(cache_key, 1, TEST_SEND_TTL)
         attachment = None
-        if draft.image:
-            attachment, _ = upload_vk_photo(config, draft.image)
+        own = _variant_image((variants[index] if len(variants) > 1 else {}).get('image'))
+        picture = variant_image_file(draft, own) if own else (draft.image if draft.image else None)
+        if picture:
+            attachment, _ = upload_vk_photo(config, picture)
         ok, err, message_id = send_vk_message(config, vk_id, text, attachment)
         if not ok:
             if '901' in str(err or ''):
