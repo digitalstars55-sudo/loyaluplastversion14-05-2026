@@ -2210,7 +2210,7 @@ class PosLinkCoverageAPIView(APIView):
     permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
 
     def get(self, request):
-        from django.db.models import Max
+        from django.db.models import Count, Max
         from apps.shared.config.models import IikoCardMode
         from apps.shared.guest.models import Client as GuestClient
         from django.db import connection
@@ -2221,7 +2221,12 @@ class PosLinkCoverageAPIView(APIView):
         guests = GuestClient.objects.filter(is_active=True, branch_profiles__isnull=False).distinct()
         total = guests.count()
         with_phone = guests.filter(phone_consent_at__isnull=False).exclude(phone='').count()
-        out = {'mode': mode, 'guests_total': total, 'with_phone': with_phone,
+        # Где гости дают номер (сбор телефонов, волна 2): profile / banner / receipt / review / message …
+        by_place = {}
+        for place, n in (guests.filter(phone_consent_at__isnull=False).exclude(phone='')
+                         .order_by().values_list('phone_placement').annotate(n=Count('id', distinct=True))):
+            by_place[place or 'unknown'] = by_place.get(place or 'unknown', 0) + n
+        out = {'mode': mode, 'guests_total': total, 'with_phone': with_phone, 'phone_by_placement': by_place,
                'linked': None, 'not_found': None, 'errors': None,
                'guests_with_orders': None, 'orders_count': None, 'last_sync_at': None}
         if mode != IikoCardMode.OFF:
