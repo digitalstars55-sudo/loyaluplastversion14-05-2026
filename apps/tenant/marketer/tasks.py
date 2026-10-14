@@ -116,3 +116,98 @@ def run_marketer_digest_for_tenant_task(self, schema_name: str) -> dict:
 
         logger.info('marketer digest for %s: %s', schema_name, result)
         return result
+
+
+@shared_task(bind=True, ignore_result=True)
+def publish_due_marketer_posts_task(self) -> dict:
+    """
+    Волна 3: публикует запланированные посты, у которых настало время.
+
+    Тикает раз в 5 минут. Запланировать = одобрить: autopost_enabled тут не нужен.
+    Маркетолог выключен — пост остаётся запланированным (не теряется, не падает).
+    Пост берётся под select_for_update и статус проверяется заново — два тика
+    подряд не опубликуют его дважды.
+    """
+    from django.db import transaction
+    from django_tenants.utils import schema_context
+
+    from apps.tenant.marketer.models import MarketerPost, MarketerPostStatus, MarketerSettings
+    from apps.tenant.marketer.publisher import publish_post
+
+    summary = {'published': 0, 'failed': 0, 'errors': []}
+    now = timezone.now()
+    for tenant in beat_tenants():
+        schema = tenant.schema_name
+        try:
+            with schema_context(schema):
+                cfg = MarketerSettings.objects.first()
+                if not cfg or not cfg.is_enabled:
+                    continue
+                due = list(MarketerPost.objects.filter(
+                    status=MarketerPostStatus.SCHEDULED, scheduled_at__lte=now,
+                ).order_by('scheduled_at').values_list('pk', flat=True)[:20])
+                for pk in due:
+                    with transaction.atomic():
+                        post = MarketerPost.objects.select_for_update().filter(
+                            pk=pk, status=MarketerPostStatus.SCHEDULED).first()
+                        if post is None:
+                            continue
+                        ok = publish_post(post)
+                    summary['published' if ok else 'failed'] += 1
+        except Exception as e:
+            logger.exception('marketer scheduled publish failed for %s', schema)
+            summary['errors'].append(f'{schema}: {e}')
+    if summary['published'] or summary['failed'] or summary['errors']:
+        logger.info('marketer scheduled publish: %s', summary)
+    return summary
+
+
+PLAN_TOPICS = (
+    ('insight', 'Что любят наши гости', 'Пост о том, что гостям нравится больше всего: блюда, точки, '
+     'добрые отзывы. Тепло и по-соседски.'),
+    ('promo', 'Подарки в приложении', 'Пост-напоминание: в приложении сети ждут подарки и бонусы, '
+     'как их получить. Только то, что есть в данных.'),
+    ('digest', 'Что нового за неделю', None),
+    ('insight', 'Наша команда', 'Пост о людях и точках сети, о том, как нас оценивают гости, '
+     'без имён гостей.'),
+)
+
+
+@shared_task(bind=True, ignore_result=True)
+def build_content_plan_task(self, schema_name: str, slots: list[str], author: str = '') -> dict:
+    """
+    Контент-план: по одному черновику на каждый слот (ISO-время) с темой по кругу.
+    Черновики НЕ планируются сами — человек проверяет и жмёт «Запланировать».
+    """
+    from datetime import datetime
+
+    from django_tenants.utils import schema_context
+
+    from apps.tenant.marketer.generator import generate_post, _DIGEST_TASK
+    from apps.tenant.marketer.knowledge import collect_knowledge
+    from apps.tenant.marketer.models import MarketerPost, MarketerPostStatus, MarketerSettings
+
+    created, failed = [], 0
+    with schema_context(schema_name):
+        cfg = MarketerSettings.objects.first()
+        if not cfg or not cfg.is_enabled:
+            return {'schema': schema_name, 'skipped': 'disabled'}
+        knowledge = collect_knowledge()
+        for i, slot in enumerate(slots):
+            post_type, topic, task = PLAN_TOPICS[i % len(PLAN_TOPICS)]
+            when = datetime.fromisoformat(slot)
+            try:
+                text, model = generate_post(knowledge, task=task or _DIGEST_TASK,
+                                            brand_voice=cfg.brand_voice, extra_facts=cfg.extra_facts)
+                status, error = MarketerPostStatus.DRAFT, ''
+            except Exception as e:
+                text, model, status, error = '', '', MarketerPostStatus.FAILED, f'Генерация не удалась: {str(e)[:900]}'
+                failed += 1
+            post = MarketerPost.objects.create(
+                post_type=post_type, status=status, text=text, context_snapshot=knowledge,
+                model_used=model, created_by=author or 'ai', error=error,
+                topic=topic, scheduled_at=when,
+            )
+            created.append(post.pk)
+    logger.info('marketer content plan %s: %s posts, %s failed', schema_name, len(created), failed)
+    return {'schema': schema_name, 'created': created, 'failed': failed}

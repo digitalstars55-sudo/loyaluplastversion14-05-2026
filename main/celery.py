@@ -119,6 +119,11 @@ app.conf.beat_schedule = {
         'task': 'apps.tenant.marketer.tasks.run_marketer_digest_task',
         'schedule': crontab(minute=10),  # every hour at :10
     },
+    # Волна 3: запланированные посты маркетолога. Без запланированных — пустой тик.
+    'marketer-scheduled-posts': {
+        'task': 'apps.tenant.marketer.tasks.publish_due_marketer_posts_task',
+        'schedule': 300.0,
+    },
     # Волна 0 (16.09.2026): мониторинг платформы — сертификаты, домены,
     # оплата сетей, callback ВК, доступность входа. Пуш суперадминам, один
     # сигнал не чаще раза в сутки. Пока PLATFORM_MONITOR_ENABLED не задан —

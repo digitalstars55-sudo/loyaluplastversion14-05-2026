@@ -110,6 +110,7 @@ class MarketerPostType(models.TextChoices):
 
 class MarketerPostStatus(models.TextChoices):
     DRAFT     = 'draft',     'Черновик'
+    SCHEDULED = 'scheduled', 'Запланирован'
     PUBLISHED = 'published', 'Опубликован'
     REJECTED  = 'rejected',  'Отклонён'
     FAILED    = 'failed',    'Ошибка публикации'
@@ -161,6 +162,19 @@ class MarketerPost(TimeStampedModel):
         help_text='post_id из ответа wall.post.',
     )
     error = models.TextField('Ошибка', blank=True)
+
+    # --- Волна 3: контент-план и отложенные посты (14.10.2026) ---
+    # Запланировать = одобрение человеком: в назначенное время пост уходит на
+    # стену задачей publish_due_marketer_posts_task даже при autopost_enabled=False.
+    scheduled_at = models.DateTimeField('Опубликовать в', null=True, blank=True, db_index=True)
+    topic = models.CharField(
+        'Тема из контент-плана', max_length=200, blank=True,
+        help_text='Пусто — пост не из плана.',
+    )
+    image = models.ImageField(
+        'Картинка', upload_to='marketer_posts/', null=True, blank=True,
+        help_text='Прикрепляется к посту на стене (photos.saveWallPhoto).',
+    )
 
     class Meta:
         verbose_name = 'Пост маркетолога'

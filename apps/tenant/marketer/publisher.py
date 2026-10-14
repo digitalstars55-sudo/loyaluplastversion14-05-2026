@@ -42,7 +42,8 @@ def publish_post(post: MarketerPost) -> bool:
     Статусы: → PUBLISHED (+vk_post_id) либо → FAILED (+error, текст цел).
     Публикуются только DRAFT/FAILED (повтор после ошибки разрешён).
     """
-    if post.status not in (MarketerPostStatus.DRAFT, MarketerPostStatus.FAILED):
+    if post.status not in (MarketerPostStatus.DRAFT, MarketerPostStatus.SCHEDULED,
+                           MarketerPostStatus.FAILED):
         post.error = f'Пост в статусе «{post.get_status_display()}» — публикация не выполнена.'
         post.save(update_fields=['error', 'updated_at'])
         return False
@@ -71,18 +72,22 @@ def publish_post(post: MarketerPost) -> bool:
     if not group_id:
         return _fail('Не удалось определить ID группы VK (ни в настройках, ни в SenlerConfig).')
 
+    data = {
+        'owner_id': -group_id,
+        'from_group': 1,
+        'message': post.text,
+        'access_token': cfg.vk_wall_token,
+        'v': VK_API_VERSION,
+    }
+    if post.image:
+        attachment, err = upload_wall_photo(cfg.vk_wall_token, group_id, post.image)
+        if not attachment:
+            # Без картинки не публикуем: пост задуман с ней, тихая потеря хуже ошибки.
+            return _fail(f'Картинка не загрузилась в ВК: {err}')
+        data['attachments'] = attachment
+
     try:
-        resp = requests.post(
-            'https://api.vk.com/method/wall.post',
-            data={
-                'owner_id': -group_id,
-                'from_group': 1,
-                'message': post.text,
-                'access_token': cfg.vk_wall_token,
-                'v': VK_API_VERSION,
-            },
-            timeout=15,
-        )
+        resp = requests.post('https://api.vk.com/method/wall.post', data=data, timeout=15)
         payload = resp.json()
     except Exception as e:
         return _fail(f'Сетевая ошибка VK API: {e}')
@@ -98,3 +103,34 @@ def publish_post(post: MarketerPost) -> bool:
     post.save(update_fields=['status', 'published_at', 'vk_post_id', 'error', 'updated_at'])
     logger.info('marketer: post %s published, vk_post_id=%s', post.pk, post.vk_post_id)
     return True
+
+
+def _vk(method: str, params: dict) -> dict:
+    resp = requests.post(f'https://api.vk.com/method/{method}', data=params, timeout=15)
+    return resp.json()
+
+
+def upload_wall_photo(token: str, group_id: int, image_field) -> tuple[str | None, str]:
+    """
+    Картинка к посту стены: getWallUploadServer → POST файла → saveWallPhoto.
+    Возвращает ('photo<owner>_<id>', '') либо (None, текст ошибки).
+    """
+    base = {'access_token': token, 'v': VK_API_VERSION}
+    try:
+        data = _vk('photos.getWallUploadServer', {**base, 'group_id': group_id})
+        if 'error' in data:
+            return None, data['error'].get('error_msg', 'getWallUploadServer failed')
+        upload_url = data['response']['upload_url']
+        filename = image_field.name.rsplit('/', 1)[-1]
+        with image_field.open('rb') as fh:
+            up = requests.post(upload_url, files={'photo': (filename, fh)}, timeout=30).json()
+        data = _vk('photos.saveWallPhoto', {
+            **base, 'group_id': group_id,
+            'server': up['server'], 'photo': up['photo'], 'hash': up['hash'],
+        })
+        if 'error' in data:
+            return None, data['error'].get('error_msg', 'saveWallPhoto failed')
+        photo = data['response'][0]
+        return f"photo{photo['owner_id']}_{photo['id']}", ''
+    except Exception as exc:  # сеть, битый ответ ВК
+        return None, str(exc)[:300]

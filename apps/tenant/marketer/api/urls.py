@@ -6,7 +6,10 @@
 from django.urls import path
 
 from .views import (
+    MarketerContentPlanAPIView,
     MarketerGenerateAPIView,
+    MarketerPostImageAPIView,
+    MarketerPostScheduleAPIView,
     MarketerPostContextAPIView,
     MarketerPostDetailAPIView,
     MarketerPostListAPIView,
@@ -21,12 +24,17 @@ urlpatterns = [
     # generate — до <int:pk>, чтобы путь не съел слово generate.
     path('marketer/posts/generate/', MarketerGenerateAPIView.as_view(),
          name='marketer-posts-generate'),
+    path('marketer/posts/plan/', MarketerContentPlanAPIView.as_view(), name='marketer-posts-plan'),
     path('marketer/posts/<int:pk>/', MarketerPostDetailAPIView.as_view(),
          name='marketer-post-detail'),
     path('marketer/posts/<int:pk>/context/', MarketerPostContextAPIView.as_view(),
          name='marketer-post-context'),
     path('marketer/posts/<int:pk>/publish/', MarketerPostPublishAPIView.as_view(),
          name='marketer-post-publish'),
+    path('marketer/posts/<int:pk>/schedule/', MarketerPostScheduleAPIView.as_view(),
+         name='marketer-post-schedule'),
+    path('marketer/posts/<int:pk>/image/', MarketerPostImageAPIView.as_view(),
+         name='marketer-post-image'),
     path('marketer/posts/<int:pk>/reject/', MarketerPostRejectAPIView.as_view(),
          name='marketer-post-reject'),
 ]

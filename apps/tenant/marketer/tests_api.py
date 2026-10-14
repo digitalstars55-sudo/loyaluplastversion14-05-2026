@@ -60,6 +60,7 @@ def _post(pk=7, status=MarketerPostStatus.DRAFT, post_type=MarketerPostType.DIGE
         pk=pk, id=pk, post_type=post_type, status=status, text=text,
         context_snapshot={'scans': 10}, model_used='claude-haiku-4-5-20251001',
         created_by=created_by, published_at=None, vk_post_id=vk_post_id, error=error,
+        scheduled_at=None, topic='', image=None,
         created_at=datetime(2026, 9, 18, 10, 0, tzinfo=dt_timezone.utc),
         updated_at=datetime(2026, 9, 18, 10, 0, tzinfo=dt_timezone.utc),
     )
