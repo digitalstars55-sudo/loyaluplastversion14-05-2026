@@ -750,6 +750,23 @@ class BroadcastDraftSendAPIView(APIView):
         pending: list[dict] = []
 
         plan = plan_groups(draft, audience)
+
+        # Стоп-лист (15.10.2026): не рекламировать то, чего нет. Предупреждение,
+        # а не запрет — `ignore_stoplist: true` отправляет всё равно.
+        from apps.tenant.senler import stoplist_guard
+        from apps.tenant.senler.engine import _tenant_client_config
+        if stoplist_guard.enabled(_tenant_client_config()) and not data.get('ignore_stoplist'):
+            branch_ids = [row['branch_id'] for g in plan['groups'] for row, ids in g['by_branch'] if ids]
+            texts = [draft.message_text or ''] + [g.get('text') or '' for g in plan['groups']]
+            conflicts = stoplist_guard.check(connection.schema_name, texts, branch_ids)
+            if conflicts:
+                names = ', '.join(sorted({c['name'] for c in conflicts}))
+                return _error(
+                    'stoplist_conflict',
+                    f'В тексте блюда из стоп-листа: {names}. Отправить всё равно?',
+                    http_status.HTTP_409_CONFLICT,
+                    stoplist=conflicts,
+                )
         with transaction.atomic():
             for group in plan['groups']:
                 for row, cb_ids in group['by_branch']:

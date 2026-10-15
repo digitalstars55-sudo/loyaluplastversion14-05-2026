@@ -58,7 +58,7 @@ FLAG_FIELDS = (
     'review_proof_enabled', 'review_proof_coins',
     # 15.10.2026: подарок-извинение за низкую оценку и основная площадка /go.
     'apology_gift_enabled', 'apology_gift_max_rating', 'apology_gift_tier', 'apology_gift_text',
-    'guest_primary_channel',
+    'guest_primary_channel', 'stoplist_guard_enabled',
 )
 
 # Только чтение: платформенные переключатели пилотов и каталога ВК — включает
@@ -70,6 +70,7 @@ READONLY_FLAGS = frozenset({
     # Волны 2–4 включаются по сетям только после окончания всех волн (слово
     # владельца 14.10.2026) — до этого из кабинета сети не переключаются.
     'review_proof_enabled', 'apology_gift_enabled', 'guest_primary_channel',
+    'stoplist_guard_enabled',
 })
 EDITABLE_FLAGS = tuple(f for f in FLAG_FIELDS if f not in READONLY_FLAGS)
 # Пара в BranchConfig есть только у этих флагов (переопределение точки).

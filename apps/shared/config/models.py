@@ -203,6 +203,12 @@ class ClientConfig(models.Model):
         ),
     )
     rf_reward_max_cost_rub = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name='Предел себестоимости RF-подарка, ₽', help_text='0 — без ограничения. Максимальная себестоимость RF-подарка.')
+    stoplist_guard_enabled = models.BooleanField(
+        default=False,
+        verbose_name='Проверять стоп-лист перед рассылкой',
+        help_text=('Перед отправкой рассылки спросить CheckUp, что сейчас в стоп-листе, и '
+                   'предупредить, если текст рекламирует блюдо из стопа. Выключено — как раньше.'),
+    )
     # --- Подарок-извинение (15.10.2026, волна 3 ТЗ маркетолога) ---
     apology_gift_enabled = models.BooleanField(
         default=False,
