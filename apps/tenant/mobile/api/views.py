@@ -143,6 +143,7 @@ def _parse_date_range(start_raw, end_raw):
 # шла без query-параметров и массивом вместо {reviews, total, limit, offset}.
 # На поведение ручек ничего из этого не влияет.
 _REVIEW_LIST_PARAMS = [
+    OpenApiParameter('resolution', str, description='open — без отметки «Решено» (или гость написал после неё), resolved — решённые'),
     OpenApiParameter('branch_ids', str, description='id точек через запятую (пересекается с правами)'),
     OpenApiParameter('period', int, description='дней назад по last_message_at'),
     OpenApiParameter('start', str, description='свой период: ГГГГ-ММ-ДД включительно, только вместе с end; главнее period'),
@@ -439,7 +440,8 @@ class MobileReviewResolveAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         conv.has_unread = False
-        conv.save(update_fields=['has_unread'])
+        conv.resolved_at = timezone.now()
+        conv.save(update_fields=['has_unread', 'resolved_at'])
         # Сотрудник закрыл отзыв без ответа — запланированный автоответ ИИ
         # снимаем: решение «не отвечать» принято человеком.
         try:

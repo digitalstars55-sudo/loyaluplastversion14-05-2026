@@ -66,6 +66,11 @@ class ReviewListSerializer(serializers.ModelSerializer):
     # Предполагаемая точка (по последнему скану QR, 09.09.2026). Показывать в
     # мобилке имеет смысл только когда своей точки нет (тред из ВК-группы), но
     # поля отдаём ВСЕГДА — пустыми, чтобы клиент не падал на их отсутствии.
+    # 15.10.2026: «Решено» и откуда отзыв — точка и стол из QR сообщения.
+    is_resolved           = serializers.SerializerMethodField()
+    resolved_at           = serializers.DateTimeField(read_only=True)
+    table_number          = serializers.SerializerMethodField()
+    message_branch_name   = serializers.SerializerMethodField()
     inferred_branch_id    = serializers.SerializerMethodField()
     inferred_branch_name  = serializers.SerializerMethodField()
     inferred_table_number = serializers.SerializerMethodField()
@@ -114,12 +119,37 @@ class ReviewListSerializer(serializers.ModelSerializer):
             'inferred_scan_at',
             # '' | qr_scan | visit
             'inferred_source',
+            'is_resolved',
+            'resolved_at',
+            'table_number',
+            'message_branch_name',
         ]
 
     def get_auto_send_at(self, obj) -> str | None:
         return obj.auto_send_at.isoformat() if obj.auto_send_at else None
 
     # ── Предполагаемая точка (подсказка по скану, не выбор гостя) ─────────────
+
+    def _guest_messages(self, obj):
+        return [m for m in obj.messages.all()
+                if m.source != TestimonialMessage.Source.ADMIN_REPLY]
+
+    def get_is_resolved(self, obj) -> bool:
+        if not obj.resolved_at:
+            return False
+        return not any(m.created_at > obj.resolved_at for m in self._guest_messages(obj))
+
+    def get_table_number(self, obj) -> int | None:
+        for m in sorted(self._guest_messages(obj), key=lambda m: m.created_at, reverse=True):
+            if m.table_number:
+                return m.table_number
+        return None
+
+    def get_message_branch_name(self, obj) -> str:
+        for m in sorted(self._guest_messages(obj), key=lambda m: m.created_at, reverse=True):
+            if m.branch_id and m.branch:
+                return m.branch.name or ''
+        return ''
 
     def get_inferred_branch_id(self, obj) -> int | None:
         return obj.inferred_branch_id or None

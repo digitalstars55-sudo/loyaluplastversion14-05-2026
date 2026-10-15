@@ -27,6 +27,7 @@ _SOURCE_ALIASES = {
 }
 _STATUSES = ('unread', 'replied', 'unanswered', 'all')
 _CHECKUP_STATUSES = ('in_progress', 'resolved', 'rejected', 'none', 'any')
+_RESOLUTIONS = ('open', 'resolved', 'any')
 
 MAX_LIMIT = 200
 
@@ -65,6 +66,21 @@ def parse_status(raw: str | None) -> str:
 def parse_checkup_status(raw: str | None) -> str:
     value = str(raw or '').strip().lower()
     return value if value in _CHECKUP_STATUSES else 'any'
+
+
+def parse_resolution(raw: str | None) -> str:
+    value = str(raw or '').strip().lower()
+    return value if value in _RESOLUTIONS else 'any'
+
+
+def guest_wrote_after_resolve():
+    """Exists: гость написал после отметки «Решено» — отзыв снова открыт."""
+    from apps.tenant.branch.models import TestimonialMessage
+    return Exists(TestimonialMessage.objects.filter(
+        conversation_id=OuterRef('pk'),
+        source__in=(TestimonialMessage.Source.APP, TestimonialMessage.Source.VK_MESSAGE),
+        created_at__gt=OuterRef('resolved_at'),
+    ))
 
 
 def parse_pagination(params) -> tuple[int | None, int]:
@@ -112,6 +128,14 @@ def apply_review_filters(qs, params):
         qs = qs.filter(is_replied=True)
     elif status == 'unanswered':
         qs = qs.filter(is_replied=False)
+
+    # resolution=open|resolved — отметка «Решено» сотрудника (15.10.2026).
+    # Новое сообщение гостя после отметки возвращает отзыв в открытые.
+    resolution = parse_resolution(params.get('resolution'))
+    if resolution == 'resolved':
+        qs = qs.filter(resolved_at__isnull=False).exclude(guest_wrote_after_resolve())
+    elif resolution == 'open':
+        qs = qs.filter(Q(resolved_at__isnull=True) | guest_wrote_after_resolve())
 
     sources = parse_sources(params.get('source'))
     if sources:

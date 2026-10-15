@@ -1471,6 +1471,10 @@ class TestimonialConversation(TimeStampedModel):
     checkup_complaint_id = models.CharField('ID жалобы в CheckUp', max_length=40, blank=True, default='', db_default='')
     checkup_verdict_at = models.DateTimeField('Вердикт получен', null=True, blank=True)
     checkup_resolved_at = models.DateTimeField('Жалоба закрыта в CheckUp', null=True, blank=True)
+    # 15.10.2026 (владелец: «отмечаю решено — не попадает никуда»): кнопка
+    # «Решено» раньше только снимала «непрочитано». Теперь отзыв уходит в
+    # «Решённые» и возвращается в открытые сам, если гость написал снова.
+    resolved_at = models.DateTimeField('Решено сотрудником', null=True, blank=True)
 
     class Meta:
         verbose_name = 'Отзыв / Обращение'

@@ -90,6 +90,17 @@ class ApplyReviewFiltersTest(TestCase):
         w = _where(apply_review_filters(self.base, {'checkup_status': 'none'}))
         self.assertIn('checkup_status', w)
 
+    def test_resolution(self):
+        """15.10.2026: «Решено» уводит отзыв в решённые; гость написал снова — открыт."""
+        w = _where(apply_review_filters(self.base, {'resolution': 'resolved'}))
+        self.assertIn('resolved_at', w)
+        self.assertIn('NOT', w)
+        w = _where(apply_review_filters(self.base, {'resolution': 'open'}))
+        self.assertIn('resolved_at', w)
+        self.assertIn('EXISTS', w)
+        qs = apply_review_filters(self.base, {'resolution': 'мусор'})
+        self.assertEqual(str(qs.query), str(self.base.query))
+
     def test_search(self):
         w = _where(apply_review_filters(self.base, {'q': '  12345 '}))
         self.assertIn('vk_sender_id', w)
