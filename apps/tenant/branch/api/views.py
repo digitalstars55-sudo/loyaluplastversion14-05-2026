@@ -400,6 +400,12 @@ class VKCallbackView(APIView):
         return Response('ok')
 
 
+def _first_active_branch_id():
+    """Точка для входа по ссылке сети без точки (?company=…): первая активная."""
+    from apps.tenant.branch.models import Branch
+    return Branch.objects.filter(is_active=True).order_by('branch_id').values_list('branch_id', flat=True).first()
+
+
 class VKAuthView(APIView):
     """
     POST /api/v1/vk/auth/
@@ -439,16 +445,23 @@ class VKAuthView(APIView):
         if not s.is_valid():
             vk_log.warning('vk auth bad request errors=%s origin=%s', dict(s.errors), request.META.get('HTTP_ORIGIN', '-'))
             s.is_valid(raise_exception=True)
+        params = dict(s.validated_data)
+        if params.get('branch_id') is None:
+            # Вход по ссылке сети без точки: гость не в заведении, визит не пишем.
+            first = _first_active_branch_id()
+            if first is None:
+                vk_log.warning('vk auth FAIL no active branch in network')
+                return Response({'detail': 'Торговая точка не найдена.'}, status=status.HTTP_404_NOT_FOUND)
+            params['branch_id'] = first
+            if params.get('source', 'restaurant') == 'restaurant':
+                params['source'] = 'website'
         try:
-            profile, created = vk_web_auth(**s.validated_data)
+            profile, created = vk_web_auth(**params)
         except VKAuthError as e:
             vk_log.warning('vk auth FAIL vk_error=%s redirect_uri=%s branch=%s origin=%s',
-                           e, s.validated_data.get('redirect_uri'), s.validated_data.get('branch_id'),
+                           e, params.get('redirect_uri'), params.get('branch_id'),
                            request.META.get('HTTP_ORIGIN', '-'))
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            vk_log.exception('vk auth CRASH %s', e)
-            raise
         except BranchNotFound:
             return Response(
                 {'detail': 'Торговая точка не найдена.'},
@@ -464,6 +477,9 @@ class VKAuthView(APIView):
                 {'detail': 'Аккаунт заблокирован.', 'code': 'client_blocked'},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        except Exception as e:
+            vk_log.exception('vk auth CRASH %s', e)
+            raise
         resp_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
         data = ClientProfileResponseSerializer(profile).data
 

@@ -999,12 +999,13 @@ class VKAuthRequestSerializerTest(TestCase):
         self.assertFalse(s.is_valid())
         self.assertIn('redirect_uri', s.errors)
 
-    def test_missing_branch_id_is_invalid(self):
+    def test_missing_branch_id_is_allowed(self):
+        # 15.10.2026: ссылка сети без точки — вьюха сама берёт первую активную точку.
         data = self._valid_data()
         del data['branch_id']
         s = VKAuthRequestSerializer(data=data)
-        self.assertFalse(s.is_valid())
-        self.assertIn('branch_id', s.errors)
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertIsNone(s.validated_data['branch_id'])
 
     def test_birth_date_is_optional(self):
         data = self._valid_data()
@@ -1172,10 +1173,11 @@ class VKAuthViewTest(TestCase):
         data = dict(_VK_AUTH_PAYLOAD, redirect_uri='not-a-url')
         self.assertEqual(self._post(data).status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_returns_400_when_branch_id_missing(self):
+    @patch('apps.tenant.branch.api.views._first_active_branch_id', return_value=None)
+    def test_returns_404_when_branch_id_missing_and_no_active_branch(self, _first):
         data = dict(_VK_AUTH_PAYLOAD)
         del data['branch_id']
-        self.assertEqual(self._post(data).status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self._post(data).status_code, status.HTTP_404_NOT_FOUND)
 
     @patch('apps.tenant.branch.api.views.vk_web_auth')
     def test_passes_all_params_to_vk_web_auth(self, mock_auth):

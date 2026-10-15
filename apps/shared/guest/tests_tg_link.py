@@ -76,3 +76,36 @@ class TelegramLinkTest(TestCase):
         self.assertTrue(inside.data['telegram_linked'])
         self.assertFalse(outside.data['telegram_linked'])
         self.assertEqual(TelegramLink.objects.get(tg_user_id=55).client, self.guest)
+
+
+class VKAuthWithoutBranchTest(TestCase):
+    """Ссылка сети без точки (?company=1): вход идёт через первую активную точку,
+    источник «website» — визит не пишется (15.10.2026)."""
+
+    @patch('apps.tenant.branch.api.views._first_active_branch_id', return_value=9)
+    @patch('apps.tenant.branch.api.views.vk_web_auth')
+    def test_missing_branch_uses_first_active(self, mock_auth, _first):
+        guest = Client.objects.create(vk_id=200002444632, first_name='Гость')
+        profile = MagicMock()
+        profile.client = guest
+        mock_auth.return_value = (profile, False)
+        from apps.tenant.branch.api.tests import _VK_AUTH_PAYLOAD
+        body = {**_VK_AUTH_PAYLOAD, 'branch_id': None}
+        with patch('apps.tenant.branch.api.views.ClientProfileResponseSerializer') as ser:
+            ser.side_effect = lambda *_a, **_k: MagicMock(data={'vk_id': guest.vk_id})
+            response = VKAuthView.as_view()(APIRequestFactory().post('/', body, format='json'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        kwargs = mock_auth.call_args.kwargs
+        self.assertEqual(kwargs['branch_id'], 9)
+        self.assertEqual(kwargs['source'], 'website')
+
+    @patch('apps.tenant.branch.api.views._first_active_branch_id', return_value=9)
+    @patch('apps.tenant.branch.api.views.vk_web_auth')
+    def test_explicit_branch_untouched(self, mock_auth, first):
+        from apps.tenant.branch.api.tests import _VK_AUTH_PAYLOAD
+        mock_auth.side_effect = RuntimeError('stop')
+        with self.assertRaises(RuntimeError):
+            VKAuthView.as_view()(APIRequestFactory().post('/', dict(_VK_AUTH_PAYLOAD), format='json'))
+        first.assert_not_called()
+        self.assertEqual(mock_auth.call_args.kwargs['branch_id'], 42)
+        self.assertEqual(mock_auth.call_args.kwargs['source'], 'restaurant')

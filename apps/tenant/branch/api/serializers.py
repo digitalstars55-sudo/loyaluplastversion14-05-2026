@@ -194,7 +194,9 @@ class VKAuthRequestSerializer(serializers.Serializer):
     code_verifier = serializers.CharField()
     redirect_uri  = serializers.URLField()
     state         = serializers.CharField()
-    branch_id     = serializers.IntegerField()
+    # Ссылка сети без точки (?company=1, «Войти» на сайте) приходит без branch_id —
+    # тогда вьюха берёт первую активную точку сети (15.10.2026).
+    branch_id     = serializers.IntegerField(required=False, allow_null=True, default=None)
     birth_date    = serializers.DateField(required=False, allow_null=True, default=None)
     # Источник входа (как в POST /client/): сетевые (website/vk_catalog/delivery/rfm)
     # не пишут визит-скан. src — метка отслеживаемого QR («точка контакта»).
