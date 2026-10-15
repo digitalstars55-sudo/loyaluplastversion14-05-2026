@@ -122,28 +122,60 @@ def tg_link(company_id: str, route: str, params) -> str | None:
     return f'{base}{sep}startapp={start}'
 
 
+def available_targets(*, web_enabled: bool, tg_configured: bool, health: dict | None) -> set[str]:
+    """Площадки, куда сейчас можно вести: включены у сети И живы по проверке «в моменте»."""
+    from .channel_health import is_up
+
+    def up(name):  # нет свежих проверок — считаем живым (проверка не роняет вход)
+        return health is None or is_up(name, health)
+
+    out = set()
+    if up('vk'):
+        out.add(TARGET_VK)
+    if web_enabled and up('web') and up('vkid'):
+        out.add(TARGET_WEB)
+        if tg_configured and up('tg'):
+            out.add(TARGET_TG)
+    return out
+
+
 def decide(channel: str, *, web_enabled: bool, tg_available: bool,
-           via: str = '', remembered: str = '') -> str | None:
+           via: str = '', remembered: str = '', primary: str = 'ask',
+           health: dict | None = None) -> str | None:
     """
-    Куда вести. None — показать экран выбора (обычный браузер, выбора ещё не было).
+    Куда вести. None — показать экран выбора (обычный браузер, решать гостю).
+
+    Порядок (15.10.2026, решение владельца — «умный оркестратор»):
+      1. живые площадки = включены у сети ∩ отвечают по проверке channel_health;
+      2. явный выбор (`via`) — если площадка жива;
+      3. внутри ВК — ВК; внутри Телеграма — Телеграм, иначе веб (самый быстрый вход:
+         гость уже в приложении);
+      4. обычный браузер: запомненный выбор → основная площадка сети → единственная
+         живая → экран выбора из живых;
+      5. всё лежит или проверок нет — как раньше, ВК.
     """
-    available = {TARGET_VK}
-    if web_enabled:
-        available.add(TARGET_WEB)
-        if tg_available:
-            available.add(TARGET_TG)
+    available = available_targets(web_enabled=web_enabled, tg_configured=tg_available, health=health)
+    if not available:
+        return TARGET_VK
     if via in available:
         return via
     if channel == CHANNEL_VK:
-        return TARGET_VK
+        if TARGET_VK in available:
+            return TARGET_VK
+        return TARGET_WEB if TARGET_WEB in available else TARGET_VK
     if channel == CHANNEL_TELEGRAM:
-        if TARGET_TG in available:
-            return TARGET_TG
-        return TARGET_WEB if web_enabled else TARGET_VK
-    if not web_enabled:
-        return TARGET_VK
+        for target in (TARGET_TG, TARGET_WEB, TARGET_VK):
+            if target in available:
+                return target
     if remembered in available:
         return remembered
+    if primary in available:
+        return primary
+    # В браузере Телеграм — не самый быстрый вход (нужно приложение): в автоматический
+    # выбор не идёт, остаётся кнопкой на экране выбора.
+    quick = available - {TARGET_TG}
+    if len(quick) == 1:
+        return next(iter(quick))
     return None
 
 
@@ -175,20 +207,25 @@ def go(request):
     if tg:
         links[TARGET_TG] = tg
 
+    from .channel_health import get_state
+
+    health = get_state()
+    primary = getattr(config, 'guest_primary_channel', 'ask') or 'ask'
     via = (request.GET.get('via') or '').strip()
     target = decide(channel, web_enabled=web_enabled, tg_available=bool(tg),
-                    via=via, remembered=request.COOKIES.get(PREF_COOKIE, ''))
+                    via=via, remembered=request.COOKIES.get(PREF_COOKIE, ''),
+                    primary=primary, health=health)
+    available = available_targets(web_enabled=web_enabled, tg_configured=bool(tg), health=health)
     src = dict(params).get('src', '')
-    log.info('go tenant=%s channel=%s target=%s route=%s src=%s',
-             company.schema_name, channel, target or 'choose', route or '-', src or '-')
+    log.info('go tenant=%s channel=%s target=%s available=%s primary=%s route=%s src=%s',
+             company.schema_name, channel, target or 'choose', ','.join(sorted(available)) or '-',
+             primary, route or '-', src or '-')
 
     if target is None:
-        choices = [
-            {'via': TARGET_VK, 'title': 'Открыть во ВКонтакте', 'primary': True},
-            {'via': TARGET_WEB, 'title': 'Продолжить в браузере', 'primary': False},
-        ]
-        if tg:
-            choices.append({'via': TARGET_TG, 'title': 'Открыть в Телеграме', 'primary': False})
+        titles = {TARGET_VK: 'Открыть во ВКонтакте', TARGET_WEB: 'Продолжить в браузере',
+                  TARGET_TG: 'Открыть в Телеграме'}
+        choices = [{'via': t, 'title': titles[t], 'primary': i == 0}
+                   for i, t in enumerate(t for t in (TARGET_VK, TARGET_WEB, TARGET_TG) if t in available)]
         base_query = request.GET.copy()
         for item in choices:
             base_query['via'] = item['via']
@@ -197,6 +234,15 @@ def go(request):
         return render(request, 'go/choose.html', {
             'company_name': company.name,
             'choices': choices,
+        })
+
+    # Обычный браузер ведём во ВК, а веб жив: у гостя ВК может не открываться
+    # (провайдер, VPN) — страница за 2,5 с проверяет vk.com у него и при неудаче
+    # уводит в веб. Явный выбор гостя (via) не перепроверяем.
+    if (channel == CHANNEL_BROWSER and target == TARGET_VK and not via
+            and TARGET_WEB in available):
+        return render(request, 'go/route.html', {
+            'company_name': company.name, 'vk_href': links[TARGET_VK], 'web_href': links[TARGET_WEB],
         })
 
     response = HttpResponseRedirect(links[target])

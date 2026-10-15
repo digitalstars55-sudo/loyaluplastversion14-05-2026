@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{ company_name }}</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f6f4ef; --fg:#1b2838; --muted:#6b6450; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14181f; --fg:#eef0f3; --muted:#a8a28f; } }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:340px; padding:24px 16px; text-align:center; }
+  p { color:var(--muted); font-size:15px; }
+  a { color:inherit; }
+</style>
+</head>
+<body>
+<main>
+  <h1 style="font-size:20px;margin:0 0 8px">{{ company_name }}</h1>
+  <p>Открываем бонусы…</p>
+  <p><small><a href="{{ vk_href }}" rel="nofollow">ВКонтакте</a> · <a href="{{ web_href }}" rel="nofollow">в браузере</a></small></p>
+</main>
+<script>
+(function () {
+  // 15.10.2026: проверяем, открывается ли ВК у самого гостя; нет за 2,5 с — веб.
+  var vk = "{{ vk_href|escapejs }}";
+  var web = "{{ web_href|escapejs }}";
+  var done = false;
+  function go(url) { if (!done) { done = true; window.location.replace(url); } }
+  var img = new Image();
+  img.onload = function () { go(vk); };
+  img.onerror = function () { go(web); };
+  setTimeout(function () { go(web); }, 2500);
+  img.src = 'https://vk.com/favicon.ico?_=' + Date.now();
+})();
+</script>
+</body>
+</html>

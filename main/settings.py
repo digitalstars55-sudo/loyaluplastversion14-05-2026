@@ -319,6 +319,8 @@ VK_SIGN_EXEMPT_PATHS = tuple(
 # ── Распределитель входа /go/ (apps/shared/guest/go.py) ──────────────────────
 # Куда вести гостя из браузера: веб-версия мини-аппа (тот же бандл).
 GUEST_WEB_BASE_URL = os.getenv('GUEST_WEB_BASE_URL', 'https://loyalupp.ru')
+# Страница, которую ВК открывает внутри себя для мини-приложения (проверка доступности /go).
+VK_MINI_APP_HOST = os.getenv('VK_MINI_APP_HOST', 'https://levonework.ru/')
 # Телеграм-мини-апп гостя: `https://t.me/<бот>/<приложение>`. Пусто — в Телеграме
 # открывается веб-версия (если веб-вход у сети включён).
 TELEGRAM_GUEST_APP_URL = os.getenv('TELEGRAM_GUEST_APP_URL', '')
@@ -571,5 +573,7 @@ LOGGING = {
         'guest.requests': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
         'guest.client': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
         'guest.vkauth': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'guest.health': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'apps.shared.guest.go': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
     },
 }

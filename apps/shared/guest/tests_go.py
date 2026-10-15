@@ -96,3 +96,87 @@ class DecideTest(SimpleTestCase):
         self.assertEqual(d('browser', web_enabled=True, tg_available=False, remembered='tg'), None)
         self.assertEqual(d('browser', web_enabled=True, tg_available=True, remembered='tg'), 'tg')
         self.assertEqual(d('vk', web_enabled=True, tg_available=False, via='web'), 'web')
+
+
+def _health(**down):
+    """Состояние проверок: перечисленные площадки лежат."""
+    return {'checked_at': 0, 'channels': {
+        name: {'up': not down.get(name, False)} for name in ('vk', 'web', 'vkid', 'tg')}}
+
+
+class OrchestratorDecideTest(SimpleTestCase):
+    """15.10.2026: /go ведёт только в живые площадки, основная — из настроек сети."""
+
+    def d(self, channel, **kw):
+        kw.setdefault('web_enabled', True)
+        kw.setdefault('tg_available', True)
+        return go_mod.decide(channel, **kw)
+
+    def test_vk_down_vk_app_goes_web(self):
+        self.assertEqual(self.d(go_mod.CHANNEL_VK, health=_health(vk=True)), go_mod.TARGET_WEB)
+
+    def test_browser_only_web_alive_goes_web_without_choice(self):
+        self.assertEqual(self.d(go_mod.CHANNEL_BROWSER, health=_health(vk=True)), go_mod.TARGET_WEB)
+
+    def test_browser_all_alive_primary_wins(self):
+        self.assertEqual(self.d(go_mod.CHANNEL_BROWSER, primary='web', health=_health()), go_mod.TARGET_WEB)
+        self.assertIsNone(self.d(go_mod.CHANNEL_BROWSER, primary='ask', health=_health()))
+
+    def test_primary_down_falls_back(self):
+        # основная — ВК, но ВК лежит: из быстрых живых остался веб
+        self.assertEqual(self.d(go_mod.CHANNEL_BROWSER, primary='vk', health=_health(vk=True)), go_mod.TARGET_WEB)
+        self.assertEqual(self.d(go_mod.CHANNEL_BROWSER, primary='vk', tg_available=False,
+                                health=_health(vk=True)), go_mod.TARGET_WEB)
+
+    def test_vkid_down_means_no_web(self):
+        self.assertEqual(self.d(go_mod.CHANNEL_TELEGRAM, health=_health(vkid=True)), go_mod.TARGET_VK)
+
+    def test_remembered_dead_choice_ignored(self):
+        self.assertEqual(self.d(go_mod.CHANNEL_BROWSER, remembered='vk', primary='web',
+                                health=_health(vk=True)), go_mod.TARGET_WEB)
+
+    def test_everything_down_old_behaviour(self):
+        self.assertEqual(self.d(go_mod.CHANNEL_BROWSER, health=_health(vk=True, web=True)), go_mod.TARGET_VK)
+
+    def test_no_health_data_all_alive(self):
+        self.assertEqual(self.d(go_mod.CHANNEL_VK, health=None), go_mod.TARGET_VK)
+
+
+class ChannelHealthTest(SimpleTestCase):
+    def test_down_only_after_two_failures_and_alert_once(self):
+        from django.core.cache import caches
+        from apps.shared.guest import channel_health as ch
+        store = {}
+        fake = SimpleNamespace(get=lambda k: store.get(k), set=lambda k, v, timeout=None: store.__setitem__(k, v))
+        probes = {'vk': (False, 'timeout', 5), 'web': (True, '', 5), 'vkid': (True, '', 5), 'tg': (True, '', 0)}
+        with mock.patch.object(ch, '_cache', return_value=fake), \
+                mock.patch.object(ch, '_probe_all', return_value=probes), \
+                mock.patch.object(ch, '_alert') as alert:
+            s1 = ch.run_checks(now=1000)
+            self.assertTrue(s1['channels']['vk']['up'])
+            s2 = ch.run_checks(now=1060)
+            self.assertFalse(s2['channels']['vk']['up'])
+            ch.run_checks(now=1120)
+            self.assertEqual(alert.call_count, 1)
+            probes['vk'] = (True, '', 5)
+            s4 = ch.run_checks(now=1180)
+            self.assertTrue(s4['channels']['vk']['up'])
+            self.assertEqual(alert.call_count, 2)
+            self.assertFalse(ch.is_up('vk', s2))
+            self.assertIsNone(ch.get_state(now=1180 + 10_000))
+
+
+@override_settings(VK_MINI_APP_ID=111, GUEST_WEB_BASE_URL='https://vkapp.levelupapp.ru', TELEGRAM_GUEST_APP_URL='')
+class GoRouteProbeTest(SimpleTestCase):
+    def test_browser_primary_vk_checks_vk_on_guest_side(self):
+        tenant = _tenant(web=True)
+        tenant.config.guest_primary_channel = 'vk'
+        request = RequestFactory().get('/go/?branch=1', HTTP_USER_AGENT=BROWSER_UA)
+        with mock.patch.object(go_mod, 'connection', SimpleNamespace(tenant=tenant)), \
+                mock.patch('apps.shared.guest.channel_health.get_state', return_value=None):
+            r = go_mod.go(request)
+        self.assertEqual(r.status_code, 200)
+        body = r.content.decode()
+        self.assertIn('vk.com/favicon.ico', body)
+        self.assertIn('var vk = "https://vk.com/app111/', body)
+        self.assertIn('vkapp.levelupapp.ru', body)

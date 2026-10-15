@@ -128,6 +128,12 @@ app.conf.beat_schedule = {
     # оплата сетей, callback ВК, доступность входа. Пуш суперадминам, один
     # сигнал не чаще раза в сутки. Пока PLATFORM_MONITOR_ENABLED не задан —
     # задача выходит сразу, ничего не проверяя.
+    # 15.10.2026: доступность площадок входа гостя (ВК, веб, VK ID, Телеграм) —
+    # распределитель /go/ ведёт только в живые; при падении — пуш суперадминам.
+    'guest-channel-health': {
+        'task': 'apps.shared.guest.tasks.check_guest_channels_task',
+        'schedule': 60.0,
+    },
     'platform-monitor-hourly': {
         'task': 'apps.shared.monitoring.tasks.platform_health_check_task',
         'schedule': crontab(minute=5),  # every hour at :05
