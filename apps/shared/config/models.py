@@ -203,6 +203,17 @@ class ClientConfig(models.Model):
         ),
     )
     rf_reward_max_cost_rub = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name='Предел себестоимости RF-подарка, ₽', help_text='0 — без ограничения. Максимальная себестоимость RF-подарка.')
+    # --- Этап 5 брифа: атрибуция в деньгах (15.10.2026) ---
+    campaign_margin_pct = models.PositiveSmallIntegerField(
+        default=0, verbose_name='Маржа для статистики кампаний, %',
+        help_text=('Сколько процентов выручки остаётся после себестоимости (например 65). '
+                   'Статистика кампаний покажет «≈ прибыль» рядом с выручкой. 0 — не показывать.'),
+    )
+    default_control_percent = models.PositiveSmallIntegerField(
+        default=0, verbose_name='Контрольная группа рассылок по умолчанию, %',
+        help_text=('Доля аудитории, которая не получит рассылку и покажет, был ли от неё толк. '
+                   'Подставляется в новую рассылку, если её не задали. 0–50; 0 — без группы, как раньше.'),
+    )
     stoplist_guard_enabled = models.BooleanField(
         default=False,
         verbose_name='Проверять стоп-лист перед рассылкой',

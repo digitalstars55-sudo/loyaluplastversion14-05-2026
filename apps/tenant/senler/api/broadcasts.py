@@ -72,6 +72,16 @@ MAX_LIMIT = 200
 
 # ── Общие помощники ───────────────────────────────────────────────────────────
 
+def _default_control_percent() -> int:
+    """Контрольная группа по умолчанию — настройка сети (этап 5 брифа), 0–50."""
+    try:
+        from apps.tenant.senler.engine import _tenant_client_config
+        v = int(getattr(_tenant_client_config(), 'default_control_percent', 0) or 0)
+    except Exception:
+        return 0
+    return max(0, min(v, 50))
+
+
 def _error(code: str, detail: str, status_code: int, **extra):
     """Единая форма ошибки для кабинета: {'code': ..., 'detail': ...}."""
     payload = {'code': code, 'detail': detail}
@@ -560,7 +570,7 @@ class BroadcastDraftListCreateAPIView(APIView):
             variants=values.get('variants', []),
             audience_limit_mode=values.get('audience_limit_mode', ''),
             audience_limit_value=values.get('audience_limit_value'),
-            control_percent=values.get('control_percent', 0),
+            control_percent=values.get('control_percent', _default_control_percent()),
             created_by=(getattr(request.user, 'username', '') or '')[:150],
         )
         return Response(draft_to_dict(draft, request), status=http_status.HTTP_201_CREATED)

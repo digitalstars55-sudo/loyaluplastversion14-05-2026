@@ -59,6 +59,7 @@ FLAG_FIELDS = (
     # 15.10.2026: подарок-извинение за низкую оценку и основная площадка /go.
     'apology_gift_enabled', 'apology_gift_max_rating', 'apology_gift_tier', 'apology_gift_text',
     'guest_primary_channel', 'stoplist_guard_enabled',
+    'campaign_margin_pct', 'default_control_percent',
 )
 
 # Только чтение: платформенные переключатели пилотов и каталога ВК — включает

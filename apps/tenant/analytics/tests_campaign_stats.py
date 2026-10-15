@@ -80,3 +80,39 @@ class RFTransitionsTest(SimpleTestCase):
 
     def test_пусто(self):
         self.assertIn('не переходили', rt.classify({}, 0)['conclusion'])
+
+
+class MoneyAndSignificanceTest(SimpleTestCase):
+    """Этап 5 брифа (15.10.2026): значимость разницы и «≈ прибыль»."""
+
+    def group(self, n, returned, covered=0, revenue='0'):
+        g = cs.Group(guests=set(range(n)), returned=set(range(returned)),
+                     covered=set(range(covered)), revenue=Decimal(revenue))
+        return g
+
+    def test_significant_difference(self):
+        out = cs.compare(self.group(400, 120), self.group(400, 60))
+        self.assertEqual(out['verdict'], 'significant')
+        self.assertLess(out['p_value'], 0.05)
+        self.assertEqual(out['uplift_pp'], 15.0)
+
+    def test_no_difference(self):
+        out = cs.compare(self.group(100, 20), self.group(100, 18))
+        self.assertEqual(out['verdict'], 'no_difference')
+
+    def test_few_guests(self):
+        out = cs.compare(self.group(20, 10), self.group(10, 1))
+        self.assertEqual(out['verdict'], 'few')
+        self.assertIsNone(out['p_value'])
+
+    def test_profit_from_margin(self):
+        sent = self.group(100, 40, covered=20, revenue='20000')
+        ctrl = self.group(100, 20, covered=20, revenue='10000')
+        self.assertIsNone(cs.compare(sent, ctrl)['extra_profit'])
+        out = cs.compare(sent, ctrl, margin_pct=60)
+        self.assertEqual(out['extra_revenue'], 10000.0)
+        self.assertEqual(out['extra_profit'], 6000.0)
+
+    def test_p_value_edges(self):
+        self.assertIsNone(cs.two_proportion_p(0, 0, 1, 10))
+        self.assertEqual(cs.two_proportion_p(0, 10, 0, 10), 1.0)

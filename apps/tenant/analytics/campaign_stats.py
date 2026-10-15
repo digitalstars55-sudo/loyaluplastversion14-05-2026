@@ -24,6 +24,7 @@ from decimal import Decimal
 
 WINDOW = timedelta(days=14)
 MIN_COVERED = 10        # меньше гостей с известными деньгами — «+N ₽» не считаем
+MIN_SIGNIFICANCE = 30   # этап 5 брифа (15.10.2026): меньше гостей в группе — «мало данных»
 
 
 @dataclass
@@ -112,16 +113,45 @@ def control_group(members, visits, purchases, covered_guests, window=WINDOW):
     return g
 
 
-def compare(sent: Group, control: Group | None) -> dict:
-    out = {'uplift_pp': None, 'extra_returns': None, 'extra_revenue': None}
+def two_proportion_p(x1: int, n1: int, x2: int, n2: int) -> float | None:
+    """Двусторонний p для разницы долей (z-тест, нормальное приближение)."""
+    import math
+    if n1 <= 0 or n2 <= 0:
+        return None
+    p = (x1 + x2) / (n1 + n2)
+    se = math.sqrt(p * (1 - p) * (1 / n1 + 1 / n2))
+    if se == 0:
+        return 1.0
+    z = abs(x1 / n1 - x2 / n2) / se
+    return round(math.erfc(z / math.sqrt(2)), 4)
+
+
+def compare(sent: Group, control: Group | None, margin_pct: float | None = None) -> dict:
+    """
+    Разница с контрольной группой. Этап 5 брифа (15.10.2026):
+      • `verdict`: significant — возврат отличается не случайно (p < 0,05),
+        no_difference — не отличается, few — меньше MIN_SIGNIFICANCE гостей в группе;
+      • `extra_profit` — «≈ прибыль»: дополнительная выручка × маржа сети
+        (`campaign_margin_pct`, себестоимость задаёт владелец); не задана — None.
+    """
+    out = {'uplift_pp': None, 'extra_returns': None, 'extra_revenue': None,
+           'extra_profit': None, 'p_value': None, 'verdict': None}
     if control is None or not control.guests or not sent.guests:
         return out
     rs, rc = sent.rate(), control.rate()
     out['uplift_pp'] = round(rs - rc, 1)
     out['extra_returns'] = round((rs - rc) * len(sent.guests) / 100)
+    if len(sent.guests) < MIN_SIGNIFICANCE or len(control.guests) < MIN_SIGNIFICANCE:
+        out['verdict'] = 'few'
+    else:
+        p = two_proportion_p(len(sent.returned), len(sent.guests), len(control.returned), len(control.guests))
+        out['p_value'] = p
+        out['verdict'] = 'significant' if p is not None and p < 0.05 else 'no_difference'
     if len(sent.covered) >= MIN_COVERED and len(control.covered) >= MIN_COVERED:
         diff = sent.per_covered() - control.per_covered()
         out['extra_revenue'] = float(round(diff * len(sent.covered)))
+        if margin_pct:
+            out['extra_profit'] = float(round(out['extra_revenue'] * margin_pct / 100))
     return out
 
 
@@ -143,6 +173,9 @@ def build(start, end, now=None, branch_ids=None) -> dict:
     from apps.tenant.analytics.models import PosGuestLink, PosGuestLinkStatus, PosGuestOrder
     from apps.tenant.branch.models import ClientBranchVisit, ReceiptScan, ReceiptScanStatus
     from apps.tenant.senler.models import BroadcastControlMember, BroadcastRecipient, RecipientStatus
+    from apps.tenant.senler.engine import _tenant_client_config
+
+    margin_pct = float(getattr(_tenant_client_config(), 'campaign_margin_pct', 0) or 0) or None
 
     now = now or timezone.now()
     recipients = BroadcastRecipient.objects.filter(
@@ -207,6 +240,6 @@ def build(start, end, now=None, branch_ids=None) -> dict:
             'read': len(reads[key]),
             **group_dict(g),
             'control': group_dict(ctrl) if ctrl else None,
-            **compare(g, ctrl),
+            **compare(g, ctrl, margin_pct),
         })
-    return {'window_days': WINDOW.days, 'campaigns': out}
+    return {'window_days': WINDOW.days, 'margin_pct': margin_pct, 'campaigns': out}
