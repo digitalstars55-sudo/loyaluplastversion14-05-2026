@@ -203,6 +203,27 @@ class ClientConfig(models.Model):
         ),
     )
     rf_reward_max_cost_rub = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name='Предел себестоимости RF-подарка, ₽', help_text='0 — без ограничения. Максимальная себестоимость RF-подарка.')
+    # --- Подарок-извинение (15.10.2026, волна 3 ТЗ маркетолога) ---
+    apology_gift_enabled = models.BooleanField(
+        default=False,
+        verbose_name='Подарок-извинение за низкую оценку',
+        help_text=(
+            'Гость поставил в отзыве оценку не выше порога — LoyalUP сам кладёт ему подарок '
+            'из каталога наград (тир ниже) и пишет «извините» в ВК. Не чаще раза в 30 дней '
+            'одному гостю. Выключено — как раньше.'
+        ),
+    )
+    apology_gift_max_rating = models.PositiveSmallIntegerField(
+        default=3, verbose_name='Подарок-извинение: оценка не выше')
+    apology_gift_tier = models.CharField(
+        max_length=8, default='G1', verbose_name='Подарок-извинение: категория подарка',
+        help_text='Категория каталога наград (G1 — самый лёгкий).')
+    apology_gift_text = models.TextField(
+        blank=True, default='',
+        verbose_name='Подарок-извинение: текст гостю',
+        help_text=('Пусто — стандартный текст. {name} — имя гостя, {gift} — подарок, '
+                   '{days} — сколько дней действует.'),
+    )
     rf_daily_contact_limit = models.PositiveSmallIntegerField(default=0, verbose_name='Лимит RF-сообщений в день', help_text='0 — без ограничения. Максимум RF-сообщений в день по сети.')
     story_campaign_start = models.DateField(
         null=True, blank=True,

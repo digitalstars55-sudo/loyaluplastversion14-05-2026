@@ -143,6 +143,7 @@ class AcquisitionSource(models.TextChoices):
     MANUAL      = 'manual',      'Выдано вручную'
     RFM         = 'rfm',         'RFM-кампания'
     RF_AUTO     = 'rf_auto',     'RF-авторассылка'
+    APOLOGY     = 'apology',     'Подарок-извинение'
 
 
 class ItemStatus(models.TextChoices):

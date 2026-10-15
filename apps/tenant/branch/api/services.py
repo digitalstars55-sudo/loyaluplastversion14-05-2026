@@ -1411,6 +1411,10 @@ def submit_app_review(
     from apps.shared.relay.checkup_complaints import dispatch_complaint_relay
     dispatch_complaint_relay(conv.id, msg.id)
 
+    # Низкая оценка — подарок-извинение (настройка сети, по умолчанию выкл.).
+    from apps.tenant.branch.apology_gift import schedule as schedule_apology
+    schedule_apology(msg)
+
     # Push only on FIRST message in the thread (= new review).
     if TestimonialMessage.objects.filter(conversation=conv).count() == 1:
         _safe_push_review_new(conv=conv, source='APP')

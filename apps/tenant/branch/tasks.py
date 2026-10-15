@@ -1060,3 +1060,16 @@ def handle_vk_callback_task(self, schema_name: str, payload: dict) -> str:
         )
         raise self.retry(exc=e)
     return 'ok'
+
+
+@shared_task(name='apps.tenant.branch.tasks.apology_gift_task', ignore_result=True)
+def apology_gift_task(message_id: int, schema_name: str):
+    """Подарок-извинение за низкую оценку (apps/tenant/branch/apology_gift.py)."""
+    from django_tenants.utils import schema_context
+
+    from apps.tenant.branch.apology_gift import grant
+    with schema_context(schema_name):
+        issued, reason = grant(message_id)
+    logging.getLogger('loyalup.apology').info(
+        'apology tenant=%s msg=%s result=%s', schema_name, message_id,
+        f'gift item={issued.pk}' if issued is not None else f'skip {reason}')

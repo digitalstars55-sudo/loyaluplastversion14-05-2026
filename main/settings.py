@@ -574,6 +574,7 @@ LOGGING = {
         'guest.client': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
         'guest.vkauth': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
         'guest.health': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'loyalup.apology': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
         'apps.shared.guest.go': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
     },
 }
