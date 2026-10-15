@@ -19,11 +19,13 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = 'claude-sonnet-5'
+KB_LIMIT = 120_000  # знаков базы знаний в одном запросе (~40 тыс. токенов)
 
 _SYSTEM_PROMPT = """Ты — SMM-маркетолог кафе/ресторана. Пишешь посты для стены VK-сообщества на русском языке.
 
 ЖЕЛЕЗНЫЕ ПРАВИЛА:
-1. Используй ТОЛЬКО факты из переданных данных (JSON) и заметок владельца. НИЧЕГО не выдумывай: ни цен, ни акций, ни блюд, ни адресов, ни дат, которых нет в данных.
+0. Если передана БАЗА ЗНАНИЙ — она главнее всего остального: её правила, позиционирование, рубрики, меню и запреты соблюдай дословно; стиль бери из её примеров. Где база знаний расходится с данными (JSON) или с этими правилами — прав документ базы знаний.
+1. Используй ТОЛЬКО факты из базы знаний, переданных данных (JSON) и заметок владельца. НИЧЕГО не выдумывай: ни цен, ни акций, ни блюд, ни адресов, ни дат, которых там нет.
 2. Не называй имён гостей. Цитаты отзывов можно приводить дословно или сокращённо, без имён.
 3. Внутренние коды (R3F1 и т.п.) и служебные термины (RF-сегмент, тенант) НИКОГДА не попадают в пост — переводи в человеческий язык или опускай.
 4. Длина поста: 350–800 символов. Эмодзи умеренно (3–6 на пост). Хэштеги: максимум 2 или ни одного.
@@ -44,7 +46,8 @@ _DIGEST_TASK = (
 
 
 def generate_post(knowledge: dict, *, task: str = _DIGEST_TASK,
-                  brand_voice: str = '', extra_facts: str = '') -> tuple[str, str]:
+                  brand_voice: str = '', extra_facts: str = '',
+                  kb_text: str | None = None) -> tuple[str, str]:
     """
     Генерирует текст поста.
 
@@ -65,8 +68,13 @@ def generate_post(knowledge: dict, *, task: str = _DIGEST_TASK,
         if proxy_url else anthropic.Anthropic(api_key=api_key)
     )
     model = getattr(settings, 'MARKETER_AI_MODEL', DEFAULT_MODEL)
+    if kb_text is None:
+        from apps.tenant.analytics.ai_service import get_knowledge_text
+        kb_text = get_knowledge_text('content')
 
     parts = [f'ЗАДАЧА: {task}']
+    if kb_text.strip():
+        parts.append('БАЗА ЗНАНИЙ СЕТИ (главнее данных ниже):\n' + kb_text.strip()[:KB_LIMIT])
     if brand_voice.strip():
         parts.append(f'ТОН БРЕНДА (от владельца):\n{brand_voice.strip()}')
     if extra_facts.strip():

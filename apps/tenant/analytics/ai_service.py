@@ -131,16 +131,45 @@ _BASE_SYSTEM_PROMPT = """Ты — аналитик отзывов рестора
 Никакого другого текста — только JSON."""
 
 
-def _get_knowledge_base_text() -> str:
-    """Загружает и объединяет текст всех активных KnowledgeBaseDocument."""
+# 15.10.2026 (владелец: «база знаний не работает, ИИ на неё не опирается»):
+# документы у сети двух назначений — правила ответов на отзывы и база для
+# постов/рассылок. Раньше всё шло в ответы (110 тыс. знаков, правило ответа
+# терялось среди меню и примеров постов), а маркетолог не получал ничего.
+# Назначение — по названию и началу текста документа; «общее» (меню) — обоим.
+_KB_CONTENT_TITLE = ('контент', 'маркетолог', 'рассылк', 'посты', 'постов', 'smm')
+_KB_CONTENT_TEXT = ('контент-план', 'ии маркетолог', 'ии-маркетолог', 'smm')
+
+
+def kb_purpose(title: str, text: str) -> str:
+    """'content' | 'reviews' | 'both'."""
+    t = (title or '').lower()
+    if 'отзыв' in t:
+        return 'reviews'
+    if any(w in t for w in _KB_CONTENT_TITLE) or any(
+            w in (text or '')[:300].lower() for w in _KB_CONTENT_TEXT):
+        return 'content'
+    return 'both'
+
+
+def get_knowledge_text(purpose: str) -> str:
+    """Текст активных документов для `purpose` ('reviews' | 'content').
+
+    Документы-правила («обязательн», «правил» в названии) идут первыми.
+    """
     try:
         from apps.tenant.analytics.models import KnowledgeBaseDocument
-        docs = KnowledgeBaseDocument.objects.filter(is_active=True).exclude(extracted_text='')
-        texts = [f"=== {doc.title} ===\n{doc.extracted_text}" for doc in docs]
-        return '\n\n'.join(texts) if texts else ''
+        docs = list(KnowledgeBaseDocument.objects.filter(is_active=True).exclude(extracted_text=''))
     except Exception as e:
         logger.warning('Failed to load KnowledgeBase: %s', e)
         return ''
+    chosen = [d for d in docs if kb_purpose(d.title, d.extracted_text) in (purpose, 'both')]
+    chosen.sort(key=lambda d: (not any(w in d.title.lower() for w in ('обязательн', 'правил')), d.pk))
+    return '\n\n'.join(f"=== {d.title} ===\n{d.extracted_text}" for d in chosen)
+
+
+def _get_knowledge_base_text() -> str:
+    """База знаний для ответов на отзывы и разбора тональности."""
+    return get_knowledge_text('reviews')
 
 
 def analyze_message(text: str, source: str = '') -> dict:

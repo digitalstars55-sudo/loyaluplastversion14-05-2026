@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import uuid
 
 import requests
@@ -33,15 +34,32 @@ def prompt_for(post) -> str:
     return f'{STYLE} Theme: {topic}. Post: {body}'[:1400]
 
 
+def _images_url() -> str:
+    # 15.10.2026: тот же адрес, что у текста (`openai_compat`). Напрямую
+    # api.openai.com с нашего сервера отвечает «Country, region, or territory
+    # not supported» — картинка не рисовалась ни разу.
+    configured = (getattr(settings, 'OPENAI_BASE_URL', '') or os.getenv('OPENAI_BASE_URL') or '')
+    return f'{configured.rstrip("/")}/images/generations' if configured else URL
+
+
+def _session() -> requests.Session:
+    """Сессия с прокси OpenAI (`OPENAI_PROXY_URL`) — только для ИИ, не глобально."""
+    sess = requests.Session()
+    proxy_url = (getattr(settings, 'OPENAI_PROXY_URL', '') or os.getenv('OPENAI_PROXY_URL') or '').strip()
+    if proxy_url:
+        sess.proxies.update({'http': proxy_url, 'https': proxy_url})
+    return sess
+
+
 def generate_for_post(post) -> None:
     """Рисует и прикрепляет картинку к посту. Ошибку — исключением (текст для человека)."""
     key = getattr(settings, 'OPENAI_API_KEY', '') or ''
     if not key:
         raise ImageError('Не задан ключ ИИ — картинку нарисовать нечем.')
     model = getattr(settings, 'MARKETER_IMAGE_MODEL', 'gpt-image-1')
-    base = (getattr(settings, 'OPENAI_IMAGES_URL', '') or URL)
+    base = getattr(settings, 'OPENAI_IMAGES_URL', '') or _images_url()
     try:
-        r = requests.post(base, headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
+        r = _session().post(base, headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'},
                           json={'model': model, 'prompt': prompt_for(post), 'size': '1536x1024',
                                 'quality': 'medium', 'n': 1, 'output_format': 'jpeg',
                                 'output_compression': 82},
