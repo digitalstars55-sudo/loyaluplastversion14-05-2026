@@ -113,3 +113,25 @@ class TelegramLink(TimeStampedModel):
 
     def __str__(self):
         return f'tg {self.tg_user_id} → vk {self.client.vk_id}'
+
+
+class GuestForgetLog(models.Model):
+    """
+    Журнал «удалить мои данные» (15.10.2026). Сам VK ID не хранится — только
+    его хэш (чтобы на повторный вопрос «удалили ли меня» можно было ответить),
+    и сколько строк обезличено в каждой сети.
+    """
+
+    vk_id_hash = models.CharField(max_length=64, db_index=True, verbose_name='Хэш VK ID')
+    client_pk = models.PositiveBigIntegerField(verbose_name='Номер карточки гостя')
+    requested_at = models.DateTimeField(auto_now_add=True, verbose_name='Запрошено')
+    via = models.CharField(max_length=16, blank=True, default='', verbose_name='Как доказан гость')
+    counts = models.JSONField(default=dict, blank=True, verbose_name='Обезличено строк')
+
+    class Meta:
+        verbose_name = 'Удаление данных гостя'
+        verbose_name_plural = 'Удаления данных гостей'
+        ordering = ['-requested_at']
+
+    def __str__(self):
+        return f'гость #{self.client_pk} — {self.requested_at:%d.%m.%Y %H:%M}'

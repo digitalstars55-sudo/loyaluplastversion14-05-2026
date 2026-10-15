@@ -526,3 +526,33 @@ class VKSubscriptionStatusView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response(data)
+
+
+class ClientForgetView(APIView):
+    """
+    POST /api/v1/client/forget/  {"confirm": true}
+
+    «Удалить мои данные» — гость сам. Только ДОКАЗАННЫЙ гость: подпись запуска
+    ВК или веб-сессия VK ID (`request.vk_user_id` от VKLaunchParamsMiddleware);
+    `vk_id` из тела не принимается — удалить чужие данные нельзя даже при
+    выключенном принуждении подписи. Обезличивание — apps/shared/guest/forget.py.
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    @extend_schema(request=None, responses={204: None, 400: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT})
+    def post(self, request: Request) -> Response:
+        from apps.shared.guest.forget import забыть
+        from apps.shared.guest.models import Client
+
+        vk_id = getattr(request, 'vk_user_id', None)
+        if not vk_id:
+            return Response({'detail': 'Войдите заново, чтобы удалить данные.', 'code': 'not_proven'},
+                            status=status.HTTP_403_FORBIDDEN)
+        if request.data.get('confirm') is not True:
+            return Response({'detail': 'Нужно подтверждение.', 'code': 'confirm_required'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        client = Client.objects.filter(vk_id=vk_id).first()
+        if client is not None:
+            забыть(client, via=getattr(request, 'vk_sign_status', '') or '')
+        return Response(status=status.HTTP_204_NO_CONTENT)
