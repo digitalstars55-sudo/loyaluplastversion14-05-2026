@@ -10,6 +10,7 @@ from drf_spectacular.utils import extend_schema
 from drf_spectacular.types import OpenApiTypes
 
 from apps.shared.guest.web_session import issue_web_token
+from apps.shared.guest.tg_init import linked_client, remember_link
 
 from .serializers import (
     BranchIdRequestSerializer,
@@ -467,7 +468,43 @@ class VKAuthView(APIView):
         except Exception:
             logger.exception('vk_auth: не удалось выдать web_token')
 
+        # Вход внутри Телеграм-мини-аппа: запоминаем Телеграм гостя, чтобы
+        # дальше он входил из бота без VK ID (apps/shared/guest/tg_init.py).
+        data['telegram_linked'] = remember_link(request, profile.client)
+
         return Response(data, status=resp_status)
+
+
+class TelegramSessionView(APIView):
+    """
+    POST /api/v1/vk/tg-session/ — вход из Телеграм-мини-аппа без VK ID.
+
+    Доказательство — подписанная ботом initData (`X-Telegram-Init-Data`). Если
+    этот Телеграм уже привязан к гостю (он однажды вошёл через VK ID внутри
+    Телеграма), отдаём такой же токен веб-сессии, как после VK ID. Иначе 404
+    `tg_not_linked` — фронт показывает обычную кнопку «Войти через VK ID».
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT})
+    def post(self, request: Request) -> Response:
+        client = linked_client(request)
+        if client is None:
+            return Response({'detail': 'Телеграм не привязан.', 'code': 'tg_not_linked'},
+                            status=status.HTTP_404_NOT_FOUND)
+        if getattr(client, 'is_blocked', False):
+            return Response({'detail': 'Аккаунт заблокирован.', 'code': 'client_blocked'},
+                            status=status.HTTP_403_FORBIDDEN)
+        web_token, expires_at = issue_web_token(client.vk_id)
+        return Response({
+            'vk_id': client.vk_id,
+            'first_name': client.first_name,
+            'last_name': client.last_name,
+            'photo_url': client.photo_url,
+            'web_token': web_token,
+            'web_token_expires_at': expires_at.isoformat(),
+        })
 
 
 class VKSubscriptionStatusView(APIView):

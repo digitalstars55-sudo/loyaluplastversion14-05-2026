@@ -8,7 +8,7 @@ from .review_proofs import (
 )
 from .views import (
     BranchInfoView, ClientView, EmployeeView, PromotionView, TransactionsView,
-    TestimonialCreateView, VKAuthView, VKCallbackView, VKStoryView, VKSyncView,
+    TelegramSessionView, TestimonialCreateView, VKAuthView, VKCallbackView, VKStoryView, VKSyncView,
     VKSubscriptionStatusView,
 )
 
@@ -32,6 +32,7 @@ urlpatterns = [
     path('promotions/',               PromotionView.as_view(),   name='promotions'),
     path('transactions/',             TransactionsView.as_view(), name='transactions'),
     path('vk/auth/',                  VKAuthView.as_view(),      name='vk-auth'),
+    path('vk/tg-session/',            TelegramSessionView.as_view(), name='vk-tg-session'),
     path('vk/story/',                 VKStoryView.as_view(),     name='vk-story'),
     path('vk/callback/',              VKCallbackView.as_view(),  name='vk-callback'),
     path('testimonials/',             TestimonialCreateView.as_view(), name='testimonials-create'),

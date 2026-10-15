@@ -80,3 +80,42 @@ def telegram_user_id(fields: dict | None) -> int | None:
         return int(user.get('id'))
     except (TypeError, ValueError):
         return None
+
+
+HEADER = 'HTTP_X_TELEGRAM_INIT_DATA'
+
+
+def proven_tg_user_id(request) -> int | None:
+    """Доказанный id Телеграма из заголовка `X-Telegram-Init-Data` или None."""
+    raw = (request.META.get(HEADER, '') or '').strip()
+    return telegram_user_id(verify_init_data(raw)) if raw else None
+
+
+def remember_link(request, client) -> bool:
+    """После входа через VK ID: если запрос из нашего Телеграм-бота — запомнить
+    пару «Телеграм ↔ гость». Тот же Телеграм с другой страницей ВК
+    перепривязывается на последнюю (гость сменил аккаунт). Сбой не ломает вход."""
+    import logging
+
+    from .models import TelegramLink
+
+    try:
+        tg_id = proven_tg_user_id(request)
+        if not tg_id or client is None:
+            return False
+        TelegramLink.objects.update_or_create(tg_user_id=tg_id, defaults={'client': client})
+        return True
+    except Exception:
+        logging.getLogger(__name__).exception('tg link: не удалось запомнить привязку')
+        return False
+
+
+def linked_client(request):
+    """Гость, привязанный к доказанному Телеграму запроса, или None."""
+    from .models import TelegramLink
+
+    tg_id = proven_tg_user_id(request)
+    if not tg_id:
+        return None
+    link = TelegramLink.objects.select_related('client').filter(tg_user_id=tg_id).first()
+    return link.client if link else None

@@ -92,3 +92,24 @@ class Client(TimeStampedModel):
         verbose_name = 'Гость'
         verbose_name_plural = 'Гости'
         ordering = ['-created_at']
+
+
+class TelegramLink(TimeStampedModel):
+    """
+    Телеграм гостя ↔ его страница ВК (15.10.2026). Заводится, когда гость
+    входит через VK ID внутри Телеграм-мини-аппа: в одном запросе есть и
+    доказанный VK ID (обмен кода), и подписанная ботом initData. Дальше из
+    Телеграма гость входит без VK ID — `POST /api/v1/vk/tg-session/`.
+    """
+
+    tg_user_id = models.PositiveBigIntegerField(unique=True, verbose_name='Telegram ID')
+    client = models.ForeignKey(
+        Client, on_delete=models.CASCADE, related_name='telegram_links', verbose_name='Гость',
+    )
+
+    class Meta:
+        verbose_name = 'Привязка Телеграма'
+        verbose_name_plural = 'Привязки Телеграма'
+
+    def __str__(self):
+        return f'tg {self.tg_user_id} → vk {self.client.vk_id}'
