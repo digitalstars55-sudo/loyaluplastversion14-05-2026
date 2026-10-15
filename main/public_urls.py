@@ -22,9 +22,11 @@ from apps.shared.config.admin_sites import public_admin
 from apps.tenant.delivery.api.public_views import PublicDeliveryWebhook
 from apps.tenant.analytics.api.orders_public import PublicDailyOrdersIngest
 from main.views import health
+from apps.shared.guest.request_log import ClientLogView
 
 urlpatterns = [
     path('api/v1/health/', health, name='health'),
+    path('api/v1/client-log/', ClientLogView.as_view(), name='public-client-log'),  # ошибки браузера гостя (15.10.2026)
     path('admin/', public_admin.urls),
     path('api/v1/', include('apps.shared.clients.api.urls')),
     path('api/v1/delivery/webhook/', PublicDeliveryWebhook.as_view(), name='public-delivery-webhook'),

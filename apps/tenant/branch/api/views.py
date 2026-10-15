@@ -434,12 +434,21 @@ class VKAuthView(APIView):
 
     @extend_schema(request=VKAuthRequestSerializer, responses={200: VKAuthResponseSerializer, 201: VKAuthResponseSerializer, 400: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT})
     def post(self, request: Request) -> Response:
+        vk_log = logging.getLogger('guest.vkauth')
         s = VKAuthRequestSerializer(data=request.data)
-        s.is_valid(raise_exception=True)
+        if not s.is_valid():
+            vk_log.warning('vk auth bad request errors=%s origin=%s', dict(s.errors), request.META.get('HTTP_ORIGIN', '-'))
+            s.is_valid(raise_exception=True)
         try:
             profile, created = vk_web_auth(**s.validated_data)
         except VKAuthError as e:
+            vk_log.warning('vk auth FAIL vk_error=%s redirect_uri=%s branch=%s origin=%s',
+                           e, s.validated_data.get('redirect_uri'), s.validated_data.get('branch_id'),
+                           request.META.get('HTTP_ORIGIN', '-'))
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            vk_log.exception('vk auth CRASH %s', e)
+            raise
         except BranchNotFound:
             return Response(
                 {'detail': 'Торговая точка не найдена.'},
@@ -471,6 +480,7 @@ class VKAuthView(APIView):
         # Вход внутри Телеграм-мини-аппа: запоминаем Телеграм гостя, чтобы
         # дальше он входил из бота без VK ID (apps/shared/guest/tg_init.py).
         data['telegram_linked'] = remember_link(request, profile.client)
+        vk_log.info('vk auth OK vk_id=%s created=%s web_token=%s tg_linked=%s', profile.client.vk_id, created, 'web_token' in data, data['telegram_linked'])
 
         return Response(data, status=resp_status)
 

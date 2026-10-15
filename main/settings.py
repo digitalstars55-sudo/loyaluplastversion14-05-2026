@@ -126,6 +126,8 @@ INSTALLED_APPS = list(SHARED_APPS) + [
 
 MIDDLEWARE = [
     'django_tenants.middleware.main.TenantMainMiddleware',
+    # 15.10.2026: строка на каждый запрос гостевого API (apps/shared/guest/request_log.py).
+    'apps.shared.guest.request_log.GuestRequestLogMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -565,5 +567,9 @@ LOGGING = {
         'apps.tenant.branch.api.vk_message_event': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
         # 23.09.2026: строка расхода на каждый вызов Anthropic (apps/shared/ai/usage.py).
         'ai.usage': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        # 15.10.2026: журнал гостевого API, входа через VK ID и ошибок браузера гостя.
+        'guest.requests': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'guest.client': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'guest.vkauth': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
     },
 }

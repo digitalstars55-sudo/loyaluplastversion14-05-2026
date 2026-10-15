@@ -1,5 +1,7 @@
 from django.urls import path
 
+from apps.shared.guest.request_log import ClientLogView
+
 from .client_phone import ClientPhoneView
 from .client_pos_card import ClientPosCardView
 from .client_receipt import ClientReceiptView
@@ -31,6 +33,7 @@ urlpatterns = [
     path('employees/',                EmployeeView.as_view(),    name='employees'),
     path('promotions/',               PromotionView.as_view(),   name='promotions'),
     path('transactions/',             TransactionsView.as_view(), name='transactions'),
+    path('client-log/',              ClientLogView.as_view(),   name='client-log'),
     path('vk/auth/',                  VKAuthView.as_view(),      name='vk-auth'),
     path('vk/tg-session/',            TelegramSessionView.as_view(), name='vk-tg-session'),
     path('client/forget/',            ClientForgetView.as_view(), name='client-forget'),

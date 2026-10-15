@@ -83,6 +83,7 @@ _NOT_GUEST_PREFIXES = (
     '/api/v1/catalog/categories',
     '/api/v1/catalog/products',
     '/api/v1/vk/auth',
+    '/api/v1/client-log',
     '/api/v1/vk/callback',
 )
 
