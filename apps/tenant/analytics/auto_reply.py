@@ -394,6 +394,12 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
     if parts is None:
         return None
     system_prompt, user_message = parts
+    # Имена гостя и людей в переписке — метками; в черновике вернём настоящие
+    # (телефоны и адреса закрывает транспорт, apps/shared/pii.py).
+    from apps.shared import pii
+    обезличка = pii.Обезличка() if pii.включено() else None
+    if обезличка is not None:
+        user_message = обезличка.имена(user_message)
 
     proxy_url = os.getenv('OPENAI_BASE_URL', '')
     client = (
@@ -410,7 +416,8 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
             messages=[{'role': 'user', 'content': user_message}],
         )
         log_usage('draft', message)
-        return message.content[0].text.strip()
+        text = message.content[0].text.strip()
+        return обезличка.вернуть(text) if обезличка is not None else text
     except Exception as e:
         logger.warning('AI draft generation failed for conv %s: %s', conv.pk, e)
         return None

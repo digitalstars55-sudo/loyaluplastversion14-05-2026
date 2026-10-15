@@ -145,7 +145,31 @@ def _model(model: str) -> str:
             or os.getenv('OPENAI_MODEL_SMART') or 'gpt-6.1-sol')
 
 
-def _response_message(payload: dict):
+def _redact_input(items: list[dict], обезличка) -> list[dict]:
+    """Личные данные во всём, что уходит модели: тексты, результаты и аргументы
+    инструментов (`apps/shared/pii.py`). Картинки и reasoning не трогаем."""
+    out = []
+    for item in items:
+        item = dict(item)
+        if 'content' in item:
+            content = item['content']
+            if isinstance(content, str):
+                item['content'] = обезличка.структурные(content)
+            elif isinstance(content, list):
+                item['content'] = [
+                    {**part, 'text': обезличка.структурные(part.get('text', ''))}
+                    if part.get('type') == 'input_text' else part
+                    for part in content
+                ]
+        elif item.get('type') == 'function_call_output':
+            item['output'] = обезличка.структурные(item.get('output', ''))
+        elif item.get('type') == 'function_call':
+            item['arguments'] = обезличка.структурные(item.get('arguments', ''))
+        out.append(item)
+    return out
+
+
+def _response_message(payload: dict, обезличка=None):
     blocks = []
     for item in payload.get('output') or []:
         item_type = item.get('type')
@@ -171,6 +195,13 @@ def _response_message(payload: dict):
                 name=item.get('name') or '',
                 input=arguments,
             ))
+
+    if обезличка:
+        for block in blocks:
+            if block.type == 'text':
+                block.text = обезличка.вернуть(block.text)
+            elif block.type == 'tool_use':
+                block.input = обезличка.вернуть(block.input)
 
     usage_data = payload.get('usage') or {}
     input_details = usage_data.get('input_tokens_details') or {}
@@ -200,17 +231,20 @@ class _Messages:
 
     def create(self, **kwargs):
         timeout = kwargs.pop('timeout', None)
-        payload = self.owner._post(self.owner._body(kwargs), timeout=timeout)
-        return _response_message(payload)
+        body, обезличка = self.owner._prepare(kwargs)
+        payload = self.owner._post(body, timeout=timeout)
+        return _response_message(payload, обезличка)
 
     def stream(self, **kwargs):
         timeout = kwargs.pop('timeout', None)
-        return _ResponseStream(self.owner, self.owner._body(kwargs), timeout)
+        body, обезличка = self.owner._prepare(kwargs)
+        return _ResponseStream(self.owner, body, timeout, обезличка)
 
 
 class _ResponseStream:
-    def __init__(self, owner: 'OpenAICompatClient', body: dict, timeout):
+    def __init__(self, owner: 'OpenAICompatClient', body: dict, timeout, обезличка=None):
         self.owner = owner
+        self.обезличка = обезличка
         self.body = {**body, 'stream': True}
         self.timeout = timeout
         self.response = None
@@ -241,18 +275,42 @@ class _ResponseStream:
             if event_type == 'response.output_text.delta':
                 delta = event.get('delta', '') or ''
                 self.text += delta
-                yield SimpleNamespace(
-                    type='content_block_delta',
-                    delta=SimpleNamespace(type='text_delta', text=delta),
-                )
+                for piece in self._restored(delta):
+                    yield SimpleNamespace(
+                        type='content_block_delta',
+                        delta=SimpleNamespace(type='text_delta', text=piece),
+                    )
             elif event_type == 'response.completed':
                 self.final_payload = event.get('response') or {}
             elif event_type == 'error':
                 raise OpenAIAPIError(502, _json_text(event.get('error') or event))
+        for piece in self._restored('', final=True):
+            yield SimpleNamespace(
+                type='content_block_delta',
+                delta=SimpleNamespace(type='text_delta', text=piece),
+            )
+
+    _held = ''
+
+    def _restored(self, delta: str, final: bool = False):
+        """Кусок стрима с подставленными данными. Метка может прийти по частям
+        («[ТЕЛ» + «ЕФОН-1]») — хвост после незакрытой «[» придерживаем."""
+        if not self.обезличка:
+            if delta:
+                yield delta
+            return
+        text = self._held + delta
+        self._held = ''
+        if not final:
+            cut = text.rfind('[')
+            if cut >= 0 and ']' not in text[cut:] and len(text) - cut <= 24:
+                text, self._held = text[:cut], text[cut:]
+        if text:
+            yield self.обезличка.вернуть(text)
 
     def get_final_message(self):
         if self.final_payload is not None:
-            return _response_message(self.final_payload)
+            return _response_message(self.final_payload, self.обезличка)
         return _response_message({
             'id': '', 'model': self.body.get('model', ''), 'status': 'completed',
             'output': [{
@@ -260,7 +318,7 @@ class _ResponseStream:
                 'content': [{'type': 'output_text', 'text': self.text}],
             }],
             'usage': {},
-        })
+        }, self.обезличка)
 
 
 class OpenAICompatClient:
@@ -285,6 +343,20 @@ class OpenAICompatClient:
                 'https': proxy_url,
             })
         self.messages = _Messages(self)
+
+    def _prepare(self, params: dict):
+        """Тело запроса и метки личных данных (None — обезличка выключена)."""
+        from apps.shared import pii
+
+        body = self._body(params)
+        if not pii.включено():
+            return body, None
+        обезличка = pii.Обезличка()
+        body['input'] = _redact_input(body['input'], обезличка)
+        if обезличка:
+            body['instructions'] = '\n\n'.join(
+                p for p in (body.get('instructions'), pii.ПОДСКАЗКА_МОДЕЛИ) if p)
+        return body, обезличка
 
     def _body(self, params: dict) -> dict:
         model = _model(params.get('model', ''))

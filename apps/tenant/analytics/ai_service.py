@@ -178,7 +178,11 @@ def analyze_message(text: str, source: str = '') -> dict:
     client = anthropic.Anthropic(api_key=api_key, base_url=proxy_url) if proxy_url else anthropic.Anthropic(api_key=api_key)
 
     source_note = f'[Источник: {source}] ' if source else ''
-    user_message = f'{source_note}Сообщение гостя:\n\n{text}'
+    # Имена для тональности не нужны — наружу не отдаём (apps/shared/pii.py).
+    from apps.shared import pii
+    обезличка = pii.Обезличка() if pii.включено() else None
+    гостю = обезличка.имена(text) if обезличка is not None else text
+    user_message = f'{source_note}Сообщение гостя:\n\n{гостю}'
 
     from apps.shared.ai.usage import log_usage
     message = client.messages.create(
@@ -193,6 +197,8 @@ def analyze_message(text: str, source: str = '') -> dict:
     log_usage('sentiment', message)
 
     raw = message.content[0].text.strip()
+    if обезличка is not None:
+        raw = обезличка.вернуть(raw)
 
     # Strip possible markdown code fences
     if raw.startswith('```'):
