@@ -90,6 +90,15 @@ def _call(view_cls, method, path, *, data=None, params=None, user=None, **kwargs
     return view_cls.as_view()(request, **kwargs)
 
 
+def _progress_patch(busy=None):
+    """Ход генерации без базы: running() → busy, start() → строка №55."""
+    fake = MagicMock()
+    fake.running.return_value = busy
+    fake.start.return_value = SimpleNamespace(pk=55, post_id=None)
+    fake.to_dict.side_effect = lambda job: {'id': job.pk}
+    return patch(MP + 'progress', fake)
+
+
 def _settings_patch(cfg):
     objects = MagicMock()
     objects.first.return_value = cfg
@@ -284,7 +293,7 @@ class GenerateTest(SimpleTestCase):
 
     def _generate(self, cfg, cache_obj, task=None):
         task = task or MagicMock()
-        with _settings_patch(cfg), patch(MP + 'cache', cache_obj), \
+        with _settings_patch(cfg), patch(MP + 'cache', cache_obj), _progress_patch(), \
              patch(MP + 'current_schema_name', return_value='levone'), \
              patch('apps.tenant.marketer.tasks.run_marketer_digest_for_tenant_task', task):
             resp = _call(M.MarketerGenerateAPIView, 'post', '/api/v1/marketer/posts/generate/')
@@ -304,7 +313,8 @@ class GenerateTest(SimpleTestCase):
         resp, task = self._generate(_cfg(), cache_obj)
         self.assertEqual(resp.status_code, 202)
         self.assertTrue(resp.data['queued'])
-        task.delay.assert_called_once_with('levone', '')
+        task.delay.assert_called_once_with('levone', '', job_id=55)
+        self.assertEqual(resp.data['job'], {'id': 55})
         self.assertIn('marketer-generate:levone', cache_obj.store)
 
     def test_second_call_in_the_window_is_409(self):
@@ -322,6 +332,17 @@ class GenerateTest(SimpleTestCase):
         resp, _ = self._generate(_cfg(), cache_obj, task=task)
         self.assertEqual((resp.status_code, resp.data['code']), (503, 'queue_unavailable'))
         self.assertEqual(cache_obj.store, {}, 'блокировку надо снять, иначе 409 на пять минут')
+
+    def test_running_job_in_db_is_409_even_with_empty_cache(self):
+        # Кэш в памяти одного воркера: второй воркер замка не видит — держит база.
+        task = MagicMock()
+        with _settings_patch(_cfg()), patch(MP + 'cache', _Cache()), \
+             _progress_patch(busy=SimpleNamespace(pk=9, post_id=None)), \
+             patch(MP + 'current_schema_name', return_value='levone'), \
+             patch('apps.tenant.marketer.tasks.run_marketer_digest_for_tenant_task', task):
+            resp = _call(M.MarketerGenerateAPIView, 'post', '/api/v1/marketer/posts/generate/')
+        self.assertEqual((resp.status_code, resp.data['code']), (409, 'already_generating'))
+        task.delay.assert_not_called()
 
     def test_client_cannot_generate(self):
         with _settings_patch(_cfg()), patch(MP + 'cache', _Cache()):

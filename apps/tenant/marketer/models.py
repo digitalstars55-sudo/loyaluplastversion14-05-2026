@@ -92,6 +92,19 @@ class MarketerSettings(TimeStampedModel):
         ),
     )
 
+    # ── Картинки в фирменном стиле (16.10.2026) ───────────────────────────────
+    image_style = models.TextField(
+        'Фирменный стиль картинок',
+        blank=True,
+        help_text='Цвета, свет, посуда, настроение, чего не рисовать. Уходит в каждую картинку ИИ.',
+    )
+    image_source = models.CharField(
+        'Откуда брать картинку',
+        max_length=12,
+        default='ai',
+        choices=[('ai', 'Рисует ИИ'), ('bank_first', 'Сначала фотобанк, иначе ИИ')],
+    )
+
     class Meta:
         verbose_name = 'Настройки AI-маркетолога'
         verbose_name_plural = 'Настройки AI-маркетолога'
@@ -175,6 +188,13 @@ class MarketerPost(TimeStampedModel):
         'Картинка', upload_to='marketer_posts/', null=True, blank=True,
         help_text='Прикрепляется к посту на стене (photos.saveWallPhoto).',
     )
+    # 16.10.2026: визуальный приём, который ИИ выбрал по базе знаний вместе с
+    # текстом, — из него рисуется картинка; и откуда картинка взялась.
+    visual = models.TextField('Что на картинке', blank=True)
+    image_source = models.CharField(
+        'Картинка из', max_length=8, blank=True,
+        choices=[('ai', 'ИИ'), ('bank', 'фотобанк'), ('upload', 'загружена')],
+    )
 
     class Meta:
         verbose_name = 'Пост маркетолога'
@@ -183,3 +203,73 @@ class MarketerPost(TimeStampedModel):
 
     def __str__(self):
         return f'{self.get_post_type_display()} · {self.get_status_display()} · {self.created_at:%d.%m.%Y}'
+
+
+class MarketerPhoto(TimeStampedModel):
+    """
+    Фотобанк сети (16.10.2026).
+
+    photo — настоящее фото блюда или зала: маркетолог ставит его к посту, если
+    в тексте есть блюдо из названия/меток. style — образец стиля: ИИ рисует,
+    глядя на него (свет, посуда, столы), но не копирует.
+    """
+
+    class Kind(models.TextChoices):
+        PHOTO = 'photo', 'Фото для постов'
+        STYLE = 'style', 'Образец стиля'
+
+    image = models.ImageField('Фото', upload_to='marketer_bank/')
+    title = models.CharField('Что на фото', max_length=200, blank=True)
+    tags = models.CharField('Метки', max_length=500, blank=True,
+                            help_text='Через запятую: хачапури, завтрак, Ленина.')
+    kind = models.CharField('Вид', max_length=8, choices=Kind.choices, default=Kind.PHOTO)
+    is_active = models.BooleanField('Используется', default=True)
+    created_by = models.CharField('Кто добавил', max_length=150, blank=True)
+    used_count = models.PositiveIntegerField('Сколько раз ставили', default=0)
+
+    class Meta:
+        verbose_name = 'Фото фотобанка'
+        verbose_name_plural = 'Фотобанк маркетолога'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.title or f'Фото №{self.pk}'
+
+
+class MarketerJob(TimeStampedModel):
+    """
+    Ход одной генерации (16.10.2026): кабинет показывает, на каком она шаге.
+
+    Живёт в базе, а не в кэше: кэш LoyalUP по умолчанию в памяти процесса, и
+    задача в celery его не видит. Заодно это честная блокировка от двойного
+    нажатия — раньше замок жил в памяти одного воркера web.
+    """
+
+    class Kind(models.TextChoices):
+        POST = 'post', 'Пост'
+        PLAN = 'plan', 'Контент-план'
+        IMAGE = 'image', 'Картинка'
+
+    class Status(models.TextChoices):
+        RUNNING = 'running', 'Идёт'
+        DONE = 'done', 'Готово'
+        FAILED = 'failed', 'Ошибка'
+
+    kind = models.CharField(max_length=8, choices=Kind.choices)
+    status = models.CharField(max_length=8, choices=Status.choices, default=Status.RUNNING,
+                              db_index=True)
+    stage = models.CharField(max_length=16, blank=True)
+    stage_label = models.CharField(max_length=200, blank=True)
+    step = models.PositiveSmallIntegerField(default=0)
+    total = models.PositiveSmallIntegerField(default=0)
+    post = models.ForeignKey(MarketerPost, null=True, blank=True, on_delete=models.SET_NULL,
+                             related_name='jobs')
+    result = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True)
+    created_by = models.CharField(max_length=150, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Генерация маркетолога'
+        verbose_name_plural = 'Генерации маркетолога'
+        ordering = ['-created_at']

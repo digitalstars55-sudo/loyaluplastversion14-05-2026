@@ -1,5 +1,6 @@
 """Волна 3: отложенные посты, картинка к посту, контент-план."""
 from datetime import date, timedelta
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -9,7 +10,8 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from apps.tenant.marketer.api import views as M
 from apps.tenant.marketer.models import MarketerPostStatus
-from apps.tenant.marketer.tests_api import MP, _Cache, _call, _cfg, _post, _posts_patch, _settings_patch, _user
+from apps.tenant.marketer.tests_api import (MP, _Cache, _call, _cfg, _post, _posts_patch, _progress_patch,
+                                            _settings_patch, _user)
 
 
 class ScheduleTest(SimpleTestCase):
@@ -70,7 +72,8 @@ class ImageTest(SimpleTestCase):
         post = _post()
         resp = self.upload(post, SimpleUploadedFile('a.png', b'\x89PNG', content_type='image/png'))
         self.assertEqual(resp.status_code, 200)
-        post.save.assert_called_with(update_fields=['image', 'updated_at'])
+        post.save.assert_called_with(update_fields=['image', 'image_source', 'updated_at'])
+        self.assertEqual(post.image_source, 'upload')
 
 
 class PlanTest(SimpleTestCase):
@@ -86,14 +89,36 @@ class PlanTest(SimpleTestCase):
     def test_plan_queues_task(self):
         task = MagicMock()
         start = (timezone.localdate() + timedelta(days=1)).isoformat()
-        with _settings_patch(_cfg()), patch(MP + 'cache', _Cache()), \
+        posts = MagicMock()
+        posts.filter.return_value = []
+        with _settings_patch(_cfg()), patch(MP + 'cache', _Cache()), _progress_patch(), \
+             patch.object(M.MarketerPost, 'objects', posts), \
              patch(MP + 'current_schema_name', return_value='levone'), \
              patch('apps.tenant.marketer.tasks.build_content_plan_task', task):
             resp = _call(M.MarketerContentPlanAPIView, 'post', '/x/',
-                         data={'start': start, 'days': 7, 'per_week': 2, 'hour': 11})
+                         data={'start': start, 'days': 7, 'per_week': 2, 'hour': 11,
+                               'brief': 'про осеннее меню', 'with_images': True})
         self.assertEqual(resp.status_code, 202)
         self.assertEqual(len(resp.data['slots']), 2)
         task.delay.assert_called_once()
+        self.assertEqual(task.delay.call_args.kwargs,
+                         {'brief': 'про осеннее меню', 'with_images': True, 'job_id': 55})
+
+    def test_plan_skips_days_with_posts_and_409_when_all_taken(self):
+        start = timezone.localdate() + timedelta(days=1)
+        slots = M.plan_slots(start, 7, 2, 11)
+        existing = [SimpleNamespace(scheduled_at=s, status=MarketerPostStatus.DRAFT) for s in slots]
+        posts = MagicMock()
+        posts.filter.return_value = existing
+        task = MagicMock()
+        with _settings_patch(_cfg()), patch(MP + 'cache', _Cache()), _progress_patch(), \
+             patch.object(M.MarketerPost, 'objects', posts), \
+             patch('apps.tenant.marketer.tasks.build_content_plan_task', task):
+            resp = _call(M.MarketerContentPlanAPIView, 'post', '/x/',
+                         data={'start': start.isoformat(), 'days': 7, 'per_week': 2, 'hour': 11})
+        self.assertEqual((resp.status_code, resp.data['code']), (409, 'days_taken'))
+        self.assertEqual(len(resp.data['skipped']), 2)
+        task.delay.assert_not_called()
 
     def test_plan_validates(self):
         with _settings_patch(_cfg()), patch(MP + 'cache', _Cache()):
@@ -183,10 +208,10 @@ class GenerateImageApiTest(SimpleTestCase):
     def test_queues_once(self):
         task = MagicMock()
         objects_patch, _ = _posts_patch(_post())
-        with objects_patch, _settings_patch(_cfg()), patch(MP + 'cache', _Cache()), \
+        with objects_patch, _settings_patch(_cfg()), patch(MP + 'cache', _Cache()), _progress_patch(), \
              patch(MP + 'current_schema_name', return_value='levone'), \
              patch('apps.tenant.marketer.tasks.generate_post_image_task', task):
             r1 = _call(M.MarketerPostGenerateImageAPIView, 'post', '/x/', pk=7)
             r2 = _call(M.MarketerPostGenerateImageAPIView, 'post', '/x/', pk=7)
         self.assertEqual((r1.status_code, r2.status_code), (202, 409))
-        task.delay.assert_called_once_with('levone', 7)
+        task.delay.assert_called_once_with('levone', 7, job_id=55)

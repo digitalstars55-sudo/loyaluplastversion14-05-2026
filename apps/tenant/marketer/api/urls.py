@@ -7,6 +7,11 @@ from django.urls import path
 
 from .views import (
     MarketerContentPlanAPIView,
+    MarketerJobDetailAPIView,
+    MarketerJobListAPIView,
+    MarketerPhotoDetailAPIView,
+    MarketerPhotoListAPIView,
+    MarketerPostUsePhotoAPIView,
     MarketerEstimateAPIView,
     MarketerPostGenerateImageAPIView,
     MarketerGenerateAPIView,
@@ -42,4 +47,10 @@ urlpatterns = [
          name='marketer-post-image'),
     path('marketer/posts/<int:pk>/reject/', MarketerPostRejectAPIView.as_view(),
          name='marketer-post-reject'),
+    path('marketer/posts/<int:pk>/use-photo/', MarketerPostUsePhotoAPIView.as_view(),
+         name='marketer-post-use-photo'),
+    path('marketer/jobs/', MarketerJobListAPIView.as_view(), name='marketer-jobs'),
+    path('marketer/jobs/<int:pk>/', MarketerJobDetailAPIView.as_view(), name='marketer-job'),
+    path('marketer/photos/', MarketerPhotoListAPIView.as_view(), name='marketer-photos'),
+    path('marketer/photos/<int:pk>/', MarketerPhotoDetailAPIView.as_view(), name='marketer-photo'),
 ]

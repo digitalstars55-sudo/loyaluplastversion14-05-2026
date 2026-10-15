@@ -33,6 +33,7 @@ from __future__ import annotations
 from apps.shared.users.feature_permissions import HasFeatureAccess
 
 import logging
+from datetime import timedelta
 
 from django.core.cache import cache
 from django.utils import timezone
@@ -45,7 +46,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.shared.users.access import current_schema_name
+from apps.tenant.marketer import progress
 from apps.tenant.marketer.models import (
+    MarketerJob,
+    MarketerPhoto,
     MarketerPost,
     MarketerPostStatus,
     MarketerPostType,
@@ -71,7 +75,10 @@ SETTINGS_FIELDS = (
     ('digest_hour', 'hour'),
     ('brand_voice', 'text'),
     ('extra_facts', 'text'),
+    ('image_style', 'text'),
+    ('image_source', 'image_source'),
 )
+IMAGE_SOURCES = ('ai', 'bank_first')
 EDITABLE_SETTINGS = [name for name, _ in SETTINGS_FIELDS]
 EDITABLE_STATUSES = (MarketerPostStatus.DRAFT, MarketerPostStatus.SCHEDULED, MarketerPostStatus.FAILED)
 PUBLISHABLE_STATUSES = (MarketerPostStatus.DRAFT, MarketerPostStatus.SCHEDULED, MarketerPostStatus.FAILED)
@@ -151,6 +158,8 @@ def settings_to_dict(cfg) -> dict:
         'last_digest_at': _iso(cfg.last_digest_at),
         'brand_voice': cfg.brand_voice,
         'extra_facts': cfg.extra_facts,
+        'image_style': getattr(cfg, 'image_style', ''),
+        'image_source': getattr(cfg, 'image_source', 'ai') or 'ai',
         'editable': EDITABLE_SETTINGS,
     }
 
@@ -178,6 +187,8 @@ def post_to_dict(post, group_id=None) -> dict:
         'scheduled_at': _iso(post.scheduled_at),
         'topic': post.topic,
         'image_url': post.image.url if post.image else '',
+        'image_source': getattr(post, 'image_source', '') or '',
+        'visual': getattr(post, 'visual', '') or '',
         'created_at': _iso(post.created_at),
         'updated_at': _iso(post.updated_at),
     }
@@ -238,6 +249,10 @@ def _parse_settings(data) -> dict:
             if not 0 <= number <= 23:
                 raise PayloadError('digest_hour: целое 0…23 (МСК)')
             values[field] = number
+        elif kind == 'image_source':
+            if str(raw) not in IMAGE_SOURCES:
+                raise PayloadError('image_source: ai или bank_first')
+            values[field] = str(raw)
         else:
             values[field] = str(raw or '')
     if not values:
@@ -477,18 +492,30 @@ class MarketerGenerateAPIView(APIView):
                           http_status.HTTP_409_CONFLICT,
                           retry_after=GENERATE_LOCK_SECONDS)
 
+        # Кэш LoyalUP в памяти процесса: второй воркер web замка не видит.
+        # Живая генерация в базе — настоящий замок (16.10.2026).
+        busy = progress.running('post')
+        if busy is not None:
+            cache.delete(key)
+            return _error('already_generating',
+                          'генерация уже идёт — черновик появится в ленте в течение минуты',
+                          http_status.HTTP_409_CONFLICT, job=progress.to_dict(busy))
+        job = progress.start('post', author=_author(request.user))
+
         from apps.tenant.marketer.tasks import run_marketer_digest_for_tenant_task
         try:
-            run_marketer_digest_for_tenant_task.delay(schema, brief)
+            run_marketer_digest_for_tenant_task.delay(schema, brief, job_id=job.pk)
         except Exception as exc:
             # Очередь недоступна — блокировку снимаем, иначе кабинет будет
             # получать 409 пять минут на пустом месте.
             cache.delete(key)
+            progress.finish(job, error=f'не удалось поставить задачу: {exc}')
             log.exception('marketer generate: очередь недоступна')
             return _error('queue_unavailable', f'не удалось поставить задачу: {exc}',
                           http_status.HTTP_503_SERVICE_UNAVAILABLE)
         log.info('marketer generate queued: %s by=%s', schema, _author(request.user))
-        return Response({'queued': True, 'lock_seconds': GENERATE_LOCK_SECONDS},
+        return Response({'queued': True, 'lock_seconds': GENERATE_LOCK_SECONDS,
+                         'job': progress.to_dict(job)},
                         status=http_status.HTTP_202_ACCEPTED)
 
 
@@ -667,7 +694,8 @@ class MarketerPostImageAPIView(APIView):
         if post.image:
             post.image.delete(save=False)
         post.image = f
-        post.save(update_fields=['image', 'updated_at'])
+        post.image_source = 'upload'
+        post.save(update_fields=['image', 'image_source', 'updated_at'])
         return Response(post_to_dict(post, _group_id(_settings_row())))
 
     @extend_schema(request=None, responses={200: _POST_OUT, 403: _ERR, 404: _ERR}, tags=['v1'])
@@ -678,7 +706,8 @@ class MarketerPostImageAPIView(APIView):
         if post.image:
             post.image.delete(save=False)
             post.image = None
-            post.save(update_fields=['image', 'updated_at'])
+            post.image_source = ''
+            post.save(update_fields=['image', 'image_source', 'updated_at'])
         return Response(post_to_dict(post, _group_id(_settings_row())))
 
 
@@ -699,10 +728,12 @@ def plan_slots(start, days: int, per_week: int, hour: int) -> list:
 
 class MarketerContentPlanAPIView(APIView):
     """
-    POST /api/v1/marketer/posts/plan/ {start: ГГГГ-ММ-ДД, days: 7..31, per_week: 1..7, hour: 8..22}
+    POST /api/v1/marketer/posts/plan/ {start: ГГГГ-ММ-ДД, days: 7..31, per_week: 1..7, hour: 8..22,
+                                      brief?: «о чём план», with_images?: bool}
 
-    ИИ готовит по черновику на каждый слот плана (темы по кругу). Черновики
-    сами НЕ публикуются: человек правит и жмёт «Запланировать». 202 {queued, slots}.
+    ИИ раскладывает темы по датам по базе знаний и пишет черновик на каждый
+    слот. Черновики сами НЕ публикуются: человек правит и жмёт «Запланировать».
+    Дни, где уже стоит пост, пропускаются (`skipped`). 202 {queued, slots, skipped, job}.
     """
     permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
 
@@ -733,20 +764,37 @@ class MarketerContentPlanAPIView(APIView):
         if not slots:
             return _error('invalid_payload', 'в плане нет ни одного слота в будущем',
                           http_status.HTTP_400_BAD_REQUEST)
+        from apps.tenant.marketer.tasks import build_content_plan_task, free_slots
+        slots, taken = free_slots(slots, MarketerPost.objects.filter(
+            scheduled_at__date__gte=start, scheduled_at__date__lte=start + timedelta(days=days)))
+        if not slots:
+            return _error('days_taken', 'на все дни плана уже стоят посты — второй пост на день не ставлю',
+                          http_status.HTTP_409_CONFLICT, skipped=[s.isoformat() for s in taken])
+        brief = str(data.get('brief') or '').strip()[:1500]
+        with_images = str(data.get('with_images') or '').lower() in ('1', 'true', 'yes')
         schema = current_schema_name()
         key = GENERATE_LOCK_KEY % schema
         if not cache.add(key, timezone.now().isoformat(), GENERATE_LOCK_SECONDS):
             return _error('already_generating', 'генерация уже идёт', http_status.HTTP_409_CONFLICT,
                           retry_after=GENERATE_LOCK_SECONDS)
-        from apps.tenant.marketer.tasks import build_content_plan_task
+        busy = progress.running('plan')
+        if busy is not None:
+            cache.delete(key)
+            return _error('already_generating', 'контент-план уже составляется',
+                          http_status.HTTP_409_CONFLICT, job=progress.to_dict(busy))
+        job = progress.start('plan', total=len(slots), author=_author(request.user))
         try:
-            build_content_plan_task.delay(schema, [s.isoformat() for s in slots], _author(request.user))
+            build_content_plan_task.delay(schema, [s.isoformat() for s in slots], _author(request.user),
+                                          brief=brief, with_images=with_images, job_id=job.pk)
         except Exception as exc:
             cache.delete(key)
+            progress.finish(job, error=f'не удалось поставить задачу: {exc}')
             return _error('queue_unavailable', f'не удалось поставить задачу: {exc}',
                           http_status.HTTP_503_SERVICE_UNAVAILABLE)
-        log.info('marketer content plan queued: %s slots=%s by=%s', schema, len(slots), _author(request.user))
-        return Response({'queued': True, 'slots': [s.isoformat() for s in slots]},
+        log.info('marketer content plan queued: %s slots=%s skipped=%s by=%s', schema, len(slots),
+                 len(taken), _author(request.user))
+        return Response({'queued': True, 'slots': [s.isoformat() for s in slots],
+                         'skipped': [s.isoformat() for s in taken], 'job': progress.to_dict(job)},
                         status=http_status.HTTP_202_ACCEPTED)
 
 
@@ -791,12 +839,187 @@ class MarketerPostGenerateImageAPIView(APIView):
         key = f'marketer-image:{schema}:{pk}'
         if not cache.add(key, '1', 180):
             return _error('already_generating', 'картинка уже рисуется', http_status.HTTP_409_CONFLICT)
+        busy = progress.running('image')
+        if busy is not None and busy.post_id == post.pk:
+            cache.delete(key)
+            return _error('already_generating', 'картинка уже рисуется', http_status.HTTP_409_CONFLICT,
+                          job=progress.to_dict(busy))
+        job = progress.start('image', post=post, author=_author(request.user))
         from apps.tenant.marketer.tasks import generate_post_image_task
         try:
-            generate_post_image_task.delay(schema, pk)
+            generate_post_image_task.delay(schema, pk, job_id=job.pk)
         except Exception as exc:
             cache.delete(key)
+            progress.finish(job, error=f'не удалось поставить задачу: {exc}')
             return _error('queue_unavailable', f'не удалось поставить задачу: {exc}',
                           http_status.HTTP_503_SERVICE_UNAVAILABLE)
         from apps.tenant.marketer.costs import image_rub
-        return Response({'queued': True, 'cost_rub': float(image_rub())}, status=http_status.HTTP_202_ACCEPTED)
+        return Response({'queued': True, 'cost_rub': float(image_rub()), 'job': progress.to_dict(job)},
+                        status=http_status.HTTP_202_ACCEPTED)
+
+
+# ── 16.10.2026: ход генерации, фотобанк ─────────────────────────────────────
+
+class MarketerJobListAPIView(APIView):
+    """GET /api/v1/marketer/jobs/?active=1 — идущие генерации и закончившиеся за 10 минут.
+
+    Кабинет опрашивает раз в 2 секунды и рисует шкалу этапов.
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
+
+    def get(self, request):
+        since = timezone.now() - timedelta(minutes=10)
+        qs = MarketerJob.objects.filter(updated_at__gte=since) | MarketerJob.objects.filter(
+            status=MarketerJob.Status.RUNNING, updated_at__gte=timezone.now() - progress.STALE_AFTER)
+        return Response({'results': [progress.to_dict(j) for j in qs.distinct().order_by('-pk')[:20]]})
+
+
+class MarketerJobDetailAPIView(APIView):
+    """GET /api/v1/marketer/jobs/{id}/ — одна генерация."""
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
+
+    def get(self, request, pk: int):
+        job = MarketerJob.objects.filter(pk=pk).first()
+        if job is None:
+            return _error('not_found', 'Генерация не найдена', http_status.HTTP_404_NOT_FOUND)
+        return Response(progress.to_dict(job))
+
+
+PHOTO_KINDS = ('photo', 'style')
+
+
+def photo_to_dict(ph) -> dict:
+    return {
+        'id': ph.pk,
+        'image_url': ph.image.url if ph.image else '',
+        'title': ph.title,
+        'tags': ph.tags,
+        'kind': ph.kind,
+        'kind_label': ph.get_kind_display(),
+        'is_active': ph.is_active,
+        'used_count': ph.used_count,
+        'created_by': ph.created_by,
+        'created_at': _iso(ph.created_at),
+    }
+
+
+def _photo_fields(data) -> dict:
+    out = {}
+    if 'title' in data:
+        out['title'] = str(data.get('title') or '').strip()[:200]
+    if 'tags' in data:
+        out['tags'] = str(data.get('tags') or '').strip()[:500]
+    if 'kind' in data:
+        kind = str(data.get('kind') or '')
+        if kind not in PHOTO_KINDS:
+            raise PayloadError('kind: photo или style')
+        out['kind'] = kind
+    if 'is_active' in data:
+        out['is_active'] = str(data.get('is_active')).lower() in ('1', 'true', 'yes')
+    return out
+
+
+class MarketerPhotoListAPIView(APIView):
+    """
+    GET  /api/v1/marketer/photos/?kind=photo|style — фотобанк сети.
+    POST /api/v1/marketer/photos/ multipart image=<файл>, title, tags, kind — добавить фото.
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
+
+    def get(self, request):
+        qs = MarketerPhoto.objects.all()
+        kind = request.query_params.get('kind')
+        if kind in PHOTO_KINDS:
+            qs = qs.filter(kind=kind)
+        return Response({'results': [photo_to_dict(p) for p in qs.order_by('-pk')[:200]]})
+
+    def post(self, request):
+        if not _may_write(request.user):
+            return _error('role_not_allowed', 'фотобанк пополняет администратор сети',
+                          http_status.HTTP_403_FORBIDDEN)
+        f = request.FILES.get('image')
+        if f is None:
+            return _error('invalid_payload', 'image: файл фото', http_status.HTTP_400_BAD_REQUEST)
+        if f.size > MAX_IMAGE_BYTES:
+            return _error('invalid_payload', 'image: не больше 10 МБ', http_status.HTTP_400_BAD_REQUEST)
+        if (getattr(f, 'content_type', '') or '').split('/')[0] != 'image':
+            return _error('invalid_payload', 'image: нужна картинка (jpg, png, webp)',
+                          http_status.HTTP_400_BAD_REQUEST)
+        try:
+            fields = _photo_fields(request.data)
+        except PayloadError as exc:
+            return _error('invalid_payload', exc.detail, http_status.HTTP_400_BAD_REQUEST)
+        fields.pop('is_active', None)
+        photo = MarketerPhoto.objects.create(image=f, created_by=_author(request.user), **fields)
+        return Response(photo_to_dict(photo), status=http_status.HTTP_201_CREATED)
+
+
+class MarketerPhotoDetailAPIView(APIView):
+    """PATCH/DELETE /api/v1/marketer/photos/{id}/ — подпись, метки, вид, «используется»; удалить."""
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
+
+    def _get(self, request, pk):
+        if not _may_write(request.user):
+            return None, _error('role_not_allowed', 'фотобанк правит администратор сети',
+                                http_status.HTTP_403_FORBIDDEN)
+        photo = MarketerPhoto.objects.filter(pk=pk).first()
+        if photo is None:
+            return None, _error('not_found', 'Фото не найдено', http_status.HTTP_404_NOT_FOUND)
+        return photo, None
+
+    def patch(self, request, pk: int):
+        photo, err = self._get(request, pk)
+        if err:
+            return err
+        try:
+            fields = _photo_fields(request.data or {})
+        except PayloadError as exc:
+            return _error('invalid_payload', exc.detail, http_status.HTTP_400_BAD_REQUEST)
+        if not fields:
+            return _error('invalid_payload', 'нечего менять', http_status.HTTP_400_BAD_REQUEST)
+        for k, v in fields.items():
+            setattr(photo, k, v)
+        photo.save(update_fields=sorted(fields) + ['updated_at'])
+        return Response(photo_to_dict(photo))
+
+    def delete(self, request, pk: int):
+        photo, err = self._get(request, pk)
+        if err:
+            return err
+        # Посты держат свою копию файла — удаление из банка их не трогает.
+        photo.image.delete(save=False)
+        photo.delete()
+        return Response(status=http_status.HTTP_204_NO_CONTENT)
+
+
+class MarketerPostUsePhotoAPIView(APIView):
+    """POST /api/v1/marketer/posts/{id}/use-photo/ {photo_id?} — фото из банка к посту.
+
+    Без photo_id — подобрать по тексту поста; не нашлось — 404 no_match.
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
+
+    def post(self, request, pk: int):
+        if not _may_write(request.user):
+            return _error('role_not_allowed', 'картинку меняет администратор сети',
+                          http_status.HTTP_403_FORBIDDEN)
+        post = _post_or_none(pk)
+        if post is None:
+            return _error('not_found', 'Пост не найден', http_status.HTTP_404_NOT_FOUND)
+        if post.status not in EDITABLE_STATUSES:
+            return _error('not_editable', f'пост в статусе «{post.get_status_display()}»',
+                          http_status.HTTP_409_CONFLICT, status=post.status)
+        from apps.tenant.marketer import bank
+        raw_id = (request.data or {}).get('photo_id')
+        if raw_id not in (None, ''):
+            photo = MarketerPhoto.objects.filter(pk=raw_id, kind='photo').first()
+            if photo is None:
+                return _error('not_found', 'Фото не найдено', http_status.HTTP_404_NOT_FOUND)
+        else:
+            photo = bank.best_match(post.text, post.visual,
+                                    MarketerPhoto.objects.filter(kind='photo', is_active=True))
+            if photo is None:
+                return _error('no_match', 'в фотобанке нет фото к этому посту — добавьте или нарисуйте ИИ',
+                              http_status.HTTP_404_NOT_FOUND)
+        bank.copy_to_post(photo, post)
+        return Response(post_to_dict(post, _group_id(_settings_row())))
