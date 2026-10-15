@@ -47,7 +47,7 @@ _DIGEST_TASK = (
 
 def generate_post(knowledge: dict, *, task: str = _DIGEST_TASK,
                   brand_voice: str = '', extra_facts: str = '',
-                  kb_text: str | None = None) -> tuple[str, str]:
+                  kb_text: str | None = None, brief: str = '') -> tuple[str, str]:
     """
     Генерирует текст поста.
 
@@ -73,6 +73,10 @@ def generate_post(knowledge: dict, *, task: str = _DIGEST_TASK,
         kb_text = get_knowledge_text('content')
 
     parts = [f'ЗАДАЧА: {task}']
+    # «О чём пост» из строки кабинета (16.10.2026) — главнее общей задачи.
+    if (brief or '').strip():
+        parts.append('УКАЗАНИЕ ВЛАДЕЛЬЦА ДЛЯ ЭТОГО ПОСТА (главное, выполни его; '
+                     'база знаний — источник фактов и тона):\n' + brief.strip()[:1500])
     if kb_text.strip():
         parts.append('БАЗА ЗНАНИЙ СЕТИ (главнее данных ниже):\n' + kb_text.strip()[:KB_LIMIT])
     if brand_voice.strip():

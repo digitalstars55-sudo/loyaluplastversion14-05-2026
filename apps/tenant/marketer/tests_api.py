@@ -304,7 +304,7 @@ class GenerateTest(SimpleTestCase):
         resp, task = self._generate(_cfg(), cache_obj)
         self.assertEqual(resp.status_code, 202)
         self.assertTrue(resp.data['queued'])
-        task.delay.assert_called_once_with('levone')
+        task.delay.assert_called_once_with('levone', '')
         self.assertIn('marketer-generate:levone', cache_obj.store)
 
     def test_second_call_in_the_window_is_409(self):

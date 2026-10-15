@@ -462,7 +462,10 @@ class MarketerGenerateAPIView(APIView):
         if not cfg.is_enabled:
             return _error('marketer_disabled', 'AI-маркетолог выключен в настройках',
                           http_status.HTTP_409_CONFLICT)
-        if not cfg.digest_enabled:
+        # «О чём пост» из строки кабинета (16.10.2026): с ним пишем и при
+        # выключенном еженедельном дайджесте — это ручной заказ поста.
+        brief = str((request.data or {}).get('brief') or '').strip()[:1500]
+        if not cfg.digest_enabled and not brief:
             return _error('marketer_disabled', 'дайджест выключен в настройках',
                           http_status.HTTP_409_CONFLICT)
 
@@ -476,7 +479,7 @@ class MarketerGenerateAPIView(APIView):
 
         from apps.tenant.marketer.tasks import run_marketer_digest_for_tenant_task
         try:
-            run_marketer_digest_for_tenant_task.delay(schema)
+            run_marketer_digest_for_tenant_task.delay(schema, brief)
         except Exception as exc:
             # Очередь недоступна — блокировку снимаем, иначе кабинет будет
             # получать 409 пять минут на пустом месте.

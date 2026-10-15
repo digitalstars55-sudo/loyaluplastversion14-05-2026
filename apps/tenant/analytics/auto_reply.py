@@ -202,7 +202,7 @@ DRAFT_ROLE_VENUE = 'Заведение (наш ответ)'
 
 DRAFT_RULE_FACTS = (
     '- Факты о блюдах, составе, ценах, часах работы, адресах и акциях бери ТОЛЬКО '
-    'из базы знаний заведения ниже. Если в базе знаний ответа нет — НЕ выдумывай: '
+    'из базы знаний заведения. Если в базе знаний ответа нет — НЕ выдумывай: '
     'напиши, что уточните у кухни или менеджера и обязательно вернётесь с ответом, '
     'но не обещай конкретных сроков («в течение часа», «сегодня»).'
 )
@@ -297,6 +297,12 @@ def render_draft_thread(msgs) -> tuple[str, bool]:
     return '\n'.join(lines), venue_replied
 
 
+# Черновики — сильной моделью: быстрая теряла правила в 40 тыс. знаков базы
+# знаний (16.10.2026). Переопределяется переменной окружения.
+import os as _os
+DRAFT_MODEL = _os.getenv('REVIEW_DRAFT_MODEL', 'claude-sonnet-4-5')
+
+
 def build_draft_prompt_parts(
     msgs,
     *,
@@ -304,8 +310,15 @@ def build_draft_prompt_parts(
     company_name: str = 'наше заведение',
     sentiment_human: str = 'не определён',
     kb_text: str = '',
+    instruction: str = '',
 ) -> tuple[str, str]:
-    """(system_prompt, user_message) без обращений к БД — так же тестируется."""
+    """(system_prompt, user_message) без обращений к БД — так же тестируется.
+
+    16.10.2026 (владелец: «не опирается на базу знаний и на то, что пишу в
+    строке»): правила из базы знаний сети ГЛАВНЕЕ встроенных — встроенные
+    действуют, только где база молчит; готовые ответы из базы (на «10», «9» и
+    т.п.) брать можно. `instruction` — указание менеджера к этому ответу.
+    """
     thread, venue_replied = render_draft_thread(msgs)
     tone_human = DRAFT_TONE_HUMAN.get(ai_tone or 'friendly', 'дружелюбный')
     dialog_rule = DRAFT_RULE_CONTINUATION if venue_replied else DRAFT_RULE_FIRST_REPLY
@@ -327,10 +340,15 @@ def build_draft_prompt_parts(
         '- Верни ТОЛЬКО текст ответа, без пояснений и подписи.'
     )
     if kb_text:
-        system_prompt += (
-            '\n\n--- База знаний заведения ---\n'
-            '(тон общения и факты; НЕ копируй отсюда готовые ответы как шаблон)\n'
+        system_prompt = (
+            'ГЛАВНОЕ — база знаний заведения ниже. Её правила, формулировки, длина '
+            'и готовые ответы ВАЖНЕЕ общих правил после неё; общие правила действуют '
+            'только там, где база знаний ничего не говорит. Если в базе есть готовый '
+            'ответ на такой случай (например, на оценку без текста) — отвечай по нему.\n\n'
+            '--- База знаний заведения ---\n'
             + kb_text
+            + '\n--- Конец базы знаний ---\n\n'
+            + system_prompt.replace('Правила:\n', 'Общие правила (если база знаний не говорит иначе):\n', 1)
         )
     else:
         system_prompt += '\n\n' + DRAFT_KB_EMPTY_NOTE
@@ -346,10 +364,16 @@ def build_draft_prompt_parts(
         f'Тред переписки:\n{thread}\n\n'
         f'{task}'
     )
+    instruction = (instruction or '').strip()
+    if instruction:
+        user_message += (
+            '\n\nУКАЗАНИЕ МЕНЕДЖЕРА К ЭТОМУ ОТВЕТУ (выполни обязательно, '
+            f'не нарушая правил базы знаний):\n{instruction[:1000]}'
+        )
     return system_prompt, user_message
 
 
-def build_draft_prompt(conv, ai_tone: str = '') -> Optional[tuple[str, str]]:
+def build_draft_prompt(conv, ai_tone: str = '', instruction: str = '') -> Optional[tuple[str, str]]:
     """(system, user) для треда из БД; None, если в треде нет ни строки текста."""
     from django.db import connection
     from apps.tenant.analytics.ai_service import _get_knowledge_base_text
@@ -370,6 +394,7 @@ def build_draft_prompt(conv, ai_tone: str = '') -> Optional[tuple[str, str]]:
         company_name=getattr(connection.tenant, 'name', 'наше заведение'),
         sentiment_human=conv.get_sentiment_display() if conv.sentiment else 'не определён',
         kb_text=_get_knowledge_base_text(),
+        instruction=instruction,
     )
 
 
@@ -408,7 +433,7 @@ def _call_claude_for_draft(conv, ai_tone: str) -> Optional[str]:
     )
     try:
         message = client.messages.create(
-            model='claude-haiku-4-5-20251001',
+            model=DRAFT_MODEL,
             max_tokens=2048,
             # Кэш промпта: правила + база знаний сети одинаковы от черновика к
             # черновику, меняется только тред (он в user). См. cached_system.

@@ -53,7 +53,7 @@ def run_marketer_digest_task(self) -> dict:
 
 
 @shared_task(bind=True, ignore_result=True)
-def run_marketer_digest_for_tenant_task(self, schema_name: str) -> dict:
+def run_marketer_digest_for_tenant_task(self, schema_name: str, brief: str = '') -> dict:
     """Готовит дайджест «Что нового?» одному тенанту (черновик или автопост)."""
     from django_tenants.utils import schema_context
 
@@ -66,7 +66,7 @@ def run_marketer_digest_for_tenant_task(self, schema_name: str) -> dict:
 
     with schema_context(schema_name):
         cfg = MarketerSettings.objects.first()
-        if not cfg or not cfg.is_enabled or not cfg.digest_enabled:
+        if not cfg or not cfg.is_enabled or (not cfg.digest_enabled and not brief):
             return {'schema': schema_name, 'skipped': 'disabled'}
 
         # Ставим отметку ДО генерации: упавшая генерация не должна
@@ -80,6 +80,7 @@ def run_marketer_digest_for_tenant_task(self, schema_name: str) -> dict:
                 knowledge,
                 brand_voice=cfg.brand_voice,
                 extra_facts=cfg.extra_facts,
+                brief=brief,
             )
         except Exception as e:
             logger.exception('marketer digest generation failed for %s', schema_name)

@@ -766,8 +766,17 @@ class DraftPromptTest(SimpleTestCase):
         )
         self.assertIn('Стейк лосося подаём с овощами гриль.', system)
         self.assertNotIn(DRAFT_KB_EMPTY_NOTE, system)
-        # Правило про факты стоит ДО базы знаний — «ниже» в тексте правила честное.
-        self.assertLess(system.index('бери ТОЛЬКО'), system.index('=== Меню ==='))
+        # 16.10.2026: база знаний стоит ПЕРВОЙ и объявлена главнее общих правил.
+        self.assertLess(system.index('=== Меню ==='), system.index('бери ТОЛЬКО'))
+        self.assertIn('ВАЖНЕЕ общих правил', system)
+
+    def test_manager_instruction_reaches_the_model(self):
+        from apps.tenant.analytics.auto_reply import build_draft_prompt_parts
+        _, user = build_draft_prompt_parts(self.ANNA, kb_text='x', instruction='Предложи столик у окна')
+        self.assertIn('УКАЗАНИЕ МЕНЕДЖЕРА', user)
+        self.assertIn('Предложи столик у окна', user)
+        _, без = build_draft_prompt_parts(self.ANNA, kb_text='x')
+        self.assertNotIn('УКАЗАНИЕ МЕНЕДЖЕРА', без)
 
     def test_tone_and_company_name_flow_into_prompt(self):
         from apps.tenant.analytics.auto_reply import build_draft_prompt_parts

@@ -1277,17 +1277,17 @@ class GenerateDailyCodeAPIView(APIView):
 # ════════════════════════════════════════════════════════════════════
 # AI drafts for reviews — regenerate / reject
 # ════════════════════════════════════════════════════════════════════
-def _build_draft_prompt(conv: TestimonialConversation) -> tuple[str, str] | None:
+def _build_draft_prompt(conv: TestimonialConversation, instruction: str = '') -> tuple[str, str] | None:
     """
     (system_prompt, user_message) для AI-черновика — общий билдер с автоответом
     (`auto_reply.build_draft_prompt`: роли в треде, «не здоровайся повторно»,
     факты только из базы знаний). None — в треде нет текста.
     """
     from apps.tenant.analytics.auto_reply import build_draft_prompt
-    return build_draft_prompt(conv)
+    return build_draft_prompt(conv, instruction=instruction)
 
 
-def _call_claude_for_draft(conv: TestimonialConversation) -> tuple[str, int]:
+def _call_claude_for_draft(conv: TestimonialConversation, instruction: str = '') -> tuple[str, int]:
     """Вызов Claude. Возвращает (text, http_status_code)."""
     import os
     from django.conf import settings as _settings
@@ -1301,7 +1301,8 @@ def _call_claude_for_draft(conv: TestimonialConversation) -> tuple[str, int]:
     except ImportError:
         return ('OpenAI-адаптер не установлен', 500)
 
-    parts = _build_draft_prompt(conv)
+    from apps.tenant.analytics.auto_reply import DRAFT_MODEL
+    parts = _build_draft_prompt(conv, instruction)
     if parts is None:
         return ('В переписке нет текста, на который можно ответить', 400)
     system_prompt, user_message = parts
@@ -1314,7 +1315,7 @@ def _call_claude_for_draft(conv: TestimonialConversation) -> tuple[str, int]:
     try:
         from apps.shared.ai.usage import cached_system, log_usage
         message = client.messages.create(
-            model='claude-haiku-4-5-20251001',
+            model=DRAFT_MODEL,
             max_tokens=2048,
             system=cached_system(system_prompt),   # правила + БЗ сети — в кэш промпта
             messages=[{'role': 'user', 'content': user_message}],
@@ -1340,7 +1341,9 @@ class RegenerateReviewDraftAPIView(APIView):
         conv = get_object_or_404(TestimonialConversation, pk=review_id)
         if not _check_conv_access(request, conv):
             return Response({'detail': 'Нет доступа к этому отзыву'}, status=status.HTTP_403_FORBIDDEN)
-        text, code = _call_claude_for_draft(conv)
+        # Указание менеджера из строки («ответь короче, предложи столик») — 16.10.2026.
+        instruction = str((request.data or {}).get('instruction') or '')[:1000]
+        text, code = _call_claude_for_draft(conv, instruction)
         if code != 200:
             return Response({'error': text}, status=code)
 
