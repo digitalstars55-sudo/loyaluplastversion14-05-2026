@@ -441,6 +441,50 @@ class MarketerPostDetailAPIView(APIView):
         return Response(post_to_dict(post, _group_id(_settings_row())))
 
 
+class MarketerPostRewriteAPIView(APIView):
+    """
+    POST /api/v1/marketer/posts/{id}/rewrite/ {instruction, text?} → {text, model}
+
+    Задание для ИИ прямо в окне правки (владелец CheckUp, 16.10.2026). Новый
+    текст только ВОЗВРАЩАЕТСЯ: пост меняет обычное «Сохранить» (PATCH). Так
+    задание не становится текстом публикации, прежняя версия остаётся у
+    человека в окне, а запланированный пост не уйдёт с непроверенным текстом.
+    `text` — что сейчас в окне (по умолчанию — сохранённый текст поста).
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
+
+    @extend_schema(request=None, responses={200: OpenApiResponse(description='{text, model}'),
+                                            400: _ERR, 403: _ERR, 404: _ERR, 409: _ERR,
+                                            502: _ERR}, tags=['v1'])
+    def post(self, request, pk: int):
+        if not _may_write(request.user):
+            return _error('role_not_allowed', 'править пост может только администратор сети',
+                          http_status.HTTP_403_FORBIDDEN)
+        post = _post_or_none(pk)
+        if post is None:
+            return _error('not_found', 'Пост не найден', http_status.HTTP_404_NOT_FOUND)
+        if post.status not in EDITABLE_STATUSES:
+            return _error('not_editable',
+                          f'пост в статусе «{post.get_status_display()}» — текст менять нельзя',
+                          http_status.HTTP_409_CONFLICT, status=post.status)
+        data = request.data or {}
+        instruction = str(data.get('instruction') or '').strip()
+        if not instruction:
+            return _error('invalid_payload', 'instruction: напишите, что сделать с текстом',
+                          http_status.HTTP_400_BAD_REQUEST)
+        текущий = str(data.get('text') if data.get('text') is not None else post.text)
+        from apps.tenant.marketer.generator import rewrite_post
+        try:
+            out = rewrite_post(текущий[:MAX_TEXT_LEN], instruction[:1500],
+                               brand_voice=_settings_row().brand_voice or '')
+        except Exception as exc:
+            log.warning('marketer rewrite %s failed: %s', post.pk, exc)
+            return _error('ai_failed', f'ИИ не ответил: {exc}', http_status.HTTP_502_BAD_GATEWAY)
+        log.info('marketer post %s rewritten: %s by=%s', post.pk, current_schema_name(),
+                 _author(request.user))
+        return Response({'text': out['text'][:MAX_TEXT_LEN], 'model': out['model']})
+
+
 class MarketerPostContextAPIView(APIView):
     """GET /api/v1/marketer/posts/{id}/context/ — снимок фактов, из которых написан пост."""
     permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]

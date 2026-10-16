@@ -371,8 +371,18 @@ class MobileReviewReplyAPIView(APIView):
             # ответ менеджера в треде — гость хотя бы увидит при следующем
             # заходе через миниапп).
             from apps.tenant.branch.api.services import send_vk_reply
+            # «Добавить ссылки на карты» (владелец CheckUp, 16.10.2026): та же
+            # фраза и те же кнопки Яндекс/2ГИС, что у автоответа на позитив.
+            keyboard = None
+            if str(request.data.get('attach_links') or '').lower() in ('1', 'true', 'yes'):
+                from apps.tenant.analytics.auto_reply import build_review_links_keyboard
+                from apps.tenant.branch.models import ReviewAutoReplyConfig
+                keyboard = build_review_links_keyboard(conv)
+                tail = (ReviewAutoReplyConfig.get_singleton().auto_send_links_text or '').strip()
+                if keyboard and tail and tail not in text:
+                    text = f'{text}\n\n{tail}'
             try:
-                msg = send_vk_reply(conv, text)
+                msg = send_vk_reply(conv, text, keyboard=keyboard)
                 delivered_to_vk = True
             except Exception as e:
                 vk_error = str(e)

@@ -135,6 +135,47 @@ def generate_post_ex(knowledge: dict, *, task: str = _DIGEST_TASK,
     return {'text': text, 'visual': visual[:1000], 'model': model}
 
 
+_REWRITE_PROMPT = """Ты — SMM-маркетолог кафе/ресторана. Тебе дают готовый пост для стены VK и задание владельца: что в нём поменять.
+
+ПРАВИЛА:
+1. Выполни задание владельца — оно главное. Если задание — «напиши заново про …», пиши новый пост на эту тему.
+2. Факты — ТОЛЬКО из базы знаний и текущего поста. Ничего не выдумывай: ни цен, ни акций, ни блюд, ни дат, которых там нет.
+3. Тон — по базе знаний и заметке «Тон бренда», если они есть.
+4. Без markdown. Верни ТОЛЬКО новый текст поста, без пояснений, кавычек и подписи."""
+
+
+def rewrite_post(current_text: str, instruction: str, *, brand_voice: str = '',
+                 kb_text: str | None = None) -> dict:
+    """Переписать пост по заданию владельца → {text, model} (16.10.2026).
+
+    Владелец: «после того как готов черновик — стереть текст, написать задание
+    прямо в этом окне и перегенерировать». Задание не становится текстом поста.
+    """
+    instruction = (instruction or '').strip()
+    if not instruction:
+        raise RuntimeError('Пустое задание — нечего выполнять.')
+    if kb_text is None:
+        from apps.tenant.analytics.ai_service import get_knowledge_text
+        kb_text = get_knowledge_text('content')
+    parts = ['ЗАДАНИЕ ВЛАДЕЛЬЦА (выполни обязательно):\n' + instruction[:1500]]
+    if (current_text or '').strip():
+        parts.append('ТЕКУЩИЙ ПОСТ:\n' + current_text.strip()[:6000])
+    if kb_text.strip():
+        parts.append('БАЗА ЗНАНИЙ СЕТИ:\n' + kb_text.strip()[:KB_LIMIT])
+    if brand_voice.strip():
+        parts.append(f'ТОН БРЕНДА (от владельца):\n{brand_voice.strip()}')
+    raw, model = _ask(_REWRITE_PROMPT, '\n\n'.join(parts), 1400)
+    text = (raw or '').strip()
+    if text.startswith('{'):
+        try:
+            text = str(json.loads(text, strict=False).get('text') or '').strip()
+        except json.JSONDecodeError:
+            text = ''
+    if not text:
+        raise RuntimeError('ИИ вернул пустой ответ.')
+    return {'text': text, 'model': model}
+
+
 # ── Контент-план по базе знаний (16.10.2026) ─────────────────────────────────
 
 _PLAN_PROMPT = """Ты — SMM-маркетолог кафе/ресторана. Составляешь контент-план постов для стены VK-сообщества.
