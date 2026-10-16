@@ -18,10 +18,12 @@ class SpectacularRedocView(_RedocView):
 from apps.shared.config.admin_sites import tenant_admin
 from main.views import health
 from apps.shared.guest.go import go as guest_go
+from apps.tenant.branch.map_links import redirect_view as map_link_redirect
 
 urlpatterns = [
     path('api/v1/health/', health, name='health'),
     path('go/', guest_go, name='guest-go'),  # распределитель входа гостя: ВК / Телеграм / веб
+    path('r/map/<str:token>/', map_link_redirect, name='map-link'),  # счётчик переходов на карты (16.10.2026)
     path('admin/', tenant_admin.urls),
     path('api/v1/', include('apps.tenant.branch.api.urls')),
     path('api/v1/', include('apps.tenant.catalog.api.urls')),

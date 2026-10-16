@@ -7,7 +7,9 @@
 Сотрудник (охват точек как у точек контакта; право решает кабинет CheckUp):
     GET  /api/v1/review-proofs/?status=pending&branch_ids=
     POST /api/v1/review-proofs/<id>/approve/
-    POST /api/v1/review-proofs/<id>/reject/  {reason}
+    POST /api/v1/review-proofs/<id>/reject/  {reason?}
+    POST /api/v1/review-proofs/<id>/resend/  — повторить ТОЛЬКО сообщение гостю
+Сумма и тексты сообщений — настройки отзывов сети (`ReviewAutoReplyConfig.proof_*`).
 Флаг сети `review_proof_enabled` выключен → гостевые ручки 404.
 """
 import logging
@@ -43,6 +45,8 @@ def _row(p, request=None, staff=False):
         'reject_reason': p.reject_reason, 'created_at': p.created_at.isoformat(),
         'reviewed_at': p.reviewed_at.isoformat() if p.reviewed_at else None,
         'image_url': url,
+        'source': p.source or 'app',
+        'message_status': p.message_status, 'message_error': p.message_error,
         'branch': {'id': p.client.branch_id, 'branch_id': p.client.branch.branch_id,
                    'name': p.client.branch.name},
     }
@@ -90,7 +94,7 @@ class ClientReviewProofView(APIView):
             return error
         rows = (ReviewProof.objects.filter(client__client=client)
                 .select_related('client__branch')[:20])
-        return Response({'coins': int(getattr(cfg, 'review_proof_coins', 0) or 0),
+        return Response({'coins': RP.reward(cfg),
                          'results': [_row(p, request) for p in rows]})
 
 
@@ -124,7 +128,7 @@ class ReviewProofListView(APIView):
             pending = pending.filter(client__branch_id__in=scope)
         rows = list(qs[:100])
         return Response({'pending': pending.count(),
-                         'coins': int(getattr(_config(), 'review_proof_coins', 0) or 0),
+                         'coins': RP.reward(_config()),
                          'results': [_row(p, request, staff=True) for p in rows]})
 
 
@@ -142,11 +146,16 @@ class ReviewProofApproveView(APIView):
     def post(self, request, pk: int):
         if not _in_scope(request, pk):
             return _err('not_found', 'Скриншот не найден', http.HTTP_404_NOT_FOUND)
-        coins = int(getattr(_config(), 'review_proof_coins', 0) or 0)
+        coins = RP.reward(_config())
         try:
             proof, credited = RP.approve(pk, coins, _who(request.user))
         except RP.ProofError as e:
             return _err(e.code, e.detail, e.http_status)
+        except Exception:                                 # noqa: BLE001
+            # Начисление откатилось целиком — заявка «На проверке», повтор безопасен.
+            log.exception('review proof %s: credit failed', pk)
+            return _err('credit_failed', 'Ошибка начисления — баллы не начислены, повторите',
+                        http.HTTP_502_BAD_GATEWAY)
         log.info('review proof %s approved by=%s coins=%s new=%s', pk, _who(request.user), proof.coins, credited)
         proof = ReviewProof.objects.select_related('client__branch', 'client__client').get(pk=pk)
         return Response(dict(_row(proof, request, staff=True), already_approved=not credited))
@@ -160,6 +169,21 @@ class ReviewProofRejectView(APIView):
             return _err('not_found', 'Скриншот не найден', http.HTTP_404_NOT_FOUND)
         try:
             RP.reject(pk, str((request.data or {}).get('reason') or ''), _who(request.user))
+        except RP.ProofError as e:
+            return _err(e.code, e.detail, e.http_status)
+        proof = ReviewProof.objects.select_related('client__branch', 'client__client').get(pk=pk)
+        return Response(_row(proof, request, staff=True))
+
+
+class ReviewProofResendView(APIView):
+    """Повторить сообщение гостю по уже принятому решению (баллы не трогает)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk: int):
+        if not _in_scope(request, pk):
+            return _err('not_found', 'Скриншот не найден', http.HTTP_404_NOT_FOUND)
+        try:
+            RP.resend(pk)
         except RP.ProofError as e:
             return _err(e.code, e.detail, e.http_status)
         proof = ReviewProof.objects.select_related('client__branch', 'client__client').get(pk=pk)

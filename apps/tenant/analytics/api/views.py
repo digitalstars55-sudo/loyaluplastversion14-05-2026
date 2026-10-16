@@ -576,9 +576,9 @@ class AutoReplySettingsAPIView(APIView):
                     {'error': 'auto_send_links_text должен быть строкой'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            if len(lt) > 200:
+            if len(lt) > 400:
                 return Response(
-                    {'error': 'auto_send_links_text: максимум 200 символов'},
+                    {'error': 'auto_send_links_text: максимум 400 символов'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             cfg.auto_send_links_text = lt
@@ -613,6 +613,29 @@ class AutoReplySettingsAPIView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             cfg.auto_send_branch_enabled = normalized
+
+        # Подтверждение отзывов по скриншотам (ТЗ 15.10.2026)
+        if 'proof_coins' in d:
+            raw = d.get('proof_coins')
+            if raw in (None, ''):
+                cfg.proof_coins = None
+            else:
+                try:
+                    pc = int(raw)
+                except (TypeError, ValueError):
+                    return Response({'error': 'proof_coins должен быть числом'},
+                                    status=status.HTTP_400_BAD_REQUEST)
+                if not (0 <= pc <= 10000):
+                    return Response({'error': 'proof_coins: допустим диапазон 0..10000'},
+                                    status=status.HTTP_400_BAD_REQUEST)
+                cfg.proof_coins = pc
+        for поле in ('proof_approved_text', 'proof_rejected_text'):
+            if поле in d:
+                t = d.get(поле) or ''
+                if not isinstance(t, str) or len(t) > 500:
+                    return Response({'error': f'{поле}: строка до 500 символов'},
+                                    status=status.HTTP_400_BAD_REQUEST)
+                setattr(cfg, поле, t)
 
         # Автоподтверждение на негатив
         if 'auto_ack_enabled' in d:
@@ -1956,6 +1979,14 @@ class RFMCampaignAPIView(APIView):
             comment=(request.data.get('comment') or '').strip(),
             created_by=getattr(request.user, 'username', 'api'),
         )
+        # Сообщение гостю (ТЗ п.8): текст и заранее загруженная картинка.
+        текст = str(request.data.get('message_text') or '').strip()[:4000]
+        картинка = str(request.data.get('message_image') or '').strip()
+        if текст or картинка:
+            if картинка and not картинка.startswith('rfm_campaigns/'):
+                картинка = ''
+            campaign.message_text, campaign.message_image = текст, картинка
+            campaign.save(update_fields=['message_text', 'message_image'])
         run_rfm_campaign_task.delay(connection.schema_name, campaign.pk)
 
         return Response({
@@ -1963,6 +1994,57 @@ class RFMCampaignAPIView(APIView):
             'queued': True,
             'campaign': _rfm_campaign_summary(campaign, request=request),
         })
+
+
+class RFMCampaignImageAPIView(APIView):
+    """POST /api/v1/analytics/rf/campaigns/image/ multipart {image} → {image, image_url}.
+
+    Картинку грузят ДО запуска: кампания начинает назначение сразу после создания.
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics', write_feature='broadcasts')]
+
+    def post(self, request):
+        import uuid
+        from django.core.files.storage import default_storage
+        f = request.FILES.get('image')
+        if f is None or (getattr(f, 'content_type', '') or '').split('/')[0] != 'image' or f.size > 5 * 1024 * 1024:
+            return Response({'error': 'image: jpg, png или webp до 5 МБ'}, status=status.HTTP_400_BAD_REQUEST)
+        ext = (f.name.rsplit('.', 1)[-1] if '.' in f.name else 'jpg').lower()[:5]
+        path = default_storage.save(f'rfm_campaigns/{uuid.uuid4().hex}.{ext}', f)
+        return Response({'image': path, 'image_url': request.build_absolute_uri(default_storage.url(path))})
+
+
+class RFMCampaignTestMessageAPIView(APIView):
+    """POST /api/v1/analytics/rf/campaigns/test-message/ {vk_id, message_text, message_image?} — «тест себе»."""
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics', write_feature='broadcasts')]
+
+    def post(self, request):
+        from types import SimpleNamespace
+        from apps.tenant.analytics import rfm_campaigns
+        from apps.tenant.senler.services import send_vk_message, upload_vk_photo
+        try:
+            vk_id = int(request.data.get('vk_id') or 0)
+        except (TypeError, ValueError):
+            vk_id = 0
+        текст = str(request.data.get('message_text') or '').strip()
+        if not vk_id or not текст:
+            return Response({'error': 'Нужны vk_id и текст сообщения'}, status=status.HTTP_400_BAD_REQUEST)
+        conf = rfm_campaigns._vk_config()
+        if conf is None or not conf.vk_community_token:
+            return Response({'error': 'ВКонтакте сообщества не настроен'}, status=status.HTTP_409_CONFLICT)
+        пример = SimpleNamespace(message_text=текст, catalog_item=None, points_amount=100, lifetime_days=10)
+        attachment = None
+        картинка = str(request.data.get('message_image') or '').strip()
+        if картинка.startswith('rfm_campaigns/'):
+            from django.core.files.storage import default_storage
+            with default_storage.open(картинка, 'rb') as fh:
+                fh.name = картинка
+                attachment, _err = upload_vk_photo(conf, fh)
+        ok, err, _mid = send_vk_message(conf, vk_id, '[Тест] ' + rfm_campaigns.message_for(пример, gift='Подарок'),
+                                        attachment=attachment)
+        if not ok:
+            return Response({'error': f'ВК не принял сообщение: {err}'}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response({'ok': True})
 
 
 class RFMCampaignDetailAPIView(APIView):
@@ -2344,18 +2426,34 @@ class RFTransitionsAPIView(APIView):
 
     def get(self, request):
         from apps.tenant.analytics import rf_transitions
+        from apps.tenant.analytics.models import RFMigrationLog, RFMigrationLogDelivery
 
-        try:
-            start, end = _period(request)
-        except ValueError:
-            return Response({'detail': 'Период: start ≤ end, ГГГГ-ММ-ДД, не длиннее года.'}, status=400)
         mode = 'delivery' if request.query_params.get('mode') == 'delivery' else 'restaurant'
+        if request.query_params.get('period') == 'all':
+            # «Всё время» (ТЗ п.4): с первого перехода в журнале, дата видна в ответе.
+            from django.utils import timezone as tz
+            Mig = RFMigrationLogDelivery if mode == 'delivery' else RFMigrationLog
+            first = Mig.objects.order_by('created_at').values_list('created_at', flat=True).first()
+            end = tz.localdate()
+            start = tz.localtime(first).date() if first else end
+        else:
+            try:
+                start, end = _period(request)
+            except ValueError:
+                return Response({'detail': 'Период: start ≤ end, ГГГГ-ММ-ДД, не длиннее года.'}, status=400)
         raw = request.query_params.get('branch_ids') or ''
         try:
             requested = [int(x) for x in raw.split(',') if x.strip()]
         except ValueError:
             return Response({'detail': 'branch_ids: числа через запятую.'}, status=400)
         branch_ids = effective_branch_ids(request.user, current_schema_name(), requested or None)
+        which = request.query_params.get('bucket') or ''
+        if which:
+            if which not in rf_transitions.BUCKETS:
+                return Response({'detail': 'bucket: ' + ' | '.join(rf_transitions.BUCKETS)}, status=400)
+            return Response({'start': start.isoformat(), 'end': end.isoformat(), 'mode': mode,
+                             'bucket': which,
+                             'guests': rf_transitions.guests(branch_ids, start, end, mode, which)})
         return Response({'start': start.isoformat(), 'end': end.isoformat(), 'mode': mode,
                          **rf_transitions.build(branch_ids, start, end, mode)})
 

@@ -1651,7 +1651,7 @@ class ReviewAutoReplyConfig(models.Model):
         help_text='Прикреплять к автоответу кнопки со ссылками на отзывы точки (или основной точки сети, если кафе не определено).',
     )
     auto_send_links_text = models.CharField(
-        'Фраза перед кнопками', max_length=200, blank=True,
+        'Фраза перед кнопками', max_length=400, blank=True,
         default='Будем очень рады вашему отзыву на Яндекс Картах или в 2ГИС — кнопки ниже 👇',
         help_text='Добавляется в конец автоответа ТОЛЬКО если кнопки включены и есть хотя бы одна ссылка.',
     )
@@ -1683,6 +1683,24 @@ class ReviewAutoReplyConfig(models.Model):
         'Текст подтверждения', max_length=300, blank=True,
         default='Спасибо большое за обратную связь 🙏 Мы сейчас во всём разберёмся и обязательно вернёмся к вам с ответом.',
         help_text='Одна и та же фраза для всех негативных отзывов. Без обещаний скидок и конкретики — по существу ответит человек.',
+    )
+
+    # ── Подтверждение отзывов по скриншотам (ТЗ 15.10.2026) ────────────────────
+    # Сумма и два сообщения гостю — в настройках сети; {вознаграждение}
+    # подставляется само (и во фразу перед кнопками карт).
+    proof_coins = models.PositiveSmallIntegerField(
+        'Вознаграждение за отзыв, баллов', null=True, blank=True,
+        help_text='Пусто — как раньше, из настроек платформы (review_proof_coins).',
+    )
+    proof_approved_text = models.CharField(
+        'Сообщение при подтверждении скриншота', max_length=500, blank=True,
+        default='Спасибо за отзыв! Начислили вам {вознаграждение} баллов на счёт в LoyalUP. '
+                'Их можно обменять на подарки в нашем кафе.',
+    )
+    proof_rejected_text = models.CharField(
+        'Сообщение при отклонении скриншота', max_length=500, blank=True,
+        default='Пока не удалось подтвердить публикацию отзыва. Пришлите скриншот, на котором '
+                'видны ваш опубликованный отзыв и название заведения, — проверим ещё раз.',
     )
 
     updated_at = models.DateTimeField('Обновлено', auto_now=True)
@@ -1718,6 +1736,10 @@ class ReviewAutoReplyConfig(models.Model):
             'auto_ack_enabled':         self.auto_ack_enabled,
             'auto_ack_delay_minutes':   self.auto_ack_delay_minutes,
             'auto_ack_text':            self.auto_ack_text or '',
+            # Подтверждение отзывов по скриншотам
+            'proof_coins':              self.proof_coins,
+            'proof_approved_text':      self.proof_approved_text or '',
+            'proof_rejected_text':      self.proof_rejected_text or '',
         }
 
     def __str__(self):
@@ -1970,6 +1992,7 @@ class ReviewProof(models.Model):
     class Platform(models.TextChoices):
         YANDEX = 'yandex', 'Яндекс.Карты'
         GIS = '2gis', '2ГИС'
+        UNKNOWN = '', 'Не указана'              # скриншот пришёл в диалог ВК
 
     class Status(models.TextChoices):
         PENDING = 'pending', 'На проверке'
@@ -1978,8 +2001,18 @@ class ReviewProof(models.Model):
 
     client = models.ForeignKey(ClientBranch, on_delete=models.CASCADE,
                                related_name='review_proofs', verbose_name='Гость в точке')
-    platform = models.CharField(max_length=8, choices=Platform.choices, verbose_name='Площадка')
+    platform = models.CharField(max_length=8, choices=Platform.choices, blank=True,
+                                verbose_name='Площадка')
     image = models.ImageField(upload_to='review_proofs/', verbose_name='Скриншот')
+    source = models.CharField(max_length=8, blank=True, default='app',
+                              verbose_name='Откуда', help_text='app — мини-приложение; vk — диалог ВК')
+    vk_message_id = models.CharField(max_length=32, blank=True, default='', db_index=True,
+                                     verbose_name='Сообщение ВК со скриншотом')
+    message_status = models.CharField(max_length=8, blank=True, default='',
+                                      verbose_name='Сообщение гостю',
+                                      help_text='sent | failed | skipped; пусто — не отправлялось')
+    message_error = models.CharField(max_length=255, blank=True, default='',
+                                     verbose_name='Ошибка сообщения')
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING,
                               db_index=True, verbose_name='Статус')
     coins = models.PositiveIntegerField(default=0, verbose_name='Начислено баллов')
@@ -1998,3 +2031,23 @@ class ReviewProof(models.Model):
 
     def __str__(self):
         return f'{self.get_platform_display()} · {self.get_status_display()} · {self.created_at:%d.%m.%Y}'
+
+
+class ReviewLinkClick(models.Model):
+    """Переход гостя по ссылке на Яндекс Карты / 2ГИС из сообщения ВК (16.10.2026).
+
+    Ссылки в кнопках идут через наш домен (`/r/map/<подпись>/`): записали переход —
+    отправили на карту. Переход не подтверждает публикацию отзыва.
+    """
+    conversation = models.ForeignKey(TestimonialConversation, on_delete=models.SET_NULL,
+                                     null=True, blank=True, related_name='map_clicks')
+    branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='map_clicks')
+    vk_id = models.CharField(max_length=32, blank=True, default='', db_index=True)
+    platform = models.CharField(max_length=8, verbose_name='Площадка')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = 'Переход на карты'
+        verbose_name_plural = 'Переходы на карты'
+        ordering = ['-created_at']

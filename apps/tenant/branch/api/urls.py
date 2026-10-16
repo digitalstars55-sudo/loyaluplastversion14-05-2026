@@ -6,7 +6,7 @@ from .client_phone import ClientPhoneView
 from .client_pos_card import ClientPosCardView
 from .client_receipt import ClientReceiptView
 from .review_proofs import (
-    ClientReviewProofView, ReviewProofApproveView, ReviewProofListView, ReviewProofRejectView,
+    ClientReviewProofView, ReviewProofApproveView, ReviewProofListView, ReviewProofRejectView, ReviewProofResendView,
 )
 from .views import (
     BranchInfoView, ClientView, EmployeeView, PromotionView, TransactionsView,
@@ -26,6 +26,7 @@ urlpatterns = [
     path('review-proofs/',            ReviewProofListView.as_view(), name='review-proofs'),
     path('review-proofs/<int:pk>/approve/', ReviewProofApproveView.as_view(), name='review-proof-approve'),
     path('review-proofs/<int:pk>/reject/',  ReviewProofRejectView.as_view(), name='review-proof-reject'),
+    path('review-proofs/<int:pk>/resend/',  ReviewProofResendView.as_view(), name='review-proof-resend'),
     # Карта гостя для кассы, режим iikoCard «Карта гостя» — client_pos_card.py
     path('client/pos-card/',          ClientPosCardView.as_view(), name='client-pos-card'),
     path('client/vk-sync/',           VKSyncView.as_view(),      name='client-vk-sync'),

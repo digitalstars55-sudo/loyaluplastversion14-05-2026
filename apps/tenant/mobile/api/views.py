@@ -378,7 +378,9 @@ class MobileReviewReplyAPIView(APIView):
                 from apps.tenant.analytics.auto_reply import build_review_links_keyboard
                 from apps.tenant.branch.models import ReviewAutoReplyConfig
                 keyboard = build_review_links_keyboard(conv)
-                tail = (ReviewAutoReplyConfig.get_singleton().auto_send_links_text or '').strip()
+                from apps.tenant.branch.review_proofs import fill, reward
+                tail = fill((ReviewAutoReplyConfig.get_singleton().auto_send_links_text or '').strip(),
+                            reward())
                 if keyboard and tail and tail not in text:
                     text = f'{text}\n\n{tail}'
             try:

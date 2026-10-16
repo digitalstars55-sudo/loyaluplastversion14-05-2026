@@ -53,7 +53,8 @@ class ApproveRejectTest(SimpleTestCase):
     def run_approve(self, proof, coins=50):
         with patch.object(RP.transaction, 'atomic', lambda: nullcontext()), \
              patch.object(RP.ReviewProof, 'objects') as proofs, \
-             patch.object(RP.CoinTransaction, 'objects') as tx:
+             patch.object(RP.CoinTransaction, 'objects') as tx, \
+             patch.object(RP, 'notify_guest') as self.notify:
             proofs.select_for_update.return_value.select_related.return_value.filter.return_value.first.return_value = proof
             tx.create_transfer.return_value = 'TX'
             result = RP.approve(5, coins, 'Анна')
@@ -65,6 +66,7 @@ class ApproveRejectTest(SimpleTestCase):
         self.assertTrue(credited)
         self.assertEqual((p.status, p.coins, p.transaction), ('approved', 50, 'TX'))
         tx.create_transfer.assert_called_once()
+        self.notify.assert_called_once()                # сообщение — после начисления
         (p, credited), tx = self.run_approve(proof)
         self.assertFalse(credited)
         tx.create_transfer.assert_not_called()
@@ -73,15 +75,16 @@ class ApproveRejectTest(SimpleTestCase):
         with self.assertRaises(RP.ProofError):
             self.run_approve(_proof('rejected'))
 
-    def test_reject_needs_reason(self):
+    def test_reject_without_reason_sends_settings_text(self):
+        # ТЗ 15.10.2026: гостю уходит текст из настроек сети, причина — для истории.
         with patch.object(RP.transaction, 'atomic', lambda: nullcontext()), \
-             patch.object(RP.ReviewProof, 'objects') as proofs:
+             patch.object(RP.ReviewProof, 'objects') as proofs, \
+             patch.object(RP, 'notify_guest') as notify:
             proof = _proof()
             proofs.select_for_update.return_value.filter.return_value.first.return_value = proof
-            with self.assertRaises(RP.ProofError):
-                RP.reject(5, '  ', 'Анна')
-            RP.reject(5, 'Скриншот не с нашей точки', 'Анна')
-            self.assertEqual(proof.status, 'rejected')
+            RP.reject(5, '  ', 'Анна')
+            self.assertEqual((proof.status, proof.reject_reason), ('rejected', ''))
+            notify.assert_called_once_with(proof)
 
 
 class GuestFlagTest(SimpleTestCase):
@@ -99,3 +102,46 @@ class StaffScopeTest(SimpleTestCase):
         with patch.object(API, '_in_scope', return_value=False):
             resp = API.ReviewProofApproveView.as_view()(request, pk=5)
         self.assertEqual(resp.status_code, 404)
+
+
+
+def _decided(status='approved', coins=50, message_status=''):
+    p = _proof(status)
+    p.coins, p.message_status, p.message_error = coins, message_status, ''
+    p.client = SimpleNamespace(pk=9, branch_id=3, client=SimpleNamespace(vk_id=777))
+    return p
+
+
+class NotifyGuestTest(SimpleTestCase):
+    """Сообщения из настроек сети: {вознаграждение} подставлено, отправленное повторно не шлём."""
+
+    def _run(self, proof, ok=True):
+        cfg = SimpleNamespace(proof_approved_text='Начислили {вознаграждение} баллов',
+                              proof_rejected_text='Не подтвердили', proof_coins=50)
+        conf = SimpleNamespace(vk_community_token='t')
+        with patch('apps.tenant.branch.models.ReviewAutoReplyConfig.get_singleton', return_value=cfg), \
+             patch('apps.tenant.senler.models.SenlerConfig.objects') as sc, \
+             patch('apps.tenant.senler.services.send_vk_message',
+                   return_value=(ok, '' if ok else 'нет доступа', 1)) as send:
+            sc.filter.return_value.first.return_value = conf
+            out = RP.notify_guest(proof)
+        return out, send
+
+    def test_approved_text_with_reward(self):
+        proof = _decided()
+        out, send = self._run(proof)
+        self.assertEqual(out, 'sent')
+        self.assertEqual(send.call_args.args[1:], (777, 'Начислили 50 баллов'))
+        self.assertEqual(proof.message_status, 'sent')
+
+    def test_failed_is_saved_and_already_sent_not_repeated(self):
+        proof = _decided()
+        out, _ = self._run(proof, ok=False)
+        self.assertEqual((out, proof.message_status, proof.message_error), ('failed', 'failed', 'нет доступа'))
+        sent = _decided(message_status='sent')
+        out, send = self._run(sent)
+        self.assertEqual(out, 'sent')
+        send.assert_not_called()
+
+    def test_fill(self):
+        self.assertEqual(RP.fill('за отзыв {вознаграждение} баллов', 30), 'за отзыв 30 баллов')

@@ -1047,6 +1047,14 @@ class RFMCampaign(TimeStampedModel):
     period_start = models.DateField(null=True, blank=True, verbose_name='Период с')
     period_end = models.DateField(null=True, blank=True, verbose_name='Период по')
 
+    # ── Сообщение гостю (ТЗ п.8, 16.10.2026) ─────────────────────────────────
+    # Уходит ПОСЛЕ успешного назначения награды; контрольной группе — нет.
+    message_text = models.TextField('Сообщение гостю', blank=True, default='',
+                                    help_text='{подарок}, {баллы}, {срок} подставятся сами. Пусто — без сообщения.')
+    message_image = models.ImageField('Картинка сообщения', upload_to='rfm_campaigns/', blank=True, default='')
+    message_attachment = models.CharField('Вложение ВК', max_length=64, blank=True, default='',
+                                          help_text='photo<owner>_<id>: картинка загружается в ВК один раз')
+
     # ── Награда ───────────────────────────────────────────────────────────────
 
     reward_type = models.CharField(
@@ -1159,6 +1167,8 @@ class RFMCampaignMember(models.Model):
         help_text='Профиль гость×точка, куда начислена награда (последний визит).',
     )
     is_control = models.BooleanField(default=False, verbose_name='Контрольная группа')
+    message_status = models.CharField(max_length=8, blank=True, default='',
+                                      verbose_name='Сообщение', help_text='sent | failed | skipped')
     status = models.CharField(
         max_length=12,
         choices=RFMMemberStatus,

@@ -112,6 +112,31 @@ def _branch_rows(conv_qs, limit: int | None = None) -> list[dict]:
     } for r in rows]
 
 
+def _maps_funnel(qs, start, end, branch_ids):
+    """Воронка «на карты» (ТЗ п.2, 16.10.2026): позитив → переход → скриншот → подтверждён → баллы.
+
+    Переход — клик по кнопке карт в сообщении ВК (`branch/map_links.py`), это не
+    публикация. Подтверждённые — принятые менеджером скриншоты за период.
+    """
+    from apps.tenant.branch.map_links import counts
+    from apps.tenant.branch.models import ReviewProof
+    proofs = ReviewProof.objects.filter(created_at__date__gte=start, created_at__date__lte=end)
+    if branch_ids:
+        proofs = proofs.filter(client__branch_id__in=branch_ids)
+    S = ReviewProof.Status
+    approved = proofs.filter(status=S.APPROVED)
+    return {
+        'positive': qs.filter(sentiment='POSITIVE').count(),
+        'clicks': counts(start, end, branch_ids),
+        'pending': proofs.filter(status=S.PENDING).count(),
+        'approved': approved.count(),
+        'approved_by_platform': {p: approved.filter(platform=p).count() for p in ('yandex', '2gis', '')},
+        'awaiting_coins': approved.filter(coins=0).count(),
+        'coins_paid': approved.filter(coins__gt=0).count(),
+        'rejected': proofs.filter(status=S.REJECTED).count(),
+    }
+
+
 class ReviewsSummaryAPIView(APIView):
     """GET /api/v1/analytics/reviews/summary/?period=30d&branch_ids=1,2"""
     permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reviews')]
@@ -156,6 +181,7 @@ class ReviewsSummaryAPIView(APIView):
             'checkup': {k: checkup_counts.get(k, 0) for k in ('in_progress', 'resolved', 'rejected')},
             'vk_threads_without_branch': qs.filter(branch__isnull=True).count(),
             'by_branch': _branch_rows(qs),
+            'maps': _maps_funnel(qs, start, end, branch_ids),
         })
 
 

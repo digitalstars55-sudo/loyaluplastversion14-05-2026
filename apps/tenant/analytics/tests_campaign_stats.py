@@ -69,14 +69,23 @@ class AttributionTest(SimpleTestCase):
 class RFTransitionsTest(SimpleTestCase):
 
     def test_классы(self):
-        paths = {1: ('R1F1', 'R3F2'), 2: ('R3F3', 'R1F1'), 3: ('', 'R1F1'), 4: ('R2F1', 'R1F2')}
-        out = rt.classify(paths, scored_total=10)
-        self.assertEqual((out['warmed'], out['cooled'], out['new'], out['unchanged']), (1, 1, 1, 7))
-        self.assertIn('поровну', out['conclusion'])
+        # 16.10.2026: остывание/потепление — только по строке R (ТЗ п.4).
+        paths = {1: ('R1F1', 'R3F2'), 2: ('R3F3', 'R1F1'), 3: ('', 'R1F1'), 4: ('R2F1', 'R1F2'),
+                 5: ('R2F1', 'R2F3')}
+        out = rt.classify(paths, scored_total=10, warm_now_unmoved=2)
+        self.assertEqual((out['warmed'], out['cooled'], out['new'], out['unchanged']), (1, 2, 1, 6))
+        self.assertEqual((out['start_total'], out['end_total']), (9, 10))
+        # тёплые (R3/R2): до — гости 2, 4, 5 + 2 без переходов; после — 1, 5 + 2.
+        self.assertEqual((out['warm_start'], out['warm_end']), (5, 4))
+        self.assertIn('Тёплая аудитория на конец периода — 4', out['conclusion'])
+
+    def test_только_частота_не_остывание_новые_не_теплеют(self):
+        out = rt.classify({1: ('R3F3', 'R3F1'), 2: ('', 'R3F3')}, scored_total=2)
+        self.assertEqual((out['cooled'], out['warmed'], out['new'], out['unchanged']), (0, 0, 1, 1))
 
     def test_остыло_больше(self):
         out = rt.classify({1: ('R3F3', 'R1F1'), 2: ('R3F2', 'R1F1')}, 5)
-        self.assertIn('Остыло больше', out['conclusion'])
+        self.assertIn('2 гостей стали холоднее', out['conclusion'])
 
     def test_пусто(self):
         self.assertIn('не переходили', rt.classify({}, 0)['conclusion'])
@@ -116,3 +125,33 @@ class MoneyAndSignificanceTest(SimpleTestCase):
     def test_p_value_edges(self):
         self.assertIsNone(cs.two_proportion_p(0, 0, 1, 10))
         self.assertEqual(cs.two_proportion_p(0, 10, 0, 10), 1.0)
+
+
+class RFMCampaignMessageTest(SimpleTestCase):
+    """ТЗ п.8 (16.10.2026): сообщение — после назначения, контролю не уходит, повтор не шлёт второе."""
+
+    def _campaign(self, text='Вам {подарок} на {срок} дней, баллов {баллы}'):
+        from types import SimpleNamespace
+        return SimpleNamespace(pk=1, message_text=text, catalog_item=None, points_amount=150,
+                               lifetime_days=10, message_image='', message_attachment='')
+
+    def test_переменные(self):
+        from apps.tenant.analytics import rfm_campaigns as rc
+        self.assertEqual(rc.message_for(self._campaign(), gift='Чизкейк'), 'Вам Чизкейк на 10 дней, баллов 150')
+
+    def test_контроль_не_получает_и_повтора_нет(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from apps.tenant.analytics import rfm_campaigns as rc
+        conf = SimpleNamespace(vk_community_token='t')
+        ctrl = SimpleNamespace(pk=5, is_control=True, message_status='', client=SimpleNamespace(vk_id=7))
+        sent = SimpleNamespace(pk=6, is_control=False, message_status='sent', client=SimpleNamespace(vk_id=8))
+        fresh = SimpleNamespace(pk=7, is_control=False, message_status='', client=SimpleNamespace(vk_id=9))
+        with patch.object(rc, '_vk_config', return_value=conf), \
+             patch('apps.tenant.senler.services.send_vk_message', return_value=(True, '', 1)) as send, \
+             patch.object(rc.RFMCampaignMember, 'objects'):
+            self.assertEqual(rc.send_member_message(self._campaign(), ctrl), '')
+            self.assertEqual(rc.send_member_message(self._campaign(), sent), 'sent')
+            self.assertEqual(rc.send_member_message(self._campaign(), fresh), 'sent')
+        self.assertEqual(send.call_count, 1)
+        self.assertEqual(send.call_args.args[1], 9)

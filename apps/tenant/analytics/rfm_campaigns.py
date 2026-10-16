@@ -293,6 +293,9 @@ def process_campaign(campaign_id) -> dict:
                     'client_branch', 'status', 'assigned_at',
                     'inventory_item', 'coin_tx',
                 ])
+            # Сообщение — только после успешного назначения, вне транзакции.
+            if campaign.message_text.strip():
+                send_member_message(campaign, member)
         except SoftTimeLimitExceeded:
             # ⚠️ ловить ДО Exception: иначе celery-таймаут превратился бы в
             # FAILED-получателя, а таск не поставил бы продолжение.
@@ -563,3 +566,55 @@ def campaign_returns_summary(campaign) -> dict:
     else:
         out['uplift_pp'] = None
     return out
+
+
+
+# ── Сообщение гостю кампании (ТЗ п.8, 16.10.2026) ─────────────────────────────
+
+def message_for(campaign, *, gift: str = '', points: int | None = None) -> str:
+    """Текст сообщения с подставленными {подарок}, {баллы}, {срок}."""
+    item = getattr(campaign, 'catalog_item', None)
+    подарок = gift or ((getattr(item, 'name', '') or getattr(getattr(item, 'product', None), 'name', '')) if item else '')
+    return (campaign.message_text or '').replace('{подарок}', подарок or 'подарок') \
+        .replace('{баллы}', str(points if points is not None else (campaign.points_amount or 0))) \
+        .replace('{срок}', str(campaign.lifetime_days or ''))
+
+
+def _vk_config():
+    from apps.tenant.senler.models import SenlerConfig
+    return SenlerConfig.objects.filter(is_active=True).order_by('branch_id').first()
+
+
+def campaign_attachment(campaign, conf) -> str:
+    """Картинка кампании в ВК — загружается один раз, строка вложения сохраняется."""
+    if campaign.message_attachment or not campaign.message_image:
+        return campaign.message_attachment
+    from apps.tenant.senler.services import upload_vk_photo
+    att, err = upload_vk_photo(conf, campaign.message_image)
+    if att:
+        RFMCampaign.objects.filter(pk=campaign.pk).update(message_attachment=att)
+        campaign.message_attachment = att
+    else:
+        logger.warning('RFM campaign %s: картинка не загрузилась в ВК: %s', campaign.pk, err)
+    return att or ''
+
+
+def send_member_message(campaign, member) -> str:
+    """Одно сообщение получателю. Повтор не шлёт второе (`message_status='sent'`)."""
+    from apps.tenant.senler.services import send_vk_message
+    if member.is_control or member.message_status == 'sent':
+        return member.message_status
+    conf = _vk_config()
+    vk_id = getattr(member.client, 'vk_id', None)
+    status = 'skipped'
+    if conf is not None and conf.vk_community_token and vk_id:
+        try:
+            ok, _err, _mid = send_vk_message(conf, int(vk_id), message_for(campaign),
+                                             attachment=campaign_attachment(campaign, conf) or None)
+            status = 'sent' if ok else 'failed'
+        except Exception:                                   # noqa: BLE001
+            logger.warning('RFM campaign %s: сообщение %s не ушло', campaign.pk, member.pk, exc_info=True)
+            status = 'failed'
+    RFMCampaignMember.objects.filter(pk=member.pk).update(message_status=status)
+    member.message_status = status
+    return status

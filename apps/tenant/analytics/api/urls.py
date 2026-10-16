@@ -10,6 +10,7 @@ from .views import (
     GenerateReportCommentAPIView, RFMigrationsListAPIView,
     LoyaltyReportAPIView, ContactPointsAPIView,
     RFMRewardCatalogAPIView, RFMCampaignAPIView, RFMCampaignDetailAPIView,
+    RFMCampaignImageAPIView, RFMCampaignTestMessageAPIView,
     RFMCampaignCancelAPIView, RFMCampaignKPIAPIView,
     GiftsExport1CAPIView,
 )
@@ -35,6 +36,8 @@ urlpatterns = [
     path('analytics/rf/send-broadcast/',       SendSegmentBroadcastAPIView.as_view(),    name='analytics-rf-send-broadcast'),
     path('analytics/rf/reward-catalog/',       RFMRewardCatalogAPIView.as_view(),        name='analytics-rf-reward-catalog'),
     path('analytics/rf/campaigns/',            RFMCampaignAPIView.as_view(),             name='analytics-rf-campaigns'),
+    path('analytics/rf/campaigns/image/',      RFMCampaignImageAPIView.as_view(),        name='analytics-rf-campaign-image'),
+    path('analytics/rf/campaigns/test-message/', RFMCampaignTestMessageAPIView.as_view(), name='analytics-rf-campaign-test'),
     path('analytics/rf/campaigns/kpi/',        RFMCampaignKPIAPIView.as_view(),          name='analytics-rf-campaigns-kpi'),
     path('analytics/rf/campaigns/<int:pk>/',   RFMCampaignDetailAPIView.as_view(),       name='analytics-rf-campaign-detail'),
     path('analytics/rf/campaigns/<int:pk>/cancel/', RFMCampaignCancelAPIView.as_view(),  name='analytics-rf-campaign-cancel'),

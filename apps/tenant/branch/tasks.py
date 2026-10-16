@@ -706,7 +706,16 @@ def download_vk_attachments_task(schema_name: str, message_pk: int) -> dict:
                 downloaded += 1
         if downloaded:
             TestimonialMessage.objects.filter(pk=message_pk).update(attachments=atts)
-        return {'downloaded': downloaded}
+        # Скриншот отзыва ответом на ссылки карт → заявка «На проверке» (16.10.2026).
+        proof_id = None
+        if msg.source == TestimonialMessage.Source.VK_MESSAGE:
+            try:
+                from apps.tenant.branch.review_proofs import from_vk_photo
+                proof = from_vk_photo(message_pk)
+                proof_id = proof.pk if proof else None
+            except Exception:
+                logger.warning('review proof from VK photo failed msg=%s', message_pk, exc_info=True)
+        return {'downloaded': downloaded, 'proof': proof_id}
 
 
 @shared_task(name='apps.tenant.branch.tasks.purge_old_vk_attachments_task')

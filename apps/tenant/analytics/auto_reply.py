@@ -843,11 +843,15 @@ def build_review_links_keyboard(conv) -> dict | None:
         yandex = (fb_yandex or '').strip()
         gis    = (fb_gis or '').strip()
 
+    # Через наш домен — считаем переходы (16.10.2026, `branch/map_links.py`).
+    from apps.tenant.branch.map_links import tracked
     buttons = []
     if yandex:
-        buttons.append([{'action': {'type': 'open_link', 'link': yandex, 'label': '⭐ Яндекс Карты'}}])
+        buttons.append([{'action': {'type': 'open_link', 'link': tracked(conv, 'yandex', yandex),
+                                    'label': '⭐ Яндекс Карты'}}])
     if gis:
-        buttons.append([{'action': {'type': 'open_link', 'link': gis, 'label': '⭐ 2ГИС'}}])
+        buttons.append([{'action': {'type': 'open_link', 'link': tracked(conv, '2gis', gis),
+                                    'label': '⭐ 2ГИС'}}])
     if not buttons:
         return None
     return {'inline': True, 'buttons': buttons}
@@ -1180,7 +1184,8 @@ def perform_auto_send(conversation_id: int, schema_name: str, expected_hash: str
 
     keyboard = build_review_links_keyboard(conv) if cfg.auto_send_attach_links else None
     text = (conv.ai_draft or '').strip()
-    tail = (cfg.auto_send_links_text or '').strip()
+    from apps.tenant.branch.review_proofs import fill, reward
+    tail = fill((cfg.auto_send_links_text or '').strip(), reward())
     if keyboard and tail:
         text = f'{text}\n\n{tail}'
 
