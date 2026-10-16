@@ -157,6 +157,21 @@ class PatchFlagsTest(SimpleTestCase):
         self.assertEqual(resp.data['flags']['birthday_window_days'], {'value': 4, 'source': 'network'})
         self.assertFalse(resp.data['read_only'])
 
+    def test_iiko_card_mode_needs_key_and_checks_choices(self):
+        """17.10.2026: режим iikoCard из кабинета; без ключа iiko — не включается."""
+        resp = _patch({'iiko_card_mode': 'link'})
+        self.assertEqual((resp.status_code, resp.data['code']), (400, 'iiko_not_configured'))
+        self.cfg.save.assert_not_called()
+        self.cfg.iiko_cloud_api_login, self.cfg.iiko_cloud_organization_id = 'x', 'org'
+        resp = _patch({'iiko_card_mode': 'everything'})
+        self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+        resp = _patch({'iiko_card_mode': 'card'})
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(self.cfg.iiko_card_mode, 'card')
+        self.assertTrue(resp.data['iiko_card_ready'])
+        resp = _patch({'iiko_card_mode': 'off'})
+        self.assertEqual(resp.status_code, 200, resp.data)
+
     def test_type_errors_are_400(self):
         for body in ({'birthday_window_days': 'abc'}, {'birthday_window_days': -1},
                      {'rf_orchestrator_enabled': 'maybe'}, {'story_campaign_start': '31.12.2026'}):

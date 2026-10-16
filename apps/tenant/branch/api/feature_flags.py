@@ -60,6 +60,10 @@ FLAG_FIELDS = (
     'apology_gift_enabled', 'apology_gift_max_rating', 'apology_gift_tier', 'apology_gift_text',
     'guest_primary_channel', 'stoplist_guard_enabled',
     'campaign_margin_pct', 'default_control_percent',
+    # 17.10.2026, владелец: режим iikoCard переключается из кабинета CheckUp
+    # (раньше — только админка платформы). Ключ и организация iiko сюда НЕ
+    # попадают — только режим и признак «ключ заведён» (`iiko_card_ready`).
+    'iiko_card_mode',
 )
 
 # Только чтение: платформенные переключатели пилотов и каталога ВК — включает
@@ -100,6 +104,12 @@ def _plain(value):
     return isoformat() if callable(isoformat) else str(value)
 
 
+def iiko_card_ready(cfg) -> bool:
+    """Заведены ли ключ iiko Cloud и организация — без самих значений."""
+    return bool(cfg is not None and getattr(cfg, 'iiko_cloud_api_login', '')
+                and getattr(cfg, 'iiko_cloud_organization_id', ''))
+
+
 def flags_payload(cfg) -> dict:
     flags = {}
     for name in FLAG_FIELDS:
@@ -130,6 +140,7 @@ class FeatureFlagsAPIView(APIView):
         company = getattr(connection, 'tenant', None)
         cfg = ClientConfig.objects.filter(company=company).first() if company else None
         return Response({'flags': flags_payload(cfg), 'read_only': False,
+                         'iiko_card_ready': iiko_card_ready(cfg),
                          'editable': list(EDITABLE_FLAGS), 'readonly': sorted(READONLY_FLAGS),
                          'branch_overridable': list(BRANCH_OVERRIDABLE)})
 
@@ -158,6 +169,10 @@ def _parse_flag_value(name: str, raw, *, model):
     """Значение по типу поля модели (`model` = ClientConfig или BranchConfig)."""
     from django.db import models as dm
     field = model._meta.get_field(name)
+    if getattr(field, 'choices', None) and raw is not None:
+        допустимо = [str(c[0]) for c in field.choices]
+        if str(raw) not in допустимо:
+            raise PayloadError('invalid_payload', f'{name}: одно из {", ".join(допустимо)}')
     if raw is None:
         if getattr(field, 'null', False):
             return None
@@ -290,12 +305,17 @@ class FeatureFlagsPatchMixin:
                              'flags': branch_flags_payload(branch, cfg),
                              'read_only': False, 'branch_overridable': list(BRANCH_OVERRIDABLE)})
         cfg, _ = ClientConfig.objects.get_or_create(company=company)
+        if values.get('iiko_card_mode') not in (None, '', 'off') and not iiko_card_ready(cfg):
+            return _error('iiko_not_configured',
+                          'У сети не заведены ключ iiko Cloud и организация — режим iikoCard ничего не сделает. '
+                          'Их заводит оператор платформы.', http_status.HTTP_400_BAD_REQUEST)
         for name, value in values.items():
             setattr(cfg, name, value)
         cfg.save(update_fields=sorted(values))
         log.info('feature flags patched: %s network fields=%s by=%s',
                  current_schema_name(), sorted(values), request.user)
         return Response({'flags': flags_payload(cfg), 'read_only': False,
+                         'iiko_card_ready': iiko_card_ready(cfg),
                          'editable': list(EDITABLE_FLAGS), 'readonly': sorted(READONLY_FLAGS),
                          'branch_overridable': list(BRANCH_OVERRIDABLE)})
 
