@@ -3,7 +3,7 @@ from .summary import DashboardTodayAPIView, ReviewsSummaryAPIView, StatsDetailAP
 from .views import (
     GeneralStatsAPIView, RFStatsAPIView, BranchListAPIView,
     RecalculateRFView, RFThresholdsAPIView, SlowStatsAPIView,
-    AutoReplySettingsAPIView, CampaignStatsAPIView, EngagementAnalyticsAPIView, SetupCheckAPIView, PosCardScansAPIView, RFTransitionsAPIView, PosLinkCoverageAPIView,
+    AutoReplySettingsAPIView, AutoBroadcastForecastAPIView, CampaignStatsAPIView, EngagementAnalyticsAPIView, SetupCheckAPIView, PosCardScansAPIView, RFTransitionsAPIView, PosLinkCoverageAPIView,
     CampaignsHistoryAPIView, CampaignDetailAPIView,
     RFSegmentListAPIView,
     SendSegmentBroadcastAPIView, GenerateBroadcastTextAPIView,
@@ -23,6 +23,7 @@ urlpatterns = [
     path('analytics/setup-check/',      SetupCheckAPIView.as_view(), name='analytics-setup-check'),
     path('analytics/rf/transitions/',   RFTransitionsAPIView.as_view(), name='analytics-rf-transitions'),
     path('analytics/campaigns/stats/',  CampaignStatsAPIView.as_view(), name='analytics-campaign-stats'),
+    path('analytics/auto-broadcasts/forecast/', AutoBroadcastForecastAPIView.as_view(), name='analytics-auto-forecast'),
     path('analytics/rf/migrations/',    RFMigrationsListAPIView.as_view(), name='analytics-rf-migrations'),
     path('analytics/rf/recalculate/',   RecalculateRFView.as_view(),   name='analytics-rf-recalculate'),
     path('analytics/rf/thresholds/',    RFThresholdsAPIView.as_view(), name='analytics-rf-thresholds'),

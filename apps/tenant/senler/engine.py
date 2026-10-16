@@ -610,11 +610,17 @@ def rule_stats(rule) -> dict:
     def _agg(qs):
         sent = qs.filter(status=RecipientStatus.SENT).count()
         read = qs.filter(status=RecipientStatus.SENT, read_at__isnull=False).count()
-        failed = qs.filter(status=RecipientStatus.FAILED).count()
+        failed_qs = qs.filter(status=RecipientStatus.FAILED)
+        # «Пропущено: …» — гость не разрешил сообщения (opt-in), это не сбой
+        # отправки. 16.10.2026: в карточке правила они шли «ошибками» (LevOne:
+        # 717 из 717 «ошибок» RF-цепочек), маркетолог искал поломку.
+        skipped = failed_qs.filter(error__startswith='Пропущено').count()
+        failed = failed_qs.count() - skipped
         return {
             'sent': sent,
             'read': read,
             'failed': failed,
+            'skipped_no_consent': skipped,
             'open_rate': round(read / sent * 100, 1) if sent else 0.0,
         }
 

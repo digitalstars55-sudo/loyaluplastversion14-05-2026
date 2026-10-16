@@ -85,10 +85,11 @@ def collect_metrics(company: Company) -> DigestMetrics:
             # Непрочитанные/неотвеченные негативы старше 24 часов
             cutoff_24h = now - timedelta(hours=24)
             cutoff_72h = now - timedelta(hours=72)
-            negatives = TestimonialConversation.objects.filter(
+            from apps.tenant.analytics.api.summary import _open
+            negatives = _open(TestimonialConversation.objects.filter(
                 is_replied=False,
                 sentiment__in=['NEGATIVE', 'PARTIALLY_NEGATIVE'],
-            )
+            ))
             metrics.reviews_unanswered_negative = negatives.filter(
                 last_message_at__lte=cutoff_24h,
             ).count()

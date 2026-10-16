@@ -46,6 +46,17 @@ SENTIMENT_LABELS = (
 )
 NEGATIVE_Q = Q(sentiment__in=(Sentiment.NEGATIVE, Sentiment.PARTIALLY_NEGATIVE))
 
+
+def _open(qs):
+    """Без отметки «Решено» (или гость написал после неё) — 16.10.2026.
+
+    Владелец: «нажал “Решено” — из всех этих метрик пусть уходит, а не висит».
+    Тот же закон, что у фильтра ленты `resolution=open`, иначе число на плитке
+    и список по ссылке с неё разошлись бы.
+    """
+    from apps.tenant.mobile.api.review_filters import guest_wrote_after_resolve
+    return qs.filter(Q(resolved_at__isnull=True) | guest_wrote_after_resolve())
+
 TOP_BRANCHES = 5
 TOP_BRANCHES_DAYS = 30
 
@@ -93,13 +104,18 @@ def _branch_rows(conv_qs, limit: int | None = None) -> list[dict]:
         .annotate(
             total=Count('id'),
             negative=Count('id', filter=NEGATIVE_Q),
-            unanswered_negative=Count('id', filter=NEGATIVE_Q & Q(is_replied=False)),
         )
         .order_by('-total', 'branch__name')
     )
     if limit:
         rows = rows[:limit]
     rows = list(rows)
+    открытые = dict(
+        _open(conv_qs.filter(NEGATIVE_Q, is_replied=False, branch__isnull=False))
+        .values('branch_id').annotate(c=Count('id')).values_list('branch_id', 'c')
+    ) if rows else {}
+    for r in rows:
+        r['unanswered_negative'] = открытые.get(r['branch_id'], 0)
     avg_map = _avg_rating_by_branch(conv_qs) if rows else {}
     return [{
         'branch_id': r['branch_id'],
@@ -170,8 +186,8 @@ class ReviewsSummaryAPIView(APIView):
             'meta': {'start': str(start), 'end': str(end), 'branch_ids': branch_ids or []},
             'total': total,
             'avg_rating': round(avg_rating, 1) if avg_rating else None,
-            'unanswered_negative': qs.filter(NEGATIVE_Q, is_replied=False).count(),
-            'waiting_reply': qs.filter(has_unread=True, is_replied=False).count(),
+            'unanswered_negative': _open(qs.filter(NEGATIVE_Q, is_replied=False)).count(),
+            'waiting_reply': _open(qs.filter(has_unread=True, is_replied=False)).count(),
             'sentiments': [
                 {'key': key, 'label': label, 'count': sentiment_counts.get(key, 0)}
                 for key, label in SENTIMENT_LABELS
@@ -264,9 +280,9 @@ class DashboardTodayAPIView(APIView):
         if branch_ids:
             convs = convs.filter(branch_id__in=branch_ids)
         reviews = {
-            'unanswered_negative': convs.filter(NEGATIVE_Q, is_replied=False).count(),
-            'waiting_reply': convs.filter(has_unread=True, is_replied=False).count(),
-            'drafts_ready': convs.filter(is_replied=False, ai_draft_rejected=False).exclude(ai_draft='').count(),
+            'unanswered_negative': _open(convs.filter(NEGATIVE_Q, is_replied=False)).count(),
+            'waiting_reply': _open(convs.filter(has_unread=True, is_replied=False)).count(),
+            'drafts_ready': _open(convs.filter(is_replied=False, ai_draft_rejected=False).exclude(ai_draft='')).count(),
             'auto_send_scheduled': convs.filter(auto_send_status=TestimonialConversation.AutoSendStatus.SCHEDULED).count(),
             'new_today': convs.filter(last_message_at__date=today).count(),
             'checkup_in_progress': convs.filter(checkup_status='in_progress').count(),

@@ -3237,7 +3237,8 @@ def _assistant_tenant_context() -> dict:
         from datetime import timedelta
         from apps.tenant.branch.models import TestimonialConversation
         since = timezone.now() - timedelta(days=30)
-        base = TestimonialConversation.objects.filter(last_message_at__gte=since)
+        from apps.tenant.analytics.api.summary import _open
+        base = _open(TestimonialConversation.objects.filter(last_message_at__gte=since))
         ctx['unanswered_negatives'] = base.filter(
             sentiment='NEGATIVE', is_replied=False,
         ).count()

@@ -2394,6 +2394,26 @@ def _period(request, default_days=30):
     return start, end
 
 
+class AutoBroadcastForecastAPIView(APIView):
+    """
+    GET /api/v1/analytics/auto-broadcasts/forecast/ — прогноз выручки на 30 дней
+    по каждому действующему сценарию: N × p × k × S с раскрытой формулой (ТЗ п.7).
+    Нет истории или видимых покупок — `enough_data: false`, без числа.
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('analytics')]
+
+    def get(self, request):
+        from apps.tenant.analytics import autobroadcast_forecast as F
+        from apps.tenant.senler.models import AutoBroadcastRule
+        rules = AutoBroadcastRule.objects.filter(is_archived=False)
+        branch_ids = effective_branch_ids(request.user, current_schema_name(), None)
+        data = F.for_rules(rules, branch_ids=branch_ids or None)
+        total = sum(v['forecast'] for v in data.values() if v['forecast'] is not None)
+        return Response({'rules': {str(k): v for k, v in data.items()},
+                         'total_forecast': total,
+                         'note': 'Оценка выручки после контакта на 30 дней, не прибыль и не факт.'})
+
+
 class CampaignStatsAPIView(APIView):
     """
     GET /api/v1/analytics/campaigns/stats/?start=&end= — статистика рекламных кампаний
