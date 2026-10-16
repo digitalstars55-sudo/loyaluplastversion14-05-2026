@@ -33,7 +33,7 @@ from __future__ import annotations
 from apps.shared.users.feature_permissions import HasFeatureAccess
 
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.core.cache import cache
 from django.utils import timezone
@@ -770,6 +770,31 @@ def plan_slots(start, days: int, per_week: int, hour: int) -> list:
     return slots[:PLAN_MAX_POSTS]
 
 
+def cycle_days(start, cycle: str) -> int:
+    """Длина цикла: неделя — 7 дней; месяц — от даты начала до дня перед той же датой
+    следующего месяца (ТЗ контент-плана 15.10.2026, п.1)."""
+    if cycle != 'month':
+        return 7
+    import calendar
+    y, m = (start.year + (start.month // 12), start.month % 12 + 1)
+    day = min(start.day, calendar.monthrange(y, m)[1])
+    return (date(y, m, day) - start).days
+
+
+def plan_slots_cycle(start, end, cycle: str, per_cycle: int, hour: int) -> list:
+    """Посты на [start, end]: частота цикла повторяется, неполный цикл — пропорционально дням."""
+    from datetime import datetime, time
+    days = (end - start).days + 1
+    total = max(1, int(round(per_cycle * days / cycle_days(start, cycle))))
+    total = min(total, days, PLAN_MAX_POSTS)
+    step = days / total
+    out = []
+    for i in range(total):
+        day = start + timedelta(days=int(i * step))
+        out.append(timezone.make_aware(datetime.combine(day, time(hour=hour))))
+    return out
+
+
 class MarketerContentPlanAPIView(APIView):
     """
     POST /api/v1/marketer/posts/plan/ {start: ГГГГ-ММ-ДД, days: 7..31, per_week: 1..7, hour: 8..22,
@@ -793,18 +818,35 @@ class MarketerContentPlanAPIView(APIView):
                           http_status.HTTP_409_CONFLICT)
         data = request.data or {}
         start = parse_date(str(data.get('start') or ''))
+        cycle = str(data.get('cycle') or '')
         try:
-            days = int(data.get('days', 7))
-            per_week = int(data.get('per_week', 3))
             hour = int(data.get('hour', 12))
+            if cycle in ('week', 'month'):
+                # Цикл «Неделя / Месяц» (ТЗ 15.10.2026): частота за цикл и конец периода.
+                per_cycle = int(data.get('per_cycle', 3))
+                end = parse_date(str(data.get('end') or '')) if data.get('end') else None
+                if start is not None and end is None:
+                    end = start + timedelta(days=cycle_days(start, cycle) - 1)
+                days = (end - start).days + 1 if (start and end) else 0
+                per_week = 1
+            else:
+                days = int(data.get('days', 7))
+                per_week = int(data.get('per_week', 3))
         except (TypeError, ValueError):
-            return _error('invalid_payload', 'days, per_week, hour — числа', http_status.HTTP_400_BAD_REQUEST)
+            return _error('invalid_payload', 'days, per_week, per_cycle, hour — числа',
+                          http_status.HTTP_400_BAD_REQUEST)
         if start is None or start < timezone.localdate():
             return _error('invalid_payload', 'start: дата не раньше сегодня', http_status.HTTP_400_BAD_REQUEST)
-        if not (1 <= days <= 31 and 1 <= per_week <= 7 and 8 <= hour <= 22):
+        if cycle in ('week', 'month'):
+            if not (1 <= days <= 62 and 1 <= per_cycle <= 31 and 8 <= hour <= 22):
+                return _error('invalid_payload', 'период 1–62 дня, постов за цикл 1–31, час 8–22',
+                              http_status.HTTP_400_BAD_REQUEST)
+            slots = [s for s in plan_slots_cycle(start, end, cycle, per_cycle, hour) if s > timezone.now()]
+        elif not (1 <= days <= 31 and 1 <= per_week <= 7 and 8 <= hour <= 22):
             return _error('invalid_payload', 'days 1–31, per_week 1–7, hour 8–22',
                           http_status.HTTP_400_BAD_REQUEST)
-        slots = [s for s in plan_slots(start, days, per_week, hour) if s > timezone.now()]
+        else:
+            slots = [s for s in plan_slots(start, days, per_week, hour) if s > timezone.now()]
         if not slots:
             return _error('invalid_payload', 'в плане нет ни одного слота в будущем',
                           http_status.HTTP_400_BAD_REQUEST)
@@ -841,6 +883,74 @@ class MarketerContentPlanAPIView(APIView):
                          'skipped': [s.isoformat() for s in taken], 'job': progress.to_dict(job)},
                         status=http_status.HTTP_202_ACCEPTED)
 
+
+
+class MarketerContentPlanApproveAPIView(APIView):
+    """
+    POST /api/v1/marketer/posts/plan/approve/ {start, end, require_images?: bool, dry_run?: bool}
+
+    «Утвердить контент-план» (ТЗ 15.10.2026, п.6): проверить все посты плана
+    периода — текст, дата в будущем, картинка при включённой генерации, доступ к
+    сообществу — и одним действием перевести их в «Запланирован». Есть ошибки —
+    409 со списком, ничего не меняется (частично не запускаем). Повтор не создаёт
+    второй очереди: уже запланированные просто засчитываются.
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('broadcasts')]
+
+    def post(self, request):
+        if not _may_write(request.user):
+            return _error('role_not_allowed', 'утверждает план только администратор сети',
+                          http_status.HTTP_403_FORBIDDEN)
+        data = request.data or {}
+        start = parse_date(str(data.get('start') or ''))
+        end = parse_date(str(data.get('end') or ''))
+        if start is None or end is None or end < start:
+            return _error('invalid_payload', 'start и end — даты, end не раньше start',
+                          http_status.HTTP_400_BAD_REQUEST)
+        need_images = str(data.get('require_images') or '').lower() in ('1', 'true', 'yes')
+        dry = str(data.get('dry_run') or '').lower() in ('1', 'true', 'yes')
+        cfg = _settings_row()
+        posts = list(MarketerPost.objects
+                     .filter(scheduled_at__date__gte=start, scheduled_at__date__lte=end)
+                     .exclude(topic='')
+                     .exclude(status__in=(MarketerPostStatus.REJECTED, MarketerPostStatus.PUBLISHED))
+                     .order_by('scheduled_at'))
+        now = timezone.now()
+        problems, ready, already = [], [], 0
+        group = _group_id(cfg)
+        for p in posts:
+            if p.status == MarketerPostStatus.SCHEDULED:
+                already += 1
+                continue
+            why = []
+            if not (p.text or '').strip():
+                why.append('нет текста')
+            if not p.scheduled_at or p.scheduled_at <= now:
+                why.append('дата уже прошла')
+            if need_images and not p.image:
+                why.append('нет картинки')
+            if not group:
+                why.append('нет доступа к сообществу ВК')
+            if p.status == MarketerPostStatus.FAILED and p.error:
+                why.append(f'прошлая ошибка: {p.error[:120]}')
+            if why:
+                problems.append({'id': p.pk, 'scheduled_at': p.scheduled_at.isoformat() if p.scheduled_at else None,
+                                 'topic': p.topic, 'reasons': why})
+            else:
+                ready.append(p)
+        summary = {'posts': len(posts), 'ready': len(ready), 'already_scheduled': already,
+                   'problems': problems, 'group_id': group,
+                   'timezone': timezone.get_current_timezone_name()}
+        if problems:
+            return _error('plan_not_ready', 'в плане есть посты с ошибками — исправьте или удалите их',
+                          http_status.HTTP_409_CONFLICT, **summary)
+        if dry or not ready:
+            return Response({**summary, 'approved': False if dry else bool(already)})
+        ids = [p.pk for p in ready]
+        MarketerPost.objects.filter(pk__in=ids, status__in=(MarketerPostStatus.DRAFT, MarketerPostStatus.FAILED)).update(
+            status=MarketerPostStatus.SCHEDULED, error='', updated_at=now)
+        log.info('marketer plan approved %s..%s: %s posts by=%s', start, end, len(ids), _author(request.user))
+        return Response({**summary, 'approved': True, 'scheduled': len(ids)})
 
 
 # ── Волна 4: калькулятор стоимости и картинка ИИ ──────────────────────────────

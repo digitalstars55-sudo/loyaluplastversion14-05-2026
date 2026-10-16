@@ -6,7 +6,7 @@
 from django.urls import path
 
 from .views import (
-    MarketerContentPlanAPIView,
+    MarketerContentPlanAPIView, MarketerContentPlanApproveAPIView,
     MarketerJobDetailAPIView,
     MarketerJobListAPIView,
     MarketerPhotoDetailAPIView,
@@ -33,6 +33,8 @@ urlpatterns = [
     path('marketer/posts/generate/', MarketerGenerateAPIView.as_view(),
          name='marketer-posts-generate'),
     path('marketer/posts/plan/', MarketerContentPlanAPIView.as_view(), name='marketer-posts-plan'),
+    path('marketer/posts/plan/approve/', MarketerContentPlanApproveAPIView.as_view(),
+         name='marketer-posts-plan-approve'),
     path('marketer/posts/estimate/', MarketerEstimateAPIView.as_view(), name='marketer-posts-estimate'),
     path('marketer/posts/<int:pk>/', MarketerPostDetailAPIView.as_view(),
          name='marketer-post-detail'),
