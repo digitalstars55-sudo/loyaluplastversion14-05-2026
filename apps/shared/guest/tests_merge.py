@@ -94,6 +94,7 @@ class ГостьБезВк(_Сети, TestCase):
         self.assertEqual(resp.status_code, 200, resp.data)
         self.assertEqual(resp.data['vk_id'], СЛУЖЕБНЫЙ_VK_ОТ + 901)
 
+    @override_settings(TELEGRAM_GUEST_WITHOUT_VK=False)
     def test_флаг_выключен_как_раньше(self):
         from apps.tenant.branch.api.views import TelegramSessionView
         r = RequestFactory().post('/api/v1/vk/tg-session/')

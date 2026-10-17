@@ -308,11 +308,13 @@ TELEGRAM_MINI_APP_HOSTS = tuple(
 # и срок годности запуска. TELEGRAM_SIGN_ENFORCE='on' — 403 на `vk_id` без входа через
 # VK ID и на битую initData; 'off' (дефолт) — только строка `vk_sign tg_…` в лог.
 TELEGRAM_GUEST_BOT_TOKEN = os.getenv('TELEGRAM_GUEST_BOT_TOKEN', '')
+# Рассылка гостю в Телеграм, если сообщения сообщества ВК закрыты (шаг В склейки, 17.10.2026).
+GUEST_LIVE_CHANNEL = os.getenv('GUEST_LIVE_CHANNEL', 'on')
 TELEGRAM_INIT_DATA_MAX_AGE = int(os.getenv('TELEGRAM_INIT_DATA_MAX_AGE', '86400'))
 TELEGRAM_SIGN_ENFORCE = os.getenv('TELEGRAM_SIGN_ENFORCE', 'off')
 # Склейка гостя, шаг Б (17.10.2026): гость из Телеграма без ВК получает служебную
-# карточку (`guest.merge.из_телеграма`). Выключено, пока владелец не скажет.
-TELEGRAM_GUEST_WITHOUT_VK = os.getenv('TELEGRAM_GUEST_WITHOUT_VK', 'off').lower() in ('on', '1', 'true', 'yes')
+# карточку (`guest.merge.из_телеграма`). Включено по слову владельца 17.10 («это тоже база»).
+TELEGRAM_GUEST_WITHOUT_VK = os.getenv('TELEGRAM_GUEST_WITHOUT_VK', 'on').lower() in ('on', '1', 'true', 'yes')
 # Аварийный клапан: префиксы гостевых путей, которые enforce не проверяет вовсе
 # (например если после включения 'on' всплывёт легитимный флоу без подписи).
 VK_SIGN_EXEMPT_PATHS = tuple(

@@ -39,6 +39,7 @@ class TelegramLinkTest(TestCase):
         self.assertEqual(response.data['vk_id'], 200002444631)
         self.assertEqual(verify_web_token(response.data['web_token']), 200002444631)
 
+    @override_settings(TELEGRAM_GUEST_WITHOUT_VK=False)
     def test_unknown_telegram_gets_404(self):
         response = TelegramSessionView.as_view()(_req(tg_init_data(user_id=43)))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

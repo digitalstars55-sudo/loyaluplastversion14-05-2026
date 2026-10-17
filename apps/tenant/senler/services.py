@@ -314,8 +314,16 @@ def send_vk_message(
     # сообщения сообществу — иначе VK массово ловит ошибку 901 и банит
     # сообщество за спам (рвётся и рассылка, и ответы на отзывы — общий
     # токен). Проверка идёт ДО любого messages.send.
+    # Живой канал (шаг В склейки гостя, 17.10.2026): гостю без ВК (служебная
+    # карточка из Телеграма) — сразу в Телеграм; гостю, закрывшему сообщения
+    # сообщества, — в Телеграм, если он открывал бота. Иначе как раньше.
+    from apps.shared.guest import live_channel
+    if live_channel.служебный(vk_user_id):
+        return live_channel.отправить(vk_user_id, message, keyboard)
     allowed, skip_reason = _is_messages_allowed(config, vk_user_id)
     if not allowed:
+        if live_channel.запасной_включён() and live_channel.телеграм_гостя(vk_user_id):
+            return live_channel.отправить(vk_user_id, message, keyboard)
         return False, skip_reason, None
 
     try:
