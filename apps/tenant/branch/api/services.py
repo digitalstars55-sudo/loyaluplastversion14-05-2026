@@ -740,6 +740,8 @@ def fresh_vk_subscription_status(vk_id: int, branch_id: int) -> dict:
         'is_community_member': bool(vk.is_community_member) if vk else False,
         'is_newsletter_subscriber': bool(vk.is_newsletter_subscriber) if vk else False,
     }
+    if getattr(profile.client, 'is_synthetic_vk', False):
+        return result                          # служебная карточка — ВК не спрашиваем
 
     config = (
         SenlerConfig.objects.filter(branch=profile.branch).first()
@@ -982,6 +984,12 @@ def _sync_vk_status_on_register(profile: ClientBranch) -> None:
     from apps.tenant.senler.models import SenlerConfig
 
     logger = logging.getLogger(__name__)
+
+    # Служебная карточка Телеграма (18.10.2026): у неё нет страницы ВК, и
+    # ВК на её номер всегда ответит «не подписан» — это стирало подписку гостя
+    # и крутило окно «Вступить в сообщество» по кругу. Не трогаем статус.
+    if getattr(profile.client, 'is_synthetic_vk', False):
+        return
 
     try:
         config = SenlerConfig.objects.get(branch=profile.branch)

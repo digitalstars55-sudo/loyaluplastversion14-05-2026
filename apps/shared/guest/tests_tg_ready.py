@@ -50,3 +50,18 @@ class ОтветСети(SimpleTestCase):
         self.assertEqual(d['branches'][0]['branch_id'], 3)
         self.assertTrue(d['review_proof_enabled'])
         self.assertEqual(d['review_proof_coins'], 30)
+
+
+class СлужебнаяКарточкаПодписка(SimpleTestCase):
+    """18.10.2026: служебная карточка Телеграма — ВК по её номеру не спрашиваем,
+    иначе ответ «не подписан» стирает подписку и окно подписки крутится по кругу."""
+
+    def test_синхронизация_не_трогает_статус(self):
+        from apps.tenant.branch.api import services
+        profile = SimpleNamespace(client=SimpleNamespace(is_synthetic_vk=True, vk_id=9_000_000_000_042),
+                                  branch=object())
+        with mock.patch('apps.tenant.senler.models.SenlerConfig.objects') as cfg, \
+                mock.patch.object(services.ClientVKStatus, 'sync') as sync:
+            services._sync_vk_status_on_register(profile)
+        cfg.get.assert_not_called()
+        sync.assert_not_called()

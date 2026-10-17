@@ -969,6 +969,9 @@ def vk_bulk_membership_sync_task(self, schema_name: str, branch_id: int) -> dict
             ClientBranch.objects
             .filter(branch__senler_config__vk_group_id=group_id)
             .exclude(client__vk_id__isnull=True)
+            # Служебные карточки Телеграма — не страницы ВК: ВК ответит «не
+            # участник» и сотрёт подписку, которую гость дал сам (18.10.2026).
+            .exclude(client__is_synthetic_vk=True)
             .values_list('client__vk_id', 'id')
         )
 
