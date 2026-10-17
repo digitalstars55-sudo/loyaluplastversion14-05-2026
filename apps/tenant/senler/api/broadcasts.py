@@ -370,7 +370,7 @@ def resolve_audience(draft) -> dict:
     for branch in branches:
         cb_qs = ClientBranch.objects.filter(
             branch=branch,
-            is_employee=False,
+            is_employee=False, archived_at__isnull=True,
             client__is_active=True,
             client__vk_id__isnull=False,
         ).select_related('client')

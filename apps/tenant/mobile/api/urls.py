@@ -17,6 +17,7 @@ from .views import (
     MobileReviewResolveAPIView,
     GuestBirthdaysAPIView,
     GuestListAPIView,
+    GuestArchiveAPIView,
     GuestDetailAPIView,
     AdjustGuestCoinsAPIView,
     DailyCodesListAPIView,
@@ -78,6 +79,11 @@ urlpatterns = [
         'guests/<int:vk_id>/',
         GuestDetailAPIView.as_view(),
         name='guest-detail',
+    ),
+    path(
+        'guests/<int:vk_id>/archive/',
+        GuestArchiveAPIView.as_view(),
+        name='guest-archive',
     ),
     path(
         'guests/<int:vk_id>/adjust-coins/',

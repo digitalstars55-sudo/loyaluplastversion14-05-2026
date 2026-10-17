@@ -174,6 +174,9 @@ def _create_welcome_gift(vk_id: int, *, first_name='', last_name='', photo_url='
     if not client_created and not client.is_active:
         raise GuestBlocked
     cb, _ = ClientBranch.objects.get_or_create(client=client, branch=branch)
+    if cb.archived_at:                       # гость вернулся сам — из архива
+        from apps.tenant.branch.archive import из_архива
+        из_архива(client)
 
     settings = _resolve_story_settings(cb)
     entry, _ = StoryGiftEntry.objects.get_or_create(

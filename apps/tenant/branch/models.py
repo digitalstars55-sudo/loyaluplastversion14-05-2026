@@ -296,6 +296,23 @@ class ClientBranch(TimeStampedModel):
         editable=False,
         verbose_name='Время последнего скана точки контакта',
     )
+    # Архив (17.10.2026, владелец: «если удаляем мы — он уходит в архив, если
+    # заново заходит — профиль активируется с памятью, ничего не пропадает»).
+    # Архивный гость не виден в списке гостей, не получает рассылок и не
+    # считается в аналитике «живых»; монеты, визиты и подарки остаются.
+    # Вход гостя снимает архив сам (`branch/archive.py::из_архива`).
+    archived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name='В архиве с',
+    )
+    archived_by = models.CharField(
+        max_length=150,
+        blank=True,
+        default='',
+        verbose_name='Кто отправил в архив',
+    )
 
     def save(self, *args, **kwargs):
         if self.birth_date and not self.birth_date_set_at:

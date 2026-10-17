@@ -140,7 +140,7 @@ def _resolve_home_cb(client_id, branch_ids):
     def _latest_visit_cb(scope_branch_ids):
         qs = ClientBranchVisit.objects.filter(
             client__client_id=client_id,
-            client__is_employee=False,
+            client__is_employee=False, client__archived_at__isnull=True,
         )
         if scope_branch_ids:
             qs = qs.filter(client__branch_id__in=scope_branch_ids)
@@ -151,7 +151,7 @@ def _resolve_home_cb(client_id, branch_ids):
     if cb:
         return cb
 
-    qs = ClientBranch.objects.filter(client_id=client_id, is_employee=False)
+    qs = ClientBranch.objects.filter(client_id=client_id, is_employee=False, archived_at__isnull=True)
     if branch_ids:
         scoped = qs.filter(branch_id__in=branch_ids).order_by('-pk').first()
         if scoped:

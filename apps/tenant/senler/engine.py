@@ -86,7 +86,7 @@ def _birthday_resolver(offset_days: int):
         qs = (
             ClientBranch.objects
             .filter(
-                is_employee=False,
+                is_employee=False, archived_at__isnull=True,
                 client__is_active=True,
                 client__vk_id__isnull=False,
                 birth_date__month=target.month,
@@ -131,7 +131,7 @@ def _after_game_resolver(rule, now):
             .filter(
                 created_at__gte=w_start,
                 created_at__lte=w_end,
-                client__is_employee=False,
+                client__is_employee=False, client__archived_at__isnull=True,
                 client__client__vk_id__isnull=False,
             )
             .select_related('client', 'client__client', 'client__branch')
@@ -169,7 +169,7 @@ def _no_visit_resolver(rule, now):
     qs = (
         ClientBranch.objects
         .filter(
-            is_employee=False,
+            is_employee=False, archived_at__isnull=True,
             client__is_active=True,
             client__vk_id__isnull=False,
         )
@@ -197,7 +197,7 @@ def _subscribed_resolver(rule, now):
         ClientVKStatus.objects
         .filter(
             community_joined_at__date=target,
-            client__is_employee=False,
+            client__is_employee=False, client__archived_at__isnull=True,
             client__client__is_active=True,
             client__client__vk_id__isnull=False,
         )
@@ -235,7 +235,7 @@ def _phone_request_resolver(rule, now):
     qs = (
         ClientBranch.objects
         .filter(
-            is_employee=False,
+            is_employee=False, archived_at__isnull=True,
             client__is_active=True,
             client__vk_id__isnull=False,
             client__phone='',
@@ -285,7 +285,7 @@ def _gift_not_claimed_resolver(rule, now):
             # движок написал бы второй раз тем, кому legacy уже написала. Дедуп
             # движка (entity_key) legacy-отправок не видит — значит смотрим поле.
             reminder_sent_at__isnull=True,
-            client_branch__is_employee=False,
+            client_branch__is_employee=False, client_branch__archived_at__isnull=True,
             client_branch__client__vk_id__isnull=False,
         )
         .select_related(
@@ -422,7 +422,7 @@ def _rf_gift_expiring_resolver(rule, now):
             used_at__isnull=True,
             claim_expires_at__gt=now,                                # ещё не сгорел
             claim_expires_at__lte=now + timedelta(days=delay),        # но скоро
-            client_branch__is_employee=False,
+            client_branch__is_employee=False, client_branch__archived_at__isnull=True,
             client_branch__client__vk_id__isnull=False,
         )
         .select_related(

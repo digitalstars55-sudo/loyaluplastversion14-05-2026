@@ -81,7 +81,7 @@ def send_birthday_broadcasts_task() -> dict:
                     candidates = (
                         ClientBranch.objects
                         .filter(
-                            is_employee=False,
+                            is_employee=False, archived_at__isnull=True,
                             client__is_active=True,
                             client__vk_id__isnull=False,
                             birth_date__month=target_date.month,
@@ -271,7 +271,7 @@ def send_after_game_broadcast_task(process_evening: bool = False) -> dict:
                     .filter(
                         created_at__gte=window_start,
                         created_at__lte=window_end,
-                        client__is_employee=False,
+                        client__is_employee=False, client__archived_at__isnull=True,
                         client__client__vk_id__isnull=False,
                     )
                     .select_related('client', 'client__client', 'client__branch')
@@ -459,7 +459,7 @@ def send_gift_reminder_broadcasts_task() -> dict:
                         reminder_sent_at__isnull=True,
                         claim_expires_at__isnull=False,   # бессрочным не напоминаем
                         claim_expires_at__gt=now,          # сгоревшим — тоже
-                        client_branch__is_employee=False,
+                        client_branch__is_employee=False, client_branch__archived_at__isnull=True,
                         client_branch__client__vk_id__isnull=False,
                     )
                     .select_related(

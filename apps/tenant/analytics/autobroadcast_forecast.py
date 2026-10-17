@@ -38,7 +38,7 @@ def _n_no_visit(rule, today) -> int:
         return 0
     lo, hi = today - timedelta(days=n - 1), today + timedelta(days=HORIZON_DAYS - n)
     qs = (ClientBranch.objects
-          .filter(is_employee=False, client__is_active=True, client__vk_id__isnull=False)
+          .filter(is_employee=False, archived_at__isnull=True, client__is_active=True, client__vk_id__isnull=False)
           .annotate(last_visit=Max('visits__visited_at'))
           .filter(last_visit__date__gte=lo, last_visit__date__lte=hi))
     return _apply_audience(qs, rule).values('client__vk_id').distinct().count()

@@ -888,6 +888,12 @@ def register_or_get_client(
         },
     )
 
+    # Гость вошёл сам — архив снимается со всех его профилей сети.
+    if not created and profile.archived_at:
+        from apps.tenant.branch.archive import из_архива
+        из_архива(client)
+        profile.archived_at = None
+
     # Для СУЩЕСТВУЮЩИХ клиентов: если birth_date ещё не заполнен,
     # но фронтенд передал его (из VK Bridge или VK OAuth) — дозаписываем.
     # Это покрывает случай: клиент создан раньше (когда дата была скрыта),

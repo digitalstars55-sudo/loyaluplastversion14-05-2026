@@ -522,6 +522,8 @@ class TelegramSessionView(APIView):
         if getattr(client, 'is_blocked', False):
             return Response({'detail': 'Аккаунт заблокирован.', 'code': 'client_blocked'},
                             status=status.HTTP_403_FORBIDDEN)
+        from apps.tenant.branch.archive import из_архива
+        из_архива(client)                     # гость вошёл сам — из архива
         web_token, expires_at = issue_web_token(client.vk_id)
         return Response({
             'vk_id': client.vk_id,

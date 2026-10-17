@@ -46,7 +46,7 @@ def resolve_recipients(broadcast: Broadcast):
         ClientBranch.objects
         .filter(
             branch=broadcast.branch,
-            is_employee=False,
+            is_employee=False, archived_at__isnull=True,
             client__is_active=True,
             client__vk_id__isnull=False,
         )

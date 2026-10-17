@@ -526,7 +526,7 @@ class GuestBirthdaysAPIView(APIView):
 
         cbs = (
             ClientBranch.objects
-            .filter(birth_date__isnull=False, is_employee=False)
+            .filter(birth_date__isnull=False, is_employee=False, archived_at__isnull=True)
             .select_related('client', 'branch')
             .order_by('client_id', '-created_at')
         )
@@ -711,7 +711,14 @@ class GuestListAPIView(APIView):
         cb_qs = ClientBranch.objects.all()
         if allowed is not None:
             cb_qs = cb_qs.filter(branch_id__in=allowed)
-        all_client_ids = list(cb_qs.values_list('client_id', flat=True).distinct())
+        # Архив (17.10.2026): по умолчанию только живые профили; ?archived=1 —
+        # гости, у которых в архиве ВСЕ профили сети.
+        архив = request.query_params.get('archived') in ('1', 'true')
+        живые = set(cb_qs.filter(archived_at__isnull=True).values_list('client_id', flat=True).distinct())
+        if архив:
+            all_client_ids = list(set(cb_qs.values_list('client_id', flat=True).distinct()) - живые)
+        else:
+            all_client_ids = list(живые)
         qs = Client.objects.filter(pk__in=all_client_ids)
         if search:
             qs = qs.filter(
@@ -793,7 +800,44 @@ class GuestListAPIView(APIView):
                 'coins':        client_coins.get(c.pk, 0),
             })
 
-        return Response({'guests': guests, 'total': total, 'total_visits': total_visits})
+        return Response({'guests': guests, 'total': total, 'total_visits': total_visits,
+                         'archived': архив})
+
+
+class GuestArchiveAPIView(APIView):
+    """
+    POST /api/v1/guests/<vk_id>/archive/  {"archived": true|false}
+
+    «Удалить гостя» = в архив (17.10.2026): все профили гостя в сети отмечаются
+    архивом, ничего не удаляется; вход гостя снимает архив сам. Только
+    администратор сети.
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('guests')]
+
+    def post(self, request, vk_id):
+        from apps.shared.guest.models import Client
+        from apps.shared.users.access import current_schema_name, has_tenant_access
+        from apps.tenant.branch.archive import в_архив, из_архива
+        from apps.tenant.branch.models import ClientBranch
+
+        user = request.user
+        if not (getattr(user, 'is_superuser', False) or getattr(user, 'role', '') == 'network_admin'
+                or getattr(user, 'is_network_admin', False) is True) \
+                or not has_tenant_access(user, current_schema_name()):
+            return Response({'code': 'forbidden', 'detail': 'В архив отправляет администратор сети.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        client = Client.objects.filter(vk_id=vk_id).first()
+        if client is None or not ClientBranch.objects.filter(client=client).exists():
+            return Response({'code': 'guest_not_found', 'detail': 'Гость не найден.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        хочу = request.data.get('archived', True)
+        if хочу in (True, 'true', '1', 1):
+            n = в_архив(client, кто=getattr(user, 'email', '') or getattr(user, 'username', '') or str(user.pk))
+        else:
+            n = из_архива(client)
+        cb = ClientBranch.objects.filter(client=client).order_by('-archived_at').first()
+        return Response({'ok': True, 'changed': n,
+                         'archived_at': cb.archived_at.isoformat() if cb and cb.archived_at else None})
 
 
 class GuestDetailAPIView(APIView):
@@ -939,6 +983,9 @@ class GuestDetailAPIView(APIView):
 
         return Response({
             'vk_id':         str(client.vk_id),
+            # Архив: гость в архиве, если в архиве ВСЕ его профили сети (17.10.2026).
+            'archived_at':   (max(cb.archived_at for cb in cbs).isoformat()
+                              if cbs and all(cb.archived_at for cb in cbs) else None),
             'first_name':    client.first_name or '',
             'last_name':     client.last_name or '',
             'phone':         phone,
