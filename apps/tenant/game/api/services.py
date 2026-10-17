@@ -310,7 +310,11 @@ def claim_game(session_token: str, employee_id: int | None = None, delivery: boo
     vk_status = ClientVKStatus.objects.filter(client=client_branch).first()
     is_member = vk_status.is_community_member if vk_status else False
     is_subscriber = vk_status.is_newsletter_subscriber if vk_status else False
-    if not (is_member and is_subscriber):
+    # Гость из Телеграма без ВК (служебная карточка, 18.10.2026): подписку на
+    # сообщество ВК проверить нечем — окно подписки крутилось по кругу, даже у
+    # подписанного. Такого гостя не держим; привяжет ВК — проверка вернётся.
+    без_вк = bool(getattr(getattr(client_branch, 'client', None), 'is_synthetic_vk', False))
+    if not без_вк and not (is_member and is_subscriber):
         reward_type = payload.get('rt')
         if reward_type == 'sp':
             prize_preview = {'type': 'prize'}
