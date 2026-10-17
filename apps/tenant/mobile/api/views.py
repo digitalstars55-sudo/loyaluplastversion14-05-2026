@@ -3579,3 +3579,98 @@ class AutoBroadcastRulePreviewAPIView(APIView):
             return Response({'detail': f'Не удалось посчитать: {exc}'},
                             status=status.HTTP_409_CONFLICT)
         return Response(data)
+
+
+def _сетевой_админ(user):
+    return bool(getattr(user, 'is_superuser', False) or getattr(user, 'role', '') == 'network_admin'
+                or getattr(user, 'is_network_admin', False) is True)
+
+
+def _кто(user):
+    return getattr(user, 'email', '') or getattr(user, 'username', '') or str(getattr(user, 'pk', ''))
+
+
+class GuestDuplicatesAPIView(APIView):
+    """
+    GET /api/v1/guests/duplicates/ — «возможно, один человек» (склейка, шаг Б).
+
+    Пары карточек с одним номером, у которых есть профиль в ЭТОЙ сети. Только
+    подсказка для администратора сети: склеивает человек, с отменой.
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('guests')]
+
+    def get(self, request):
+        from apps.shared.guest.merge import возможно_один
+        from apps.shared.guest.models import Client
+        from apps.shared.users.access import current_schema_name, has_tenant_access
+        from apps.tenant.branch.models import ClientBranch
+
+        if not _сетевой_админ(request.user) or not has_tenant_access(request.user, current_schema_name()):
+            return Response({'code': 'forbidden', 'detail': 'Только администратор сети.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        в_сети = set(ClientBranch.objects.values_list('client_id', flat=True).distinct())
+        пары = [p for p in возможно_один() if p['a'] in в_сети or p['b'] in в_сети]
+        люди = {c.pk: c for c in Client.objects.filter(pk__in={x for p in пары for x in (p['a'], p['b'])})}
+
+        def карточка(pk):
+            c = люди.get(pk)
+            return {'id': pk, 'vk_id': c.vk_id, 'name': f'{c.first_name} {c.last_name}'.strip(),
+                    'is_synthetic_vk': c.is_synthetic_vk, 'phone_source': c.phone_source} if c else {'id': pk}
+
+        return Response({'rows': [{'a': карточка(p['a']), 'b': карточка(p['b']), 'phone': p['phone'],
+                                   'why': p['why']} for p in пары]})
+
+
+class GuestMergeAPIView(APIView):
+    """
+    POST /api/v1/guests/merge/ {"source_vk_id", "target_vk_id"} — склеить карточки.
+    GET  /api/v1/guests/merge/ — последние склейки.
+
+    Склейка меняет карточку гостя во ВСЕХ сетях, поэтому только суперадмин
+    платформы. Отмена — POST /api/v1/guests/merge/<id>/undo/.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.shared.guest.models import GuestMerge
+        if not getattr(request.user, 'is_superuser', False):
+            return Response({'code': 'forbidden'}, status=status.HTTP_403_FORBIDDEN)
+        return Response({'rows': [{'id': g.id, 'source': g.source_id, 'target': g.target_id, 'reason': g.reason,
+                                   'by': g.by, 'counts': g.counts, 'conflicts': len(g.conflicts or []),
+                                   'created_at': g.created_at.isoformat(),
+                                   'undone_at': g.undone_at.isoformat() if g.undone_at else None}
+                                  for g in GuestMerge.objects.all()[:100]]})
+
+    def post(self, request):
+        from apps.shared.guest.merge import Отказ, склеить
+        from apps.shared.guest.models import Client
+        if not getattr(request.user, 'is_superuser', False):
+            return Response({'code': 'forbidden', 'detail': 'Склеивает суперадмин платформы.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        src = Client.objects.filter(vk_id=request.data.get('source_vk_id')).first()
+        dst = Client.objects.filter(vk_id=request.data.get('target_vk_id')).first()
+        if src is None or dst is None:
+            return Response({'code': 'guest_not_found', 'detail': 'Гость не найден.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            g = склеить(src, dst, reason='manual', by=_кто(request.user))
+        except Отказ as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response({'id': g.id, 'moved': len(g.moves), 'conflicts': g.conflicts, 'counts': g.counts})
+
+
+class GuestMergeUndoAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from apps.shared.guest.merge import Отказ, отменить
+        from apps.shared.guest.models import GuestMerge
+        if not getattr(request.user, 'is_superuser', False):
+            return Response({'code': 'forbidden'}, status=status.HTTP_403_FORBIDDEN)
+        g = GuestMerge.objects.filter(pk=pk).first()
+        if g is None:
+            return Response({'detail': 'Склейка не найдена.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            n = отменить(g, by=_кто(request.user))
+        except Отказ as e:
+            return Response({'detail': e.detail}, status=e.status)
+        return Response({'id': g.id, 'restored': n})

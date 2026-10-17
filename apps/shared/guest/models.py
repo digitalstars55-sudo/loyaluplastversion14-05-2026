@@ -86,6 +86,13 @@ class Client(TimeStampedModel):
         'Служебный номер ВК', default=False, db_default=False,
         help_text='Гость без ВКонтакте: vk_id — внутренний номер карточки, не страница ВК.',
     )
+    # Склейка (шаг Б, 17.10.2026): эта карточка влита в другую. Её строки в
+    # сетях переехали туда (журнал — `GuestMerge`), сама она остаётся для
+    # отмены склейки и в списки не попадает.
+    merged_into = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='merged_from',
+        verbose_name='Влит в гостя',
+    )
     is_active = models.BooleanField(
         default=True,
         verbose_name='Активен',
@@ -183,3 +190,35 @@ class GuestForgetLog(models.Model):
 
     def __str__(self):
         return f'гость #{self.client_pk} — {self.requested_at:%d.%m.%Y %H:%M}'
+
+
+class GuestMerge(TimeStampedModel):
+    """Склейка двух карточек одного гостя (шаг Б, 17.10.2026) — с журналом для отмены.
+
+    `moves` — каждая перенесённая строка: {"schema", "model", "pk", "field", "old"}.
+    Отмена ставит `old` обратно, строку за строкой; конфликтные строки (у цели
+    в той же точке уже есть такая же) не переносились и лежат в `conflicts`.
+    """
+
+    class Reason(models.TextChoices):
+        TELEGRAM = 'tg', 'Тот же Телеграм (вошёл через VK ID)'
+        PHONE = 'phone', 'Тот же номер'
+        MANUAL = 'manual', 'Вручную'
+
+    source = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='+', verbose_name='Откуда')
+    target = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='+', verbose_name='Куда')
+    reason = models.CharField(max_length=8, choices=Reason.choices, default=Reason.MANUAL)
+    by = models.CharField(max_length=128, blank=True, verbose_name='Кто склеил')
+    moves = models.JSONField(default=list, blank=True)
+    conflicts = models.JSONField(default=list, blank=True)
+    counts = models.JSONField(default=dict, blank=True)
+    undone_at = models.DateTimeField(null=True, blank=True)
+    undone_by = models.CharField(max_length=128, blank=True)
+
+    class Meta:
+        verbose_name = 'Склейка гостей'
+        verbose_name_plural = 'Склейки гостей'
+        ordering = ['-id']
+
+    def __str__(self):
+        return f'#{self.source_id} → #{self.target_id} ({self.get_reason_display()})'

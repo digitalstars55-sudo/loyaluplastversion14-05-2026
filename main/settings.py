@@ -310,6 +310,9 @@ TELEGRAM_MINI_APP_HOSTS = tuple(
 TELEGRAM_GUEST_BOT_TOKEN = os.getenv('TELEGRAM_GUEST_BOT_TOKEN', '')
 TELEGRAM_INIT_DATA_MAX_AGE = int(os.getenv('TELEGRAM_INIT_DATA_MAX_AGE', '86400'))
 TELEGRAM_SIGN_ENFORCE = os.getenv('TELEGRAM_SIGN_ENFORCE', 'off')
+# Склейка гостя, шаг Б (17.10.2026): гость из Телеграма без ВК получает служебную
+# карточку (`guest.merge.из_телеграма`). Выключено, пока владелец не скажет.
+TELEGRAM_GUEST_WITHOUT_VK = os.getenv('TELEGRAM_GUEST_WITHOUT_VK', 'off').lower() in ('on', '1', 'true', 'yes')
 # Аварийный клапан: префиксы гостевых путей, которые enforce не проверяет вовсе
 # (например если после включения 'on' всплывёт легитимный флоу без подписи).
 VK_SIGN_EXEMPT_PATHS = tuple(

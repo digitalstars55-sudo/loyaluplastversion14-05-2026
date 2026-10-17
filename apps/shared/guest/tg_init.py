@@ -103,7 +103,13 @@ def remember_link(request, client) -> bool:
         tg_id = proven_tg_user_id(request)
         if not tg_id or client is None:
             return False
+        прежняя = TelegramLink.objects.select_related('client').filter(tg_user_id=tg_id).first()
         TelegramLink.objects.update_or_create(tg_user_id=tg_id, defaults={'client': client})
+        if прежняя is not None and прежняя.client_id != client.pk and прежняя.client.is_synthetic_vk:
+            # Шаг Б: гость начинал из Телеграма без ВК — его служебная карточка
+            # вливается в настоящую (баллы, визиты, анкеты — во всех сетях).
+            from .merge import влить_телеграм
+            влить_телеграм(прежняя.client, client)
         return True
     except Exception:
         logging.getLogger(__name__).exception('tg link: не удалось запомнить привязку')
@@ -119,3 +125,11 @@ def linked_client(request):
         return None
     link = TelegramLink.objects.select_related('client').filter(tg_user_id=tg_id).first()
     return link.client if link else None
+
+
+def proven_tg_user(request) -> dict | None:
+    """Поле `user` подписанной initData (id, имя, фото) или None."""
+    raw = (request.META.get(HEADER, '') or '').strip()
+    fields = verify_init_data(raw) if raw else None
+    user = (fields or {}).get('user')
+    return user if isinstance(user, dict) and user.get('id') else None

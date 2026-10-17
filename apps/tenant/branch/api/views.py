@@ -1,5 +1,6 @@
 import logging
 
+from django.conf import settings
 from django.db import DataError
 from rest_framework import status
 from rest_framework.request import Request
@@ -516,6 +517,14 @@ class TelegramSessionView(APIView):
     @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT})
     def post(self, request: Request) -> Response:
         client = linked_client(request)
+        if client is None and getattr(settings, 'TELEGRAM_GUEST_WITHOUT_VK', False):
+            # Шаг Б (17.10.2026): гость без ВКонтакте — служебная карточка по
+            # подписанному Телеграму. Войдёт потом через VK ID — карточка вольётся.
+            from apps.shared.guest.merge import из_телеграма
+            from apps.shared.guest.tg_init import proven_tg_user
+            tg_user = proven_tg_user(request)
+            if tg_user:
+                client = из_телеграма(tg_user['id'], tg_user)
         if client is None:
             return Response({'detail': 'Телеграм не привязан.', 'code': 'tg_not_linked'},
                             status=status.HTTP_404_NOT_FOUND)
