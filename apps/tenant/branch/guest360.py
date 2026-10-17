@@ -193,8 +193,11 @@ def ждёт_ответа(client, cb_ids):
     last = conv.messages.order_by('-created_at').first()
     if not last or last.source == TestimonialMessage.Source.ADMIN_REPLY or conv.is_replied:
         return None
+    черновик = '' if getattr(conv, 'ai_draft_rejected', False) else (getattr(conv, 'ai_draft', '') or '')
     return {'conversation_id': conv.pk, 'since': last.created_at.isoformat(), 'text': (last.text or '')[:200],
-            'hours': round((timezone.now() - last.created_at).total_seconds() / 3600, 1)}
+            'hours': round((timezone.now() - last.created_at).total_seconds() / 3600, 1),
+            # Черновик ответа, который уже подготовил ИИ отзывов (база знаний сети).
+            'draft': черновик[:800]}
 
 
 def лучший_канал(client):
@@ -562,7 +565,13 @@ def собрать(client, cbs, вкладки=None):
     каналы_ = _безопасно('channels', каналы_гостя, client, cbs) or []
     roi = _безопасно('roi', окупаемость, client, cb_ids)
     сотрудник = any(getattr(cb, 'is_employee', False) for cb in cbs)
+    # «Гость с …» — самое раннее, что о нём известно: карточка в сети или первый
+    # заказ по карте iikoCard (заказы приходят из истории iiko и бывают раньше карточки).
     первый = min((cb.created_at for cb in cbs), default=None)
+    заказы_ = _безопасно('pos_orders', заказы_iiko, client) or []
+    if заказы_:
+        ранний = datetime.fromisoformat(заказы_[-1]['closed_at'])
+        первый = min(первый, ранний) if первый else ранний
     return {
         'is_employee': сотрудник,
         'gender': getattr(client, 'gender', '') or '',
@@ -580,7 +589,7 @@ def собрать(client, cbs, вкладки=None):
         'iiko_card': _безопасно('iiko_card', карта_iiko, client),
         'gifts_waiting': _безопасно('gifts_waiting', подарки_сейчас, cb_ids) or [],
         'same_person': _безопасно('same_person', похожие, client, заметки) or [],
-        'pos_orders': _безопасно('pos_orders', заказы_iiko, client) or [],
+        'pos_orders': заказы_,
         'waiter_hint_enabled': _флаг('guest_waiter_hint_enabled'),
         'occasions_auto_enabled': _флаг('guest_occasions_auto_enabled'),
         'occasions': поводы_,
