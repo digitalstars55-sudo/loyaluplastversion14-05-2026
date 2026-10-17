@@ -21,3 +21,9 @@ class TenantDomainResponseSerializer(serializers.Serializer):
     receipt_cashback_percent = serializers.IntegerField(default=0)
     # Режим iikoCard «Карта гостя»: показывать карту для кассира.
     pos_card_enabled = serializers.BooleanField(default=False)
+    # Волна 3: скриншот отзыва на картах → баллы. До 17.10.2026 сериализатор
+    # эти поля отрезал, и мини-апп кнопку не показывал даже при включённом флаге.
+    review_proof_enabled = serializers.BooleanField(default=False)
+    review_proof_coins = serializers.IntegerField(default=0)
+    # 17.10.2026: активные точки сети — вход без точки в ссылке (бот Телеграма).
+    branches = serializers.ListField(child=serializers.DictField(), default=list)

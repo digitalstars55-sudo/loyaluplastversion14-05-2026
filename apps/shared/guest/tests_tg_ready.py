@@ -39,3 +39,14 @@ class КнопкаМеню(SimpleTestCase):
         import os
         if 'TELEGRAM_SIGN_ENFORCE' not in os.environ:
             self.assertEqual(settings.TELEGRAM_SIGN_ENFORCE, 'on')
+
+
+class ОтветСети(SimpleTestCase):
+    def test_точки_и_флаги_доходят_до_мини_аппа(self):
+        from apps.shared.clients.api.serializers import TenantDomainResponseSerializer
+        d = TenantDomainResponseSerializer({'domain': 'x', 'name': 'X', 'review_proof_enabled': True,
+                                            'review_proof_coins': 30,
+                                            'branches': [{'branch_id': 3, 'name': 'Ленина', 'address': ''}]}).data
+        self.assertEqual(d['branches'][0]['branch_id'], 3)
+        self.assertTrue(d['review_proof_enabled'])
+        self.assertEqual(d['review_proof_coins'], 30)
