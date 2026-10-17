@@ -172,6 +172,21 @@ class PatchFlagsTest(SimpleTestCase):
         resp = _patch({'iiko_card_mode': 'off'})
         self.assertEqual(resp.status_code, 200, resp.data)
 
+    def test_iiko_card_key_write_only_and_cashback_range(self):
+        """17.10.2026: блок iikoCard целиком в кабинете; ключ — только запись."""
+        self.cfg.iiko_cloud_api_login, self.cfg.iiko_cloud_organization_id = '', ''
+        resp = _patch({'iiko_cloud_api_login': 'SECRET-KEY', 'iiko_cloud_organization_id': 'org-uuid'})
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(self.cfg.iiko_cloud_api_login, 'SECRET-KEY')
+        self.assertTrue(resp.data['iiko_card_ready'])
+        self.assertNotIn('SECRET-KEY', str(resp.data))
+        self.assertNotIn('iiko_cloud_api_login', resp.data['flags'])
+        resp = _patch({'pos_cashback_percent': 80})
+        self.assertEqual((resp.status_code, resp.data['code']), (400, 'invalid_payload'))
+        resp = _patch({'pos_cashback_percent': 5})
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(self.cfg.pos_cashback_percent, 5)
+
     def test_type_errors_are_400(self):
         for body in ({'birthday_window_days': 'abc'}, {'birthday_window_days': -1},
                      {'rf_orchestrator_enabled': 'maybe'}, {'story_campaign_start': '31.12.2026'}):

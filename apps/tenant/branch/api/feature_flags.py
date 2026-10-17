@@ -13,9 +13,11 @@
 наследовать сеть. Семантика нуля у точки РАЗНАЯ: у сториз `0`/`""` = «как в
 сети», у `birthday_window_days` `0` = «только день в день» (контракт 3б.3).
 
-Чего здесь нет и не будет: `pos_type`, идентификаторы и секреты интеграций
-(iiko, Dooglys), токены ВК, любые ключи. Их не должно быть даже в ответе
-только-чтение: кабинет CheckUp — другой периметр.
+Чего здесь нет и не будет: `pos_type`, секреты интеграций (iiko, Dooglys),
+токены ВК, любые ключи. Их не должно быть даже в ответе только-чтение.
+Исключение по слову владельца 17.10.2026 («перенеси настройки iikoCard из
+ЛоялUP в нашу лояльность»): ключ iiko Cloud принимается на ЗАПИСЬ полем
+`iiko_cloud_api_login` и никогда не отдаётся — наружу только `iiko_card_ready`.
 
 `source: 'network'` — значение отличается от дефолта поля модели, то есть его
 кто-то осознанно поставил; `'default'` — совпадает с дефолтом; у точки —
@@ -64,7 +66,12 @@ FLAG_FIELDS = (
     # (раньше — только админка платформы). Ключ и организация iiko сюда НЕ
     # попадают — только режим и признак «ключ заведён» (`iiko_card_ready`).
     'iiko_card_mode',
+    # 17.10.2026: весь блок iikoCard в кабинете CheckUp — организация (UUID, не
+    # секрет) и баллы за заказ по карте гостя.
+    'iiko_cloud_organization_id', 'pos_cashback_percent',
 )
+# Секрет — только запись, в ответах его нет никогда.
+SECRET_WRITE_ONLY = ('iiko_cloud_api_login',)
 
 # Только чтение: платформенные переключатели пилотов и каталога ВК — включает
 # оператор платформы, не кабинет сети.
@@ -281,8 +288,28 @@ class FeatureFlagsPatchMixin:
             return _error('invalid_payload', 'тело должно быть JSON-объектом', http_status.HTTP_400_BAD_REQUEST)
         branch_id = data.get('branch_id')
         company = getattr(connection, 'tenant', None)
+        секреты = {}
+        if any(k in data for k in SECRET_WRITE_ONLY):
+            if branch_id is not None:
+                return _error('no_branch_override', 'ключ iiko — сетевой', http_status.HTTP_400_BAD_REQUEST)
+            data = dict(data)
+            for k in SECRET_WRITE_ONLY:
+                if k in data:
+                    raw = str(data.pop(k) or '').strip()
+                    if len(raw) > 255:
+                        return _error('invalid_payload', f'{k}: не длиннее 255 символов',
+                                      http_status.HTTP_400_BAD_REQUEST)
+                    секреты[k] = raw
+        if 'pos_cashback_percent' in data:
+            try:
+                if not 0 <= int(data['pos_cashback_percent']) <= 50:
+                    raise ValueError
+            except (TypeError, ValueError):
+                return _error('invalid_payload', 'pos_cashback_percent: целое от 0 до 50',
+                              http_status.HTTP_400_BAD_REQUEST)
         try:
-            values = _collect(data, branch=branch_id is not None)
+            values = _collect(data, branch=branch_id is not None) if (
+                [k for k in data if k != 'branch_id'] or not секреты) else {}
         except PayloadError as exc:
             return _error(exc.code, exc.detail, http_status.HTTP_400_BAD_REQUEST,
                           editable=list(EDITABLE_FLAGS), branch_overridable=list(BRANCH_OVERRIDABLE))
@@ -305,15 +332,18 @@ class FeatureFlagsPatchMixin:
                              'flags': branch_flags_payload(branch, cfg),
                              'read_only': False, 'branch_overridable': list(BRANCH_OVERRIDABLE)})
         cfg, _ = ClientConfig.objects.get_or_create(company=company)
+        for k, v in секреты.items():
+            setattr(cfg, k, v)
         if values.get('iiko_card_mode') not in (None, '', 'off') and not iiko_card_ready(cfg):
             return _error('iiko_not_configured',
                           'У сети не заведены ключ iiko Cloud и организация — режим iikoCard ничего не сделает. '
-                          'Их заводит оператор платформы.', http_status.HTTP_400_BAD_REQUEST)
+                          'Заведите их в блоке «Касса iiko» выше.', http_status.HTTP_400_BAD_REQUEST)
         for name, value in values.items():
             setattr(cfg, name, value)
-        cfg.save(update_fields=sorted(values))
+        cfg.save(update_fields=sorted(set(values) | set(секреты)))
+        # Значение ключа в журнал не пишем — только то, что его меняли.
         log.info('feature flags patched: %s network fields=%s by=%s',
-                 current_schema_name(), sorted(values), request.user)
+                 current_schema_name(), sorted(set(values) | set(секреты)), request.user)
         return Response({'flags': flags_payload(cfg), 'read_only': False,
                          'iiko_card_ready': iiko_card_ready(cfg),
                          'editable': list(EDITABLE_FLAGS), 'readonly': sorted(READONLY_FLAGS),
