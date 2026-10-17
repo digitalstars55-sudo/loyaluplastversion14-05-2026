@@ -130,6 +130,11 @@ app.conf.beat_schedule = {
     # задача выходит сразу, ничего не проверяя.
     # 15.10.2026: доступность площадок входа гостя (ВК, веб, VK ID, Телеграм) —
     # распределитель /go/ ведёт только в живые; при падении — пуш суперадминам.
+    # 18.10.2026, карточка гостя 360: годовщины и даты из заметок (флаг сети, по умолчанию выкл).
+    'guest-occasions-daily': {
+        'task': 'apps.tenant.branch.tasks.guest_occasions_daily_task',
+        'schedule': crontab(hour=11, minute=0),
+    },
     'guest-channel-health': {
         'task': 'apps.shared.guest.tasks.check_guest_channels_task',
         'schedule': 60.0,

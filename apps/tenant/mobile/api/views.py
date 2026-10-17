@@ -1087,12 +1087,14 @@ def _guest_orders(client, cb_ids) -> dict:
     names = dict(Branch.objects.values_list('branch_id', 'name'))
     rows = [{
         'source': 'receipt', 'at': r.receipt_at, 'amount': r.amount,
-        'branch_name': r.branch.name if r.branch_id else '',
+        'branch_name': r.branch.name if r.branch_id else '', 'coins': r.coins,
     } for r in ReceiptScan.objects.filter(client=client, status=ReceiptScanStatus.CREDITED)
                                   .select_related('branch').order_by('-receipt_at')[:50]]
     rows += [{
         'source': 'pos', 'at': o.closed_at, 'amount': o.paid_sum if o.paid_sum is not None else o.order_sum,
-        'branch_name': names.get(o.branch_id, ''),
+        'branch_name': names.get(o.branch_id, ''), 'coins': o.coins,
+        # Номер и организация iiko — по ним CheckUp подставляет блюда, стол, официанта.
+        'order_number': o.order_number, 'organization_id': o.organization_id,
     } for o in PosGuestOrder.objects.filter(link__client=client).order_by('-closed_at')[:50]]
     rows.sort(key=lambda r: r['at'], reverse=True)
     since = tz.now() - timedelta(days=30)
@@ -3764,8 +3766,8 @@ class GuestNotesAPIView(APIView):
         d = request.data or {}
         kind = d.get('kind') or 'note'
         text = str(d.get('text') or '').strip()
-        if kind not in ('note', 'allergy', 'occasion') or not text:
-            return Response({'detail': 'Нужен текст; вид — note, allergy или occasion.'}, status=400)
+        if kind not in ('note', 'allergy', 'occasion', 'not_same') or not text:
+            return Response({'detail': 'Нужен текст; вид — note, allergy, occasion или not_same.'}, status=400)
         when = None
         if kind == 'occasion':
             try:
@@ -3791,11 +3793,19 @@ class GuestNoteAPIView(APIView):
         return Response(status=204)
 
 
-def _отправить_гостю(client, cbs, text, conversation_id=None):
-    """Ответ в его переписку, если она есть, иначе — в живой канал. → (ok, где|ошибка)."""
+def _отправить_гостю(client, cbs, text, conversation_id=None, channel=''):
+    """Ответ в его переписку, если она есть, иначе — в живой канал. → (ok, где|ошибка).
+
+    channel='tg' — прямо в Телеграм гостя (карточка 360: «Ответить в Телеграм»).
+    """
     from django.db.models import Q
     from apps.tenant.branch.models import TestimonialConversation
     from apps.tenant.senler.services import send_vk_message
+
+    if channel == 'tg':
+        from apps.shared.guest import live_channel
+        ok, err, _ = live_channel.отправить(client.vk_id, text)
+        return (True, 'в Телеграм') if ok else (False, err or 'в Телеграм не ушло')
 
     conv = None
     if conversation_id:
@@ -3839,7 +3849,8 @@ class GuestActAPIView(APIView):
         if action == 'message':
             if not text:
                 return Response({'detail': 'Пустое сообщение.'}, status=400)
-            ok, где = _отправить_гостю(client, cbs, text, d.get('conversation_id'))
+            ok, где = _отправить_гостю(client, cbs, text, d.get('conversation_id'),
+                                       channel=str(d.get('channel') or ''))
             if ok:
                 GuestNote.objects.create(client=client, branch=cbs[0].branch, kind='message', text=text[:500],
                                          author_name=имя, author_ref=ref)
@@ -3867,7 +3878,7 @@ class GuestActAPIView(APIView):
         назв = item.product.name if item.product_id else str(item)
         сообщение = text or (f'{client.first_name or "Здравствуйте"}, мы приготовили для вас подарок «{назв}» — '
                              'он уже в «Моих подарках», покажите его при следующем визите.')
-        ok, где = _отправить_гостю(client, cbs, сообщение)
+        ok, где = _отправить_гостю(client, cbs, сообщение, channel=str(d.get('channel') or ''))
         GuestNote.objects.create(client=client, branch=cb.branch, kind='message', author_name=имя, author_ref=ref,
                                  text=f'Подарок «{назв}»' + (f': {сообщение}' if ok else ' (сообщение не ушло)')[:480])
         return Response({'ok': True, 'gift': назв, 'message_sent': ok, 'detail': где})

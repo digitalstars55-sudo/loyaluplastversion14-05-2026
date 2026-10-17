@@ -917,7 +917,10 @@ def register_or_get_client(
     # Иначе они задваивались бы в «Сканах в кафе» / индексе сканирования.
     is_referral_entry = bool(invited_by_cb_id)
     if source not in ('delivery', 'website', 'vk_catalog', 'rfm') and not is_referral_entry:
-        ClientBranchVisit.record_visit(profile)
+        if ClientBranchVisit.record_visit(profile) is not None:
+            # Карточка 360: официантам на смене — кто пришёл (флаг сети, по умолчанию выкл).
+            from apps.tenant.branch.waiter_hint import после_визита
+            после_визита(profile)
 
     # Tracked QR («точка контакта»): лог скана + last-touch активная метка.
     # Полностью best-effort — никогда не валит регистрацию гостя.

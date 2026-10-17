@@ -1085,3 +1085,27 @@ def apology_gift_task(message_id: int, schema_name: str):
     logging.getLogger('loyalup.apology').info(
         'apology tenant=%s msg=%s result=%s', schema_name, message_id,
         f'gift item={issued.pk}' if issued is not None else f'skip {reason}')
+
+
+# Карточка гостя 360 (18.10.2026): подсказка официанту — задача живёт в своём модуле,
+# импорт здесь регистрирует её в воркере (autodiscover смотрит только tasks.py).
+from apps.tenant.branch.waiter_hint import send_guest_arrived  # noqa: E402,F401
+
+
+@shared_task(name='apps.tenant.branch.tasks.guest_occasions_daily_task')
+def guest_occasions_daily_task() -> dict:
+    """Утром: поздравить гостей с годовщиной первого визита и датами из заметок (флаг сети)."""
+    from django_tenants.utils import schema_context
+    from apps.tenant.branch.occasions import поздравить_сегодня
+    итог = {}
+    for tenant in beat_tenants():
+        with schema_context(tenant.schema_name):
+            try:
+                r = поздравить_сегодня()
+            except Exception:  # noqa: BLE001 — одна сеть не роняет остальные
+                logger.warning('occasions: сеть %s не поздравилась', tenant.schema_name, exc_info=True)
+                continue
+            if r.get('sent') or r.get('failed'):
+                итог[tenant.schema_name] = r
+    logger.info('guest_occasions_daily: %s', итог)
+    return итог

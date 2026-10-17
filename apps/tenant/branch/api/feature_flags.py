@@ -71,6 +71,8 @@ FLAG_FIELDS = (
     'iiko_cloud_organization_id', 'pos_cashback_percent',
     # 17.10.2026: плагин iikoFront — подарки гостя на кассе (ручки pos/plugin/*).
     'pos_plugin_enabled',
+    # 18.10.2026: карточка гостя 360 — подсказка официанту и автопоздравления.
+    'guest_waiter_hint_enabled', 'guest_occasions_auto_enabled', 'guest_occasion_text',
 )
 # Секрет — только запись, в ответах его нет никогда.
 SECRET_WRITE_ONLY = ('iiko_cloud_api_login',)

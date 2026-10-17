@@ -2095,6 +2095,10 @@ class GuestNote(TimeStampedModel):
         ALLERGY = 'allergy', 'Аллергия / нельзя'
         OCCASION = 'occasion', 'Повод с датой'
         MESSAGE = 'message', 'Сообщение гостю'
+        # «Это другой человек» на подсказке «возможно, тот же человек»: в text —
+        # vk_id второй карточки, подсказка больше не показывается.
+        NOT_SAME = 'not_same', 'Не тот же человек'
+        GREETED = 'greeted', 'Поздравили с поводом'
 
     client = models.ForeignKey('guest.Client', on_delete=models.CASCADE, related_name='hall_notes',
                                verbose_name='Гость')

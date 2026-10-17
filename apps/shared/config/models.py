@@ -449,6 +449,25 @@ class ClientConfig(models.Model):
         verbose_name='Плагин iikoFront: подарки на кассе',
         help_text='Ручки /api/v1/pos/plugin/* для плагина кассы. Ключ — у каждой точки.',
     )
+    # Карточка гостя 360 (18.10.2026, макет утвердил владелец). Оба выключены по
+    # умолчанию: включает сеть кнопкой в карточке гостя.
+    guest_waiter_hint_enabled = models.BooleanField(
+        default=False, db_default=False,
+        verbose_name='Подсказка официанту при скане',
+        help_text='Гость отсканировал QR на точке — официантам на смене в CheckUp приходит пуш: '
+                  'имя, сколько раз был, любимое, аллергии, ждущий подарок.',
+    )
+    guest_occasions_auto_enabled = models.BooleanField(
+        default=False, db_default=False,
+        verbose_name='Автопоздравления: годовщины и даты из заметок',
+        help_text='Утром в день повода гостю уходит поздравление (тем же каналом, что и рассылки). '
+                  'ДР поздравляет прежняя автоверсия — её это не меняет.',
+    )
+    guest_occasion_text = models.TextField(
+        blank=True, default='',
+        verbose_name='Текст автопоздравления',
+        help_text='{name} — имя гостя, {occasion} — повод. Пусто — текст по умолчанию.',
+    )
 
     # Dooglys
     dooglys_api_url = models.URLField(
