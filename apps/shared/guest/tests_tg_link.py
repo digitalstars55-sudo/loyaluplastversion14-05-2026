@@ -32,7 +32,9 @@ class TelegramLinkTest(TestCase):
         self.assertTrue(remember_link(_req(tg_init_data(user_id=42)), self.guest))
         self.assertEqual(linked_client(_req(tg_init_data(user_id=42))), self.guest)
 
-        response = TelegramSessionView.as_view()(_req(tg_init_data(user_id=42)))
+        # Вход разархивирует гостя в сети (таблицы сети в тестовой базе нет).
+        with patch('apps.tenant.branch.archive.из_архива'):
+            response = TelegramSessionView.as_view()(_req(tg_init_data(user_id=42)))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['vk_id'], 200002444631)
         self.assertEqual(verify_web_token(response.data['web_token']), 200002444631)

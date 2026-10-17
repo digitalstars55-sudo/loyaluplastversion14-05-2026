@@ -981,8 +981,13 @@ class GuestDetailAPIView(APIView):
             if phone:
                 phone_source = 'review'
 
+        from apps.shared.guest.channels import каналы
         return Response({
             'vk_id':         str(client.vk_id),
+            # Склейка гостя (17.10.2026): все каналы связи одной карточки —
+            # ВК, Телеграм, телефон (потом MAX). Служебный vk_id — не страница ВК.
+            'channels':      каналы(client),
+            'is_synthetic_vk': bool(getattr(client, 'is_synthetic_vk', False)),
             # Архив: гость в архиве, если в архиве ВСЕ его профили сети (17.10.2026).
             'archived_at':   (max(cb.archived_at for cb in cbs).isoformat()
                               if cbs and all(cb.archived_at for cb in cbs) else None),

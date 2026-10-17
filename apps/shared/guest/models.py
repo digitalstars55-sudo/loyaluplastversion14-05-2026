@@ -78,6 +78,14 @@ class Client(TimeStampedModel):
         help_text='Награда за первый номер выдаётся один раз на гостя; при отзыве согласия не отбирается.',
     )
 
+    # Склейка гостя (17.10.2026): гость пришёл не из ВК (только Телеграм, MAX)
+    # — карточке нужен внутренний номер, а вся система держится на vk_id.
+    # Такой номер берётся из служебного диапазона (`channels.СЛУЖЕБНЫЙ_VK_ОТ`) и
+    # помечается здесь: каналом «ВКонтакте» он не считается и в ВК не пишется.
+    is_synthetic_vk = models.BooleanField(
+        'Служебный номер ВК', default=False, db_default=False,
+        help_text='Гость без ВКонтакте: vk_id — внутренний номер карточки, не страница ВК.',
+    )
     is_active = models.BooleanField(
         default=True,
         verbose_name='Активен',
@@ -113,6 +121,46 @@ class TelegramLink(TimeStampedModel):
 
     def __str__(self):
         return f'tg {self.tg_user_id} → vk {self.client.vk_id}'
+
+
+class GuestChannel(TimeStampedModel):
+    """
+    Канал связи гостя — склейка гостя (владелец, 17.10.2026): «одна карточка
+    гостя, в ней 2–3 канала: ВК, Телеграм, потом MAX и номер — для рассылок и
+    сценариев».
+
+    Карточка гостя — `Client`, каналы — строки здесь. Один канал (вид +
+    внешний номер) принадлежит ровно одному гостю: тот же Телеграм у другого
+    гостя — это склейка, а не вторая строка. `verified` — канал доказан
+    (подпись ВК, подписанная ботом initData, номер с подписью ВК); по
+    недоказанному не склеиваем. `can_message` — можно ли писать: для
+    Телеграма это «гость открыл бота», для ВК — разрешение сообщений
+    сообщества (его знает рассылка, здесь не дублируем — None = неизвестно).
+    """
+
+    class Kind(models.TextChoices):
+        VK = 'vk', 'ВКонтакте'
+        TG = 'tg', 'Телеграм'
+        MAX = 'max', 'MAX'
+        PHONE = 'phone', 'Телефон'
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='channels', verbose_name='Гость')
+    kind = models.CharField('Канал', max_length=8, choices=Kind.choices)
+    external_id = models.CharField('Номер в канале', max_length=64)
+    username = models.CharField('Имя в канале', max_length=128, blank=True, default='')
+    verified = models.BooleanField('Доказан', default=False)
+    can_message = models.BooleanField('Можно писать', null=True, blank=True)
+    first_seen = models.DateTimeField('Впервые', null=True, blank=True)
+    last_seen = models.DateTimeField('Последний раз', null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Канал гостя'
+        verbose_name_plural = 'Каналы гостя'
+        constraints = [models.UniqueConstraint(fields=['kind', 'external_id'], name='guest_channel_kind_ext_uniq')]
+        indexes = [models.Index(fields=['client', 'kind'])]
+
+    def __str__(self):
+        return f'{self.kind}:{self.external_id} → {self.client_id}'
 
 
 class GuestForgetLog(models.Model):
