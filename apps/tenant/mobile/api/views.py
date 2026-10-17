@@ -2611,7 +2611,7 @@ def _serialize_product(p) -> dict:
         'is_story_prize':    p.is_story_prize,
         'is_vk_catalog_welcome': p.is_vk_catalog_welcome,
         # Плагин iikoFront: блюдо iiko, которое касса добавит при выдаче подарка.
-        'iiko_product_id':   p.iiko_product_id or '',
+        'iiko_product_id':   getattr(p, 'iiko_product_id', '') or '',
         'assignments':       [_serialize_assignment(pb) for pb in p.branch_assignments.all()],
         'created_at':        p.created_at.isoformat(),
         'updated_at':        p.updated_at.isoformat(),
