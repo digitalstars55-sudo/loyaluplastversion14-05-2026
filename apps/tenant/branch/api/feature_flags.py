@@ -69,6 +69,8 @@ FLAG_FIELDS = (
     # 17.10.2026: весь блок iikoCard в кабинете CheckUp — организация (UUID, не
     # секрет) и баллы за заказ по карте гостя.
     'iiko_cloud_organization_id', 'pos_cashback_percent',
+    # 17.10.2026: плагин iikoFront — подарки гостя на кассе (ручки pos/plugin/*).
+    'pos_plugin_enabled',
 )
 # Секрет — только запись, в ответах его нет никогда.
 SECRET_WRITE_ONLY = ('iiko_cloud_api_login',)

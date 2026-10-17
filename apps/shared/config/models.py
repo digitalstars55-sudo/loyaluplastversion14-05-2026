@@ -441,6 +441,14 @@ class ClientConfig(models.Model):
         help_text='Только в режиме «Карта гостя»: сколько процентов оплаченной суммы заказа, '
                   'где кассир отсканировал карту гостя, начислить баллами LoyalUP. 0 — без баллов.',
     )
+    # Плагин iikoFront «LoyalUP» (17.10.2026, слово владельца «пиши»): кассир по карте
+    # гостя видит активированные подарки и добавляет их в заказ. Ручки pos/plugin/*
+    # отвечают только при включённом флаге — иначе 404, как будто их нет.
+    pos_plugin_enabled = models.BooleanField(
+        default=False, db_default=False,
+        verbose_name='Плагин iikoFront: подарки на кассе',
+        help_text='Ручки /api/v1/pos/plugin/* для плагина кассы. Ключ — у каждой точки.',
+    )
 
     # Dooglys
     dooglys_api_url = models.URLField(

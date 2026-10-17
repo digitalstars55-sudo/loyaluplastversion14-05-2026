@@ -71,6 +71,17 @@ class Branch(TimeStampedModel):
                   '«ФН не знаком», его можно добавить сюда.',
     )
 
+    # Плагин iikoFront «LoyalUP» (17.10.2026): ключ точки для заголовка X-Plugin-Key.
+    # Храним только sha256 — сам ключ показывается один раз при выдаче.
+    pos_plugin_key_hash = models.CharField(
+        max_length=64, blank=True, default='', db_default='', db_index=True,
+        verbose_name='Ключ плагина кассы (хеш)',
+    )
+    pos_plugin_key_hint = models.CharField(
+        max_length=8, blank=True, default='', db_default='',
+        verbose_name='Ключ плагина кассы (последние символы)',
+    )
+
     story_image = models.ImageField(
         upload_to='branch/stories/',
         blank=True,

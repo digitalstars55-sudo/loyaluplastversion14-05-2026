@@ -242,6 +242,20 @@ class InventoryItem(TimeStampedModel):
         null=True, blank=True,
         verbose_name='Использован',
     )
+    # Плагин iikoFront (17.10.2026): в каком заказе iiko выдан подарок. Повтор
+    # «выдан» с тем же заказом — тот же ответ, с другим — отказ.
+    pos_order_id = models.CharField(
+        max_length=64, blank=True, default='', db_default='',
+        verbose_name='Заказ iiko (id)',
+    )
+    pos_order_sum = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        verbose_name='Сумма заказа iiko',
+    )
+    pos_branch = models.ForeignKey(
+        'branch.Branch', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='+', verbose_name='Точка выдачи (касса)',
+    )
 
     # ── Computed state ────────────────────────────────────────────────────────
 

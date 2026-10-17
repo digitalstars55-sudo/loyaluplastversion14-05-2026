@@ -117,6 +117,12 @@ class Product(TimeStampedModel):
             'подарок с этим флагом. Не смешивается с супер-призами и сториз.'
         ),
     )
+    iiko_product_id = models.CharField(
+        max_length=64, blank=True, default='', db_default='',
+        verbose_name='Блюдо iiko (id)',
+        help_text='UUID блюда в номенклатуре iiko. Плагин кассы добавляет его в заказ, '
+                  'когда кассир выдаёт этот подарок. Пусто — кассир добавит блюдо сам.',
+    )
     is_archived = models.BooleanField(
         default=False,
         verbose_name='Архивирован',

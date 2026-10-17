@@ -97,7 +97,8 @@ class ProductAdmin(admin.ModelAdmin):
             ),
         }),
         ('Сценарии выдачи', {
-            'fields': ('is_super_prize', 'is_birthday_prize', 'is_story_prize', 'is_vk_catalog_welcome'),
+            'fields': ('is_super_prize', 'is_birthday_prize', 'is_story_prize', 'is_vk_catalog_welcome',
+                       'iiko_product_id'),
             'description': (
                 'Флаги не взаимоисключающие. '
                 'Товар без флагов доступен только для покупки за баллы. '

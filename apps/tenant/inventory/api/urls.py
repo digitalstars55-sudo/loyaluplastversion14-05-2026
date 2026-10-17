@@ -33,3 +33,18 @@ urlpatterns = [
     path('story/gift/',     StoryGiftView.as_view(),     name='story-gift'),
     path('story/activate/', StoryActivateView.as_view(), name='story-activate'),
 ]
+
+# Плагин iikoFront «LoyalUP» и ключ точки для него — inventory/pos_plugin.py
+from apps.tenant.inventory.pos_plugin import (  # noqa: E402
+    BranchPluginKeyView, PluginGiftsView, PluginRedeemView, PluginReleaseView,
+)
+
+urlpatterns += [
+    path('pos/plugin/gifts',                       PluginGiftsView.as_view(),   name='pos-plugin-gifts'),
+    path('pos/plugin/gifts/',                      PluginGiftsView.as_view()),
+    path('pos/plugin/gifts/<int:pk>/redeem',       PluginRedeemView.as_view(),  name='pos-plugin-redeem'),
+    path('pos/plugin/gifts/<int:pk>/redeem/',      PluginRedeemView.as_view()),
+    path('pos/plugin/gifts/<int:pk>/release',      PluginReleaseView.as_view(), name='pos-plugin-release'),
+    path('pos/plugin/gifts/<int:pk>/release/',     PluginReleaseView.as_view()),
+    path('branches/<int:pk>/pos-plugin-key/',      BranchPluginKeyView.as_view(), name='branch-pos-plugin-key'),
+]

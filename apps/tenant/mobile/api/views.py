@@ -2610,6 +2610,8 @@ def _serialize_product(p) -> dict:
         # ★18 ревью, №19 + №23 контракта платформы).
         'is_story_prize':    p.is_story_prize,
         'is_vk_catalog_welcome': p.is_vk_catalog_welcome,
+        # Плагин iikoFront: блюдо iiko, которое касса добавит при выдаче подарка.
+        'iiko_product_id':   p.iiko_product_id or '',
         'assignments':       [_serialize_assignment(pb) for pb in p.branch_assignments.all()],
         'created_at':        p.created_at.isoformat(),
         'updated_at':        p.updated_at.isoformat(),
@@ -2686,6 +2688,7 @@ class ProductListCreateAPIView(APIView):
             is_birthday_prize=str(d.get('is_birthday_prize', '')).lower() in ('1', 'true', 'yes'),
             is_story_prize=str(d.get('is_story_prize', '')).lower() in ('1', 'true', 'yes'),
             is_vk_catalog_welcome=str(d.get('is_vk_catalog_welcome', '')).lower() in ('1', 'true', 'yes'),
+            iiko_product_id=str(d.get('iiko_product_id') or '').strip()[:64],
         )
         if 'image' in request.FILES:
             p.image = request.FILES['image']
@@ -2727,6 +2730,8 @@ class ProductDetailAPIView(APIView):
             p.is_story_prize = str(d['is_story_prize']).lower() in ('1', 'true', 'yes')
         if 'is_vk_catalog_welcome' in d:
             p.is_vk_catalog_welcome = str(d['is_vk_catalog_welcome']).lower() in ('1', 'true', 'yes')
+        if 'iiko_product_id' in d:
+            p.iiko_product_id = str(d['iiko_product_id'] or '').strip()[:64]
         if 'image' in request.FILES:
             p.image = request.FILES['image']
         p.save()
