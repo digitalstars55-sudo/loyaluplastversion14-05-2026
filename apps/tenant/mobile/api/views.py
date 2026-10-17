@@ -3590,6 +3590,30 @@ def _кто(user):
     return getattr(user, 'email', '') or getattr(user, 'username', '') or str(getattr(user, 'pk', ''))
 
 
+def _чужие_сети(user, гости):
+    """Сети, где у гостей есть профили, а у пользователя нет доступа. None — не админ сети.
+
+    Склейка меняет карточку гостя во всех сетях сразу, поэтому админ сети склеивает
+    только тех, кто есть лишь в его сетях; суперадмин платформы — любых.
+    """
+    from django_tenants.utils import get_tenant_model, schema_context
+
+    from apps.shared.users.access import has_tenant_access
+    from apps.tenant.branch.models import ClientBranch
+    if getattr(user, 'is_superuser', False):
+        return []
+    if not _сетевой_админ(user):
+        return None
+    ids = [g.pk for g in гости]
+    чужие = []
+    for t in get_tenant_model().objects.exclude(schema_name='public'):
+        with schema_context(t.schema_name):
+            есть = ClientBranch.objects.filter(client_id__in=ids).exists()
+        if есть and not has_tenant_access(user, t.schema_name):
+            чужие.append(getattr(t, 'name', '') or t.schema_name)
+    return чужие
+
+
 class GuestDuplicatesAPIView(APIView):
     """
     GET /api/v1/guests/duplicates/ — «возможно, один человек» (склейка, шаг Б).
@@ -3626,31 +3650,38 @@ class GuestMergeAPIView(APIView):
     POST /api/v1/guests/merge/ {"source_vk_id", "target_vk_id"} — склеить карточки.
     GET  /api/v1/guests/merge/ — последние склейки.
 
-    Склейка меняет карточку гостя во ВСЕХ сетях, поэтому только суперадмин
-    платформы. Отмена — POST /api/v1/guests/merge/<id>/undo/.
+    Склейка меняет карточку гостя во ВСЕХ сетях: суперадмин платформы — любых
+    гостей, администратор сети — только если обе карточки есть лишь в его сетях.
+    Отмена — POST /api/v1/guests/merge/<id>/undo/ (тот, кто склеил, или суперадмин).
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         from apps.shared.guest.models import GuestMerge
-        if not getattr(request.user, 'is_superuser', False):
+        user = request.user
+        if not _сетевой_админ(user):
             return Response({'code': 'forbidden'}, status=status.HTTP_403_FORBIDDEN)
+        qs = GuestMerge.objects.all()
+        if not getattr(user, 'is_superuser', False):
+            qs = qs.filter(by=_кто(user))          # админ сети видит свои склейки
         return Response({'rows': [{'id': g.id, 'source': g.source_id, 'target': g.target_id, 'reason': g.reason,
                                    'by': g.by, 'counts': g.counts, 'conflicts': len(g.conflicts or []),
                                    'created_at': g.created_at.isoformat(),
                                    'undone_at': g.undone_at.isoformat() if g.undone_at else None}
-                                  for g in GuestMerge.objects.all()[:100]]})
+                                  for g in qs[:100]]})
 
     def post(self, request):
         from apps.shared.guest.merge import Отказ, склеить
         from apps.shared.guest.models import Client
-        if not getattr(request.user, 'is_superuser', False):
-            return Response({'code': 'forbidden', 'detail': 'Склеивает суперадмин платформы.'},
-                            status=status.HTTP_403_FORBIDDEN)
         src = Client.objects.filter(vk_id=request.data.get('source_vk_id')).first()
         dst = Client.objects.filter(vk_id=request.data.get('target_vk_id')).first()
         if src is None or dst is None:
             return Response({'code': 'guest_not_found', 'detail': 'Гость не найден.'}, status=status.HTTP_404_NOT_FOUND)
+        чужие = _чужие_сети(request.user, (src, dst))
+        if чужие is None or чужие:
+            return Response({'code': 'forbidden', 'detail': (
+                'Склеить может администратор сети, если обе карточки есть только в его сетях'
+                + (f' (ещё: {", ".join(чужие)})' if чужие else '') + '.')}, status=status.HTTP_403_FORBIDDEN)
         try:
             g = склеить(src, dst, reason='manual', by=_кто(request.user))
         except Отказ as e:
@@ -3664,11 +3695,13 @@ class GuestMergeUndoAPIView(APIView):
     def post(self, request, pk):
         from apps.shared.guest.merge import Отказ, отменить
         from apps.shared.guest.models import GuestMerge
-        if not getattr(request.user, 'is_superuser', False):
-            return Response({'code': 'forbidden'}, status=status.HTTP_403_FORBIDDEN)
         g = GuestMerge.objects.filter(pk=pk).first()
         if g is None:
             return Response({'detail': 'Склейка не найдена.'}, status=status.HTTP_404_NOT_FOUND)
+        if not (getattr(request.user, 'is_superuser', False)
+                or (_сетевой_админ(request.user) and g.by == _кто(request.user))):
+            return Response({'code': 'forbidden', 'detail': 'Отменяет тот, кто склеил, или суперадмин.'},
+                            status=status.HTTP_403_FORBIDDEN)
         try:
             n = отменить(g, by=_кто(request.user))
         except Отказ as e:

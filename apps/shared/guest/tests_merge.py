@@ -101,3 +101,23 @@ class ГостьБезВк(_Сети, TestCase):
             resp = TelegramSessionView.as_view()(r)
         self.assertEqual(resp.status_code, 404)
         self.assertFalse(Client.objects.filter(is_synthetic_vk=True).exists())
+
+
+class ПраваСклейки(_Сети, TestCase):
+    def _пост(self, user, src, dst):
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from apps.tenant.mobile.api.views import GuestMergeAPIView
+        r = APIRequestFactory().post('/api/v1/guests/merge/', {'source_vk_id': src.vk_id, 'target_vk_id': dst.vk_id},
+                                     format='json')
+        force_authenticate(r, user)
+        return GuestMergeAPIView.as_view()(r)
+
+    def test_рядовой_не_склеивает_админ_сети_в_своих_сетях_да(self):
+        тг = M.из_телеграма(4001, {})
+        настоящая = Client.objects.create(vk_id=800010)
+        рядовой = mock.Mock(is_authenticated=True, is_superuser=False, role='manager', is_network_admin=False, pk=5)
+        self.assertEqual(self._пост(рядовой, тг, настоящая).status_code, 403)
+        админ = mock.Mock(is_authenticated=True, is_superuser=False, role='network_admin', pk=6, email='a@x')
+        r = self._пост(админ, тг, настоящая)       # сетей нет — карточки ни в чьих чужих сетях
+        self.assertEqual(r.status_code, 200, getattr(r, 'data', None))
+        self.assertEqual(GuestMerge.objects.get().by, 'a@x')
