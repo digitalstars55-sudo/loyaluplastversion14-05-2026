@@ -2079,3 +2079,39 @@ class ReviewLinkClick(models.Model):
         verbose_name = 'Переход на карты'
         verbose_name_plural = 'Переходы на карты'
         ordering = ['-created_at']
+
+
+class GuestNote(TimeStampedModel):
+    """Заметка зала о госте (карточка 360, 18.10.2026).
+
+    «Не ест кинзу», «сажать у окна», «годовщина свадьбы 18.11». Аллергии и
+    поводы — отдельными видами: их показывает подсказка официанту, а поводы
+    с датой поздравляются как ДР. Пишет сотрудник CheckUp через прокси —
+    автор хранится строкой (имя и id в CheckUp), не пользователем LoyalUP.
+    """
+
+    class Kind(models.TextChoices):
+        NOTE = 'note', 'Заметка'
+        ALLERGY = 'allergy', 'Аллергия / нельзя'
+        OCCASION = 'occasion', 'Повод с датой'
+        MESSAGE = 'message', 'Сообщение гостю'
+
+    client = models.ForeignKey('guest.Client', on_delete=models.CASCADE, related_name='hall_notes',
+                               verbose_name='Гость')
+    branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Точка')
+    kind = models.CharField('Вид', max_length=12, choices=Kind.choices, default=Kind.NOTE)
+    text = models.CharField('Текст', max_length=500)
+    occasion_date = models.DateField('Дата повода', null=True, blank=True,
+                                     help_text='Для повода: поздравляем каждый год в этот день.')
+    author_name = models.CharField('Автор', max_length=120, blank=True, default='')
+    author_ref = models.CharField('Автор (id в CheckUp)', max_length=40, blank=True, default='')
+    is_active = models.BooleanField('Действует', default=True)
+
+    class Meta:
+        verbose_name = 'Заметка о госте'
+        verbose_name_plural = 'Заметки о гостях'
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['client', 'is_active'], name='guestnote_client_idx')]
+
+    def __str__(self):
+        return f'{self.get_kind_display()}: {self.text[:40]}'

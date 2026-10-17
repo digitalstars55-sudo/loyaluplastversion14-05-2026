@@ -1023,8 +1023,19 @@ class GuestDetailAPIView(APIView):
             'pos':              _pos_summary(client.pk),
             # Вкладки карточки (ТЗ маркетолога п.3, 14.10.2026): заказы, подарки,
             # рассылки, средний чек и частота за 30 дней. Сбой блока — None.
-            **_guest_tabs(client, cb_ids, cb_by_id),
+            **_with_g360(client, cbs, _guest_tabs(client, cb_ids, cb_by_id)),
         })
+
+
+def _with_g360(client, cbs, tabs):
+    """Вкладки карточки + блок карточки 360 (18.10.2026). Сбой 360 — None, вкладки целы."""
+    try:
+        from apps.tenant.branch.guest360 import собрать
+        tabs['g360'] = собрать(client, cbs, tabs)
+    except Exception:                              # noqa: BLE001
+        logger.warning('guest card: 360 failed for client %s', client.pk, exc_info=True)
+        tabs['g360'] = None
+    return tabs
 
 
 def _guest_tabs(client, cb_ids, cb_by_id) -> dict:
@@ -3707,3 +3718,156 @@ class GuestMergeUndoAPIView(APIView):
         except Отказ as e:
             return Response({'detail': e.detail}, status=e.status)
         return Response({'id': g.id, 'restored': n})
+
+
+
+# ── Карточка 360: заметки зала и действия (18.10.2026) ───────────────────────
+
+def _гость_сети(request, vk_id):
+    """(client, cbs) гостя, видимого сотруднику, или (None, Response 404)."""
+    from apps.shared.guest.models import Client
+    from apps.shared.users.access import current_schema_name, user_allowed_branches
+    from apps.tenant.branch.models import ClientBranch
+
+    client = Client.objects.filter(vk_id=vk_id).first()
+    cbs = list(ClientBranch.objects.select_related('branch').filter(client=client)) if client else []
+    allowed = user_allowed_branches(request.user, current_schema_name())
+    if not cbs or (allowed is not None and not ({cb.branch_id for cb in cbs} & allowed)):
+        return None, None, Response({'detail': 'Гость не найден в этой сети'}, status=status.HTTP_404_NOT_FOUND)
+    return client, cbs, None
+
+
+def _автор(request):
+    u = request.user
+    имя = (u.get_full_name() if hasattr(u, 'get_full_name') else '') or getattr(u, 'email', '') or str(u.pk)
+    ref = request.headers.get('X-Checkup-User-Name') or ''
+    return (ref or имя)[:120], str(getattr(u, 'pk', ''))[:40]
+
+
+class GuestNotesAPIView(APIView):
+    """GET/POST /api/v1/guests/<vk_id>/notes/ — заметки зала: note | allergy | occasion (с датой)."""
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('guests')]
+
+    def get(self, request, vk_id: int):
+        from apps.tenant.branch.guest360 import заметки_гостя
+        client, _cbs, err = _гость_сети(request, vk_id)
+        if err:
+            return err
+        return Response({'notes': заметки_гостя(client)})
+
+    def post(self, request, vk_id: int):
+        from datetime import date as _date
+        from apps.tenant.branch.models import GuestNote
+        client, cbs, err = _гость_сети(request, vk_id)
+        if err:
+            return err
+        d = request.data or {}
+        kind = d.get('kind') or 'note'
+        text = str(d.get('text') or '').strip()
+        if kind not in ('note', 'allergy', 'occasion') or not text:
+            return Response({'detail': 'Нужен текст; вид — note, allergy или occasion.'}, status=400)
+        when = None
+        if kind == 'occasion':
+            try:
+                when = _date.fromisoformat(str(d.get('occasion_date') or '')[:10])
+            except ValueError:
+                return Response({'detail': 'У повода нужна дата ГГГГ-ММ-ДД.'}, status=400)
+        имя, ref = _автор(request)
+        n = GuestNote.objects.create(client=client, branch=cbs[0].branch, kind=kind, text=text[:500],
+                                     occasion_date=when, author_name=имя, author_ref=ref)
+        return Response({'id': n.pk}, status=201)
+
+
+class GuestNoteAPIView(APIView):
+    """DELETE /api/v1/guests/<vk_id>/notes/<pk>/ — убрать заметку (не удаляется, гаснет)."""
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('guests')]
+
+    def delete(self, request, vk_id: int, pk: int):
+        from apps.tenant.branch.models import GuestNote
+        client, _cbs, err = _гость_сети(request, vk_id)
+        if err:
+            return err
+        GuestNote.objects.filter(client=client, pk=pk).update(is_active=False)
+        return Response(status=204)
+
+
+def _отправить_гостю(client, cbs, text, conversation_id=None):
+    """Ответ в его переписку, если она есть, иначе — в живой канал. → (ok, где|ошибка)."""
+    from django.db.models import Q
+    from apps.tenant.branch.models import TestimonialConversation
+    from apps.tenant.senler.services import send_vk_message
+
+    conv = None
+    if conversation_id:
+        conv = TestimonialConversation.objects.filter(pk=conversation_id).filter(
+            Q(client__in=cbs) | Q(vk_guest_id=client.pk)).first()
+    if conv is not None and conv.vk_sender_id and not getattr(client, 'is_synthetic_vk', False):
+        from apps.tenant.branch.api.services import send_vk_reply
+        try:
+            send_vk_reply(conv, text, sender_name='Сообщество')
+            return True, 'в переписку ВК'
+        except Exception as e:  # noqa: BLE001
+            logger.warning('guest360: ответ в переписку %s не ушёл: %s', conv.pk, e)
+    for cb in sorted(cbs, key=lambda c: c.created_at, reverse=True):
+        config = getattr(cb.branch, 'senler_config', None) if cb.branch_id else None
+        if config is None or not getattr(config, 'vk_community_token', ''):
+            continue
+        ok, err, _ = send_vk_message(config, client.vk_id, text)
+        return (True, 'гостю в его канал') if ok else (False, err or 'не отправилось')
+    return False, 'у точек гостя не настроено сообщество для сообщений'
+
+
+class GuestActAPIView(APIView):
+    """POST /api/v1/guests/<vk_id>/act/ — действие из карточки 360.
+
+    {action: 'message', text, conversation_id?} — написать гостю (в переписку или живой канал);
+    {action: 'gift', text?, catalog_item_id?} — выдать подарок (выбранный или по правилам RF:
+    уровень и предел себестоимости как у подарка-извинения) и написать о нём.
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('guests')]
+
+    def post(self, request, vk_id: int):
+        from django.db import connection
+        from apps.tenant.branch.models import GuestNote
+        client, cbs, err = _гость_сети(request, vk_id)
+        if err:
+            return err
+        d = request.data or {}
+        action = d.get('action')
+        text = str(d.get('text') or '').strip()
+        имя, ref = _автор(request)
+        if action == 'message':
+            if not text:
+                return Response({'detail': 'Пустое сообщение.'}, status=400)
+            ok, где = _отправить_гостю(client, cbs, text, d.get('conversation_id'))
+            if ok:
+                GuestNote.objects.create(client=client, branch=cbs[0].branch, kind='message', text=text[:500],
+                                         author_name=имя, author_ref=ref)
+            return Response({'ok': ok, 'detail': где}, status=200 if ok else 409)
+        if action != 'gift':
+            return Response({'detail': 'action — message или gift.'}, status=400)
+
+        from apps.tenant.senler.pilot_controls import limits
+        from apps.tenant.inventory import reward_catalog
+        from apps.tenant.inventory.models import AcquisitionSource, RewardCatalogItem
+        config = getattr(getattr(connection, 'tenant', None), 'config', None)
+        cb = sorted(cbs, key=lambda c: c.created_at, reverse=True)[0]
+        if d.get('catalog_item_id'):
+            item = RewardCatalogItem.objects.filter(pk=d.get('catalog_item_id')).first()
+        else:
+            cost_cap, _ = limits(config) if config is not None else (None, None)
+            options = {'max_cost_price': cost_cap} if cost_cap is not None else {}
+            item = reward_catalog.pick_reward(getattr(config, 'apology_gift_tier', 'G1') or 'G1', cb.branch, **options)
+        if item is None:
+            return Response({'detail': 'Нет подходящего подарка в каталоге наград.'}, status=409)
+        issued = reward_catalog.issue_to_guest(item, cb, source=AcquisitionSource.MANUAL,
+                                               description=f'Карточка 360 · {имя}')
+        if issued is None:
+            return Response({'detail': 'Лимит выдач этого подарка исчерпан.'}, status=409)
+        назв = item.product.name if item.product_id else str(item)
+        сообщение = text or (f'{client.first_name or "Здравствуйте"}, мы приготовили для вас подарок «{назв}» — '
+                             'он уже в «Моих подарках», покажите его при следующем визите.')
+        ok, где = _отправить_гостю(client, cbs, сообщение)
+        GuestNote.objects.create(client=client, branch=cb.branch, kind='message', author_name=имя, author_ref=ref,
+                                 text=f'Подарок «{назв}»' + (f': {сообщение}' if ok else ' (сообщение не ушло)')[:480])
+        return Response({'ok': True, 'gift': назв, 'message_sent': ok, 'detail': где})
