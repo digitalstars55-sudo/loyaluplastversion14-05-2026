@@ -39,6 +39,14 @@ class DiscoveryCitiesView(APIView):
         return Response({'cities': svc.list_cities()})
 
 
+class DiscoveryNetworksView(APIView):
+    """GET /api/v1/discovery/networks/ — сети с веб-входом и их точки (выбор сети в Телеграме)."""
+    permission_classes = [AllowAny]
+
+    def get(self, request: Request) -> Response:
+        return Response({'networks': svc.list_web_networks()})
+
+
 class DiscoveryOpenView(APIView):
     """POST /api/v1/discovery/open/ {vk_id} — открыл экран сетевого входа."""
     permission_classes = [AllowAny]

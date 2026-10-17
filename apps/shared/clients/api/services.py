@@ -71,7 +71,29 @@ def get_tenant_domain(client_id: int) -> dict:
         if getattr(config, 'review_proof_enabled', False) else 0,
         # Режим iikoCard «Карта гостя»: мини-апп показывает карту для кассира.
         'pos_card_enabled': _pos_card_enabled(config),
+        # 17.10.2026: вход по ссылке сети без точки (бот Телеграма, общие ссылки)
+        # — мини-апп берёт последнюю точку гостя, единственную или даёт выбрать.
+        'branches': _active_branches(company),
     }
+
+
+def _active_branches(company, limit: int = 60) -> list:
+    """Активные точки сети: [{branch_id, name, address}] по номеру точки."""
+    from django_tenants.utils import schema_context
+
+    try:
+        with schema_context(company.schema_name):
+            from apps.tenant.branch.models import Branch
+            out = []
+            for b in Branch.objects.filter(is_active=True).select_related('config').order_by('branch_id')[:limit]:
+                cfg = getattr(b, 'config', None)
+                out.append({'branch_id': b.branch_id, 'name': b.name,
+                            'address': (getattr(cfg, 'address', '') or '') if cfg else ''})
+            return out
+    except Exception:  # noqa: BLE001 — список точек не повод не отдать домен
+        import logging
+        logging.getLogger(__name__).exception('company: точки сети %s не прочитались', getattr(company, 'pk', '?'))
+        return []
 
 
 def _pos_card_enabled(config) -> bool:

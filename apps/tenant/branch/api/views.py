@@ -533,6 +533,11 @@ class TelegramSessionView(APIView):
                             status=status.HTTP_403_FORBIDDEN)
         from apps.tenant.branch.archive import из_архива
         из_архива(client)                     # гость вошёл сам — из архива
+        # Кнопка меню бота у ЭТОГО гостя — на его сеть (17.10.2026): общий бот
+        # иначе всегда открывал LevOne.
+        from apps.shared.guest.tg_init import proven_tg_user_id
+        from apps.shared.guest.tg_menu import запомнить_сеть
+        запомнить_сеть(proven_tg_user_id(request))
         web_token, expires_at = issue_web_token(client.vk_id)
         return Response({
             'vk_id': client.vk_id,

@@ -121,6 +121,31 @@ def list_cities() -> list[dict]:
     return result
 
 
+def list_web_networks() -> list[dict]:
+    """
+    Сети, куда можно войти вне ВК (Телеграм, браузер) — для выбора сети, когда
+    гость открыл бота без ссылки сети (17.10.2026). Активные, оплаченные, с
+    включённым веб-входом и хотя бы одной активной точкой.
+    """
+    from apps.shared.config.models import ClientConfig
+    from apps.tenant.branch.models import Branch
+
+    today = timezone.localdate()
+    out = []
+    for cfg in ClientConfig.objects.select_related('company').filter(web_entry_enabled=True):
+        company = cfg.company
+        if not company.is_active or (company.paid_until and company.paid_until < today):
+            continue
+        with tenant_context(company):
+            branches = [_branch_dict(b) for b in
+                        Branch.objects.filter(is_active=True).select_related('config').order_by('name')]
+        if branches:
+            out.append({'client_id': company.client_id, 'company_name': company.name,
+                        'city': getattr(cfg, 'vk_catalog_city', '') or '', 'branches': branches})
+    out.sort(key=lambda r: ((r['city'] or 'я').lower(), r['company_name'].lower()))
+    return out
+
+
 # ── Funnel events ─────────────────────────────────────────────────────────────
 
 def record_open(vk_id: int) -> None:

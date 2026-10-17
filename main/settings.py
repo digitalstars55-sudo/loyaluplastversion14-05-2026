@@ -311,7 +311,8 @@ TELEGRAM_GUEST_BOT_TOKEN = os.getenv('TELEGRAM_GUEST_BOT_TOKEN', '')
 # Рассылка гостю в Телеграм, если сообщения сообщества ВК закрыты (шаг В склейки, 17.10.2026).
 GUEST_LIVE_CHANNEL = os.getenv('GUEST_LIVE_CHANNEL', 'on')
 TELEGRAM_INIT_DATA_MAX_AGE = int(os.getenv('TELEGRAM_INIT_DATA_MAX_AGE', '86400'))
-TELEGRAM_SIGN_ENFORCE = os.getenv('TELEGRAM_SIGN_ENFORCE', 'off')
+# 17.10.2026: включено по умолчанию — за 72 ч ни одного нарушения tg_ в журнале.
+TELEGRAM_SIGN_ENFORCE = os.getenv('TELEGRAM_SIGN_ENFORCE', 'on')
 # Склейка гостя, шаг Б (17.10.2026): гость из Телеграма без ВК получает служебную
 # карточку (`guest.merge.из_телеграма`). Включено по слову владельца 17.10 («это тоже база»).
 TELEGRAM_GUEST_WITHOUT_VK = os.getenv('TELEGRAM_GUEST_WITHOUT_VK', 'on').lower() in ('on', '1', 'true', 'yes')
