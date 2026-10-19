@@ -152,7 +152,7 @@ _PLAN_PROMPT = """Ты — режиссёр монтажа коротких ро
 Ответ — строго JSON без markdown, ОДИН из двух:
 {"question": "что уточнить"}
 или
-{"scenario": {"title": "...", "scenes": [{"asset_id": 1, "start": 0.0, "length": 1.2, "caption": "", "motion": "none"}], "final": {"offer": "одно предложение", "address": "адрес"}, "music": "brand" | "none"}}"""
+{"scenario": {"title": "...", "scenes": [{"asset_id": 1, "start": 0.0, "length": 1.2, "caption": "", "motion": "none"}], "final": {"offer": "одно предложение", "address": "адрес"}, "music": "brand" | "none", "post": "текст поста к ролику для ВК и Телеграма: 200–600 знаков, по голосу бренда из базы знаний, те же факты, что в ролике"}}"""
 
 _EDIT_PROMPT = """Ты — режиссёр монтажа коротких роликов кафе. Тебе дают сценарий ролика (JSON) и правку владельца словами.
 Внеси ТОЛЬКО эту правку, остальное оставь как было. Факты — только из базы знаний и прежнего сценария; новых цен не придумывай.
@@ -265,6 +265,7 @@ def clean_scenario(raw: dict, assets, duration: int, address: str = '') -> dict:
             'length': 2.5,
         },
         'music': 'none' if raw.get('music') == 'none' else 'brand',
+        'post': str(raw.get('post') or '').strip()[:1500],
     }
 
 
@@ -273,7 +274,8 @@ def scenario_length(scn: dict) -> float:
 
 
 def prices_in(scn: dict) -> list[str]:
-    texts = [s.get('caption', '') for s in scn.get('scenes', [])] + [(scn.get('final') or {}).get('offer', '')]
+    texts = ([s.get('caption', '') for s in scn.get('scenes', [])]
+             + [(scn.get('final') or {}).get('offer', ''), scn.get('post', '')])
     found = []
     for t in texts:
         for m in _PRICE_RE.finditer(t or ''):
@@ -308,6 +310,8 @@ def _new_version(project: StudioProject, scn: dict, *, instruction: str = '', sc
         project.style_version = style.version
         project.question = ''
         project.error = ''
+        if scn.get('post') and not project.post_text:
+            project.post_text = scn['post']
         if project.approval == StudioProject.Approval.APPROVED:
             project.approval = StudioProject.Approval.NONE  # новая версия — согласовать заново
             project.approved_by = ''

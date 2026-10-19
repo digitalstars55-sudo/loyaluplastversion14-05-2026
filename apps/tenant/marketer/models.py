@@ -41,6 +41,11 @@ class MarketerSettings(TimeStampedModel):
             'Пусто — посты остаются черновиками, публикация недоступна.'
         ),
     )
+    tg_channel = models.CharField(
+        'Телеграм-канал сети', max_length=100, blank=True, default='',
+        help_text='@имя или -100… канала. Бот гостей должен быть в нём администратором с правом публикации. '
+                  'Пусто — ролики в Телеграм не публикуются.',
+    )
     autopost_enabled = models.BooleanField(
         'Автопубликация',
         default=False,
@@ -368,6 +373,8 @@ class StudioProject(TimeStampedModel):
                                 default=Approval.NONE)
     approved_by = models.CharField('Согласовал', max_length=150, blank=True)
     approved_at = models.DateTimeField('Согласован', null=True, blank=True)
+    post_text = models.TextField('Текст поста к ролику', blank=True,
+                                 help_text='Пишет ИИ вместе со сценарием; правится перед публикацией.')
     publish_plan = models.JSONField('Публикация', default=list, blank=True,
                                     help_text='[{"channel", "format", "at", "status", "post_id"}].')
     created_by = models.CharField('Автор', max_length=150, blank=True)

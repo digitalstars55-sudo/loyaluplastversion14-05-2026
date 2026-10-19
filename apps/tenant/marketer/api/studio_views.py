@@ -126,11 +126,13 @@ def project_to_dict(request, p: StudioProject, *, full: bool = False) -> dict:
         'style_version': p.style_version,
         'approval': p.approval, 'approval_label': p.get_approval_display(),
         'approved_by': p.approved_by, 'approved_at': _iso(p.approved_at),
-        'publish_plan': p.publish_plan, 'created_by': p.created_by,
+        'publish_plan': p.publish_plan, 'post_text': p.post_text, 'created_by': p.created_by,
         'created_at': _iso(p.created_at), 'updated_at': _iso(p.updated_at),
         'current': version_to_dict(request, cur, full=full) if cur else None,
     }
     if full:
+        from apps.tenant.marketer.studio_publish import свободный_слот
+        out['suggested_slot'] = свободный_слот().isoformat()
         out['versions'] = [version_to_dict(request, v, full=False)
                            for v in p.versions.prefetch_related('files').order_by('-number')]
         out['assets'] = [asset_to_dict(request, a) for a in p.assets.order_by('pk')]
@@ -378,11 +380,20 @@ class StudioProjectDetailAPIView(APIView):
         project = _project(pk)
         if project is None:
             return _error('not_found', 'Ролик не найден', http_status.HTTP_404_NOT_FOUND)
-        title = str((request.data or {}).get('title') or '').strip()[:200]
-        if not title:
-            return _error('invalid_payload', 'title', http_status.HTTP_400_BAD_REQUEST)
-        project.title = title
-        project.save(update_fields=['title', 'updated_at'])
+        data = request.data or {}
+        fields = []
+        if 'title' in data:
+            title = str(data.get('title') or '').strip()[:200]
+            if not title:
+                return _error('invalid_payload', 'title', http_status.HTTP_400_BAD_REQUEST)
+            project.title = title
+            fields.append('title')
+        if 'post_text' in data:
+            project.post_text = str(data.get('post_text') or '').strip()[:5000]
+            fields.append('post_text')
+        if not fields:
+            return _error('invalid_payload', 'нечего менять', http_status.HTTP_400_BAD_REQUEST)
+        project.save(update_fields=fields + ['updated_at'])
         return Response(project_to_dict(request, project, full=True))
 
     def delete(self, request, pk: int):
@@ -529,4 +540,25 @@ class StudioApprovalAPIView(_ProjectAction):
             return _error('invalid_payload', 'action: submit, approve или reject',
                           http_status.HTTP_400_BAD_REQUEST)
         project.save(update_fields=['approval', 'approved_by', 'approved_at', 'updated_at'])
+        return Response(project_to_dict(request, _project(project.pk), full=True))
+
+
+class StudioPublishAPIView(_ProjectAction):
+    """POST …/publish/ {rows: [{channel: vk|tg, fmt?, at?}], text?} — в план публикации.
+    {cancel: <id строки>} — снять строку из плана. Публикует тик маркетолога (раз в 5 минут)."""
+    what = 'ролики публикует'
+
+    def act(self, request, project, data):
+        from apps.tenant.marketer import studio_publish as sp
+        try:
+            if data.get('cancel'):
+                sp.отменить(project, str(data['cancel']))
+            else:
+                rows = data.get('rows')
+                if not isinstance(rows, list) or not rows:
+                    return _error('invalid_payload', 'rows: куда и когда', http_status.HTTP_400_BAD_REQUEST)
+                text = data.get('text')
+                sp.запланировать(project, rows, None if text is None else str(text))
+        except sp.PublishError as exc:
+            return _error('not_publishable', str(exc), http_status.HTTP_409_CONFLICT)
         return Response(project_to_dict(request, _project(project.pk), full=True))

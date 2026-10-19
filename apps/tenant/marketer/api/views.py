@@ -33,6 +33,7 @@ from __future__ import annotations
 from apps.shared.users.feature_permissions import HasFeatureAccess
 
 import logging
+import re
 from datetime import date, timedelta
 
 from django.core.cache import cache
@@ -77,6 +78,7 @@ SETTINGS_FIELDS = (
     ('extra_facts', 'text'),
     ('image_style', 'text'),
     ('image_source', 'image_source'),
+    ('tg_channel', 'tg_channel'),
 )
 IMAGE_SOURCES = ('ai', 'bank_first')
 EDITABLE_SETTINGS = [name for name, _ in SETTINGS_FIELDS]
@@ -160,6 +162,7 @@ def settings_to_dict(cfg) -> dict:
         'extra_facts': cfg.extra_facts,
         'image_style': getattr(cfg, 'image_style', ''),
         'image_source': getattr(cfg, 'image_source', 'ai') or 'ai',
+        'tg_channel': getattr(cfg, 'tg_channel', ''),
         'editable': EDITABLE_SETTINGS,
     }
 
@@ -249,6 +252,11 @@ def _parse_settings(data) -> dict:
             if not 0 <= number <= 23:
                 raise PayloadError('digest_hour: целое 0…23 (МСК)')
             values[field] = number
+        elif kind == 'tg_channel':
+            v = str(raw or '').strip()
+            if v and not re.match(r'^(@[A-Za-z0-9_]{4,64}|-100\d{5,20})$', v):
+                raise PayloadError('tg_channel: @имя_канала или -100… (номер канала)')
+            values[field] = v
         elif kind == 'image_source':
             if str(raw) not in IMAGE_SOURCES:
                 raise PayloadError('image_source: ai или bank_first')

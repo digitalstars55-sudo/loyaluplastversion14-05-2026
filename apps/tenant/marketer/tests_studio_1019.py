@@ -306,3 +306,70 @@ class Ручки(_Схема):
         delay.assert_called_once()
         r = self._call(V.StudioAnswerAPIView, 'post', {'answer': '590'}, pk=r.data['id'])
         self.assertEqual(r.status_code, 409)
+
+
+class Публикация(_Схема):
+    """Публикуется только согласованный ролик; тик публикует назревшее; сбой не теряет план."""
+
+    def _готовый(self, approved=True):
+        p = _project(post_text='Хачапури ждут вас')
+        a = _asset(p)
+        v = studio._new_version(p, studio.clean_scenario(_scn([a]), [a], 10))
+        StudioVersion.objects.filter(pk=v.pk).update(status='ready')
+        from apps.tenant.marketer.models import StudioOutput
+        StudioOutput.objects.create(version=v, fmt='9x16', file=SimpleUploadedFile('o.mp4', b'mp4'),
+                                    width=1080, height=1920, duration=8)
+        p.refresh_from_db()
+        p.status = 'ready'
+        p.approval = 'approved' if approved else 'none'
+        p.save()
+        return p
+
+    def test_без_согласования_нельзя(self):
+        from apps.tenant.marketer import studio_publish as sp
+        p = self._готовый(approved=False)
+        with self.assertRaises(sp.PublishError):
+            sp.запланировать(p, [{'channel': 'vk'}], None)
+
+    def test_тик_публикует_и_сбой_не_теряет(self):
+        from apps.tenant.marketer import studio_publish as sp
+        p = self._готовый()
+        sp.запланировать(p, [{'channel': 'vk'}, {'channel': 'tg', 'at': '2099-01-01T18:00:00+03:00'}], 'Текст')
+        with patch.object(sp, 'в_вк', return_value='777') as vk, \
+             patch.object(sp, 'в_телеграм', side_effect=sp.PublishError('нет канала')):
+            итог = sp.опубликовать_назревшее()
+            self.assertEqual(итог, {'published': 1, 'failed': 0})   # телеграм ещё не наступил
+            self.assertEqual(vk.call_args[0][2], 'Текст')
+            sp.опубликовать_назревшее()                               # повтор тика — без второго поста
+            self.assertEqual(vk.call_count, 1)
+        p.refresh_from_db()
+        vk_row, tg_row = p.publish_plan
+        self.assertEqual((vk_row['status'], vk_row['post_id']), ('published', '777'))
+        self.assertEqual(tg_row['status'], 'scheduled')
+        with patch.object(sp, 'в_телеграм', side_effect=sp.PublishError('нет канала')):
+            from django.utils import timezone as tz
+            from datetime import datetime as dt
+            sp.опубликовать_назревшее(now=tz.make_aware(dt(2099, 1, 2)))
+        p.refresh_from_db()
+        self.assertEqual(p.publish_plan[1]['status'], 'failed')
+        self.assertIn('нет канала', p.publish_plan[1]['error'])
+
+    def test_отменённое_не_публикуется(self):
+        from apps.tenant.marketer import studio_publish as sp
+        p = self._готовый()
+        sp.запланировать(p, [{'channel': 'vk'}], None)
+        sp.отменить(p, p.publish_plan[0]['id'])
+        with patch.object(sp, 'в_вк') as vk:
+            sp.опубликовать_назревшее()
+        vk.assert_not_called()
+
+    def test_слот_обходит_занятый_день(self):
+        from apps.tenant.marketer import studio_publish as sp
+        from django.utils import timezone as tz
+        from datetime import datetime as dt
+        now = tz.make_aware(dt(2026, 10, 19, 10, 0))
+        первый = sp.свободный_слот(now)
+        self.assertEqual((tz.localtime(первый).day, tz.localtime(первый).hour), (19, 18))
+        p = self._готовый()
+        sp.запланировать(p, [{'channel': 'vk', 'at': первый.isoformat()}], None)
+        self.assertEqual(tz.localtime(sp.свободный_слот(now)).day, 20)

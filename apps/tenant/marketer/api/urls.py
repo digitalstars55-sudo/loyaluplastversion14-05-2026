@@ -34,6 +34,7 @@ from .studio_views import (
     StudioEditAPIView,
     StudioProjectDetailAPIView,
     StudioProjectListAPIView,
+    StudioPublishAPIView,
     StudioRememberAPIView,
     StudioRerenderAPIView,
     StudioRestoreAPIView,
@@ -88,4 +89,5 @@ urlpatterns = [
     path('marketer/studio/projects/<int:pk>/rerender/', StudioRerenderAPIView.as_view(), name='studio-rerender'),
     path('marketer/studio/projects/<int:pk>/remember/', StudioRememberAPIView.as_view(), name='studio-remember'),
     path('marketer/studio/projects/<int:pk>/approval/', StudioApprovalAPIView.as_view(), name='studio-approval'),
+    path('marketer/studio/projects/<int:pk>/publish/', StudioPublishAPIView.as_view(), name='studio-publish'),
 ]

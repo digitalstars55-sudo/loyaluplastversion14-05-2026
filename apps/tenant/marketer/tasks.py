@@ -164,6 +164,11 @@ def publish_due_marketer_posts_task(self) -> dict:
                             continue
                         ok = publish_post(post)
                     summary['published' if ok else 'failed'] += 1
+                # Ролики студии (19.10.2026): строки плана публикации, чьё время пришло.
+                from apps.tenant.marketer.studio_publish import опубликовать_назревшее
+                итог = опубликовать_назревшее(now)
+                summary['published'] += итог['published']
+                summary['failed'] += итог['failed']
         except Exception as e:
             logger.exception('marketer scheduled publish failed for %s', schema)
             summary['errors'].append(f'{schema}: {e}')
