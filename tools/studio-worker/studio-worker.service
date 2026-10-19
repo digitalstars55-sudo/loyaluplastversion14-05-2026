@@ -1,0 +1,15 @@
+[Unit]
+Description=LoyalUP studio video worker
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=STUDIO_API_BASE=https://levelupapp.ru
+ExecStart=/usr/bin/python3 %h/projects/LOYALUP/backend/tools/studio-worker/worker.py
+Restart=always
+RestartSec=30
+Nice=10
+MemoryMax=3G
+
+[Install]
+WantedBy=default.target

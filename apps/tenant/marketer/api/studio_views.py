@@ -50,10 +50,16 @@ BUSY = (StudioProject.Status.WRITING,)
 
 
 def _url(request, f) -> str:
+    """Полный https-адрес файла на домене сети.
+
+    Кабинет CheckUp ходит к нам по loopback без TLS: `build_absolute_uri` дал
+    бы `http://…`, и браузер на https вырезал бы его как смешанное содержимое.
+    Домены сетей все на https — схему ставим сами, хост берём из запроса.
+    """
     if not f:
         return ''
     try:
-        return request.build_absolute_uri(f.url)
+        return f'https://{request.get_host()}{f.url}'
     except Exception:
         return ''
 
