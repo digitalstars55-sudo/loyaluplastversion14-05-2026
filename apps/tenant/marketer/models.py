@@ -273,3 +273,181 @@ class MarketerJob(TimeStampedModel):
         verbose_name = 'Генерация маркетолога'
         verbose_name_plural = 'Генерации маркетолога'
         ordering = ['-created_at']
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Студия видео (19.10.2026, макет https://claude.ai/artifact/1yDCLmgeuJRDE7nAgZ5DUU)
+#
+# Задание и правки — словами, ручного таймлайна нет. ИИ пишет сценарий из
+# сцен, сборщик (отдельный процесс с HyperFrames + FFmpeg, `tools/studio-worker`)
+# собирает MP4 сразу в четырёх форматах. Каждая правка — новая версия, прежние
+# остаются и возвращаются одной кнопкой. Стиль бренда версионный: ролик помнит,
+# по какой версии стиля собран, а «запомнить для бренда» поднимает версию.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class StudioStyle(TimeStampedModel):
+    """Стиль бренда для роликов — одна запись на сеть (схему)."""
+
+    version = models.PositiveIntegerField('Версия стиля', default=1)
+    palette = models.JSONField('Цвета', default=list, blank=True,
+                               help_text='["#1B2838", "#C9A227", "#F6F3EA"] — фон, акцент, светлый.')
+    heading_font = models.CharField('Шрифт заголовков', max_length=60, blank=True, default='Manrope')
+    body_font = models.CharField('Шрифт текста', max_length=60, blank=True, default='Manrope')
+    logo = models.ImageField('Логотип (светлый фон)', upload_to='studio_brand/', null=True, blank=True)
+    logo_dark = models.ImageField('Логотип (тёмный фон)', upload_to='studio_brand/', null=True, blank=True)
+    music = models.FileField('Музыка по умолчанию', upload_to='studio_brand/', null=True, blank=True)
+    cut_pace = models.CharField('Ритм склеек', max_length=60, blank=True, default='0,6–1,2 с')
+    captions = models.CharField('Титры', max_length=200, blank=True,
+                                default='снизу, на плашке, не закрывают лицо и блюдо')
+    final_card = models.CharField('Финал', max_length=200, blank=True,
+                                  default='логотип + адрес + одно предложение')
+    forbidden = models.TextField('Нельзя', blank=True,
+                                 default='Цены, которых нет в меню\nЛица гостей без согласия\nМузыка без лицензии')
+    rules = models.JSONField('Запомнено для бренда', default=list, blank=True,
+                             help_text='[{"text", "version", "by", "at"}] — правки, ставшие правилом.')
+    address = models.CharField('Адрес для финала', max_length=200, blank=True)
+
+    class Meta:
+        verbose_name = 'Стиль роликов'
+        verbose_name_plural = 'Стиль роликов'
+
+    def __str__(self):
+        return f'Стиль роликов, версия {self.version}'
+
+
+class StudioStyleVersion(TimeStampedModel):
+    """Снимок стиля на каждую версию — откат и «по какой версии собран ролик»."""
+
+    version = models.PositiveIntegerField('Версия', unique=True)
+    snapshot = models.JSONField('Снимок', default=dict)
+    note = models.CharField('Что поменяли', max_length=300, blank=True)
+    created_by = models.CharField('Кто', max_length=150, blank=True)
+
+    class Meta:
+        verbose_name = 'Версия стиля роликов'
+        verbose_name_plural = 'Версии стиля роликов'
+        ordering = ['-version']
+
+
+class StudioProject(TimeStampedModel):
+    """Ролик: задание, вопросы ИИ, версии и публикация."""
+
+    class Kind(models.TextChoices):
+        REEL = 'reel', 'Ролик 15–30 с'
+        STORIES = 'stories', 'Сторис'
+        BANNER = 'banner', 'Баннер'
+
+    class Status(models.TextChoices):
+        ASKING = 'asking', 'Ждёт ответа'
+        QUEUED = 'queued', 'В очереди'
+        RENDERING = 'rendering', 'Собирается'
+        READY = 'ready', 'Готово'
+        FAILED = 'failed', 'Ошибка'
+
+    class Approval(models.TextChoices):
+        NONE = 'none', 'Не отправлен'
+        WAITING = 'waiting', 'Ждёт согласования'
+        APPROVED = 'approved', 'Согласован'
+        REJECTED = 'rejected', 'Вернули на правку'
+
+    title = models.CharField('Название', max_length=200)
+    kind = models.CharField('Что сделать', max_length=10, choices=Kind.choices, default=Kind.REEL)
+    brief = models.TextField('Задание словами')
+    duration = models.PositiveSmallIntegerField('Длина, с', default=20)
+    status = models.CharField('Статус', max_length=10, choices=Status.choices, default=Status.QUEUED,
+                              db_index=True)
+    question = models.TextField('Вопрос ИИ', blank=True,
+                                help_text='Что ИИ уточняет перед сборкой (цена, предложение).')
+    answer = models.TextField('Ответ', blank=True)
+    style_version = models.PositiveIntegerField('Версия стиля', default=1)
+    current_version = models.ForeignKey('StudioVersion', null=True, blank=True, on_delete=models.SET_NULL,
+                                        related_name='+')
+    approval = models.CharField('Согласование', max_length=10, choices=Approval.choices,
+                                default=Approval.NONE)
+    approved_by = models.CharField('Согласовал', max_length=150, blank=True)
+    approved_at = models.DateTimeField('Согласован', null=True, blank=True)
+    publish_plan = models.JSONField('Публикация', default=list, blank=True,
+                                    help_text='[{"channel", "format", "at", "status", "post_id"}].')
+    created_by = models.CharField('Автор', max_length=150, blank=True)
+
+    class Meta:
+        verbose_name = 'Ролик студии'
+        verbose_name_plural = 'Ролики студии'
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return self.title
+
+
+class StudioAsset(TimeStampedModel):
+    """Материал: видео, фото, логотип, музыка. Без проекта — библиотека сети."""
+
+    class Kind(models.TextChoices):
+        VIDEO = 'video', 'Видео'
+        PHOTO = 'photo', 'Фото'
+        MUSIC = 'music', 'Музыка'
+
+    project = models.ForeignKey(StudioProject, null=True, blank=True, on_delete=models.CASCADE,
+                                related_name='assets')
+    kind = models.CharField('Вид', max_length=8, choices=Kind.choices)
+    file = models.FileField('Файл', upload_to='studio_assets/')
+    title = models.CharField('Что на нём', max_length=200, blank=True)
+    duration = models.FloatField('Длительность, с', null=True, blank=True)
+    size = models.PositiveBigIntegerField('Размер, байт', default=0)
+    created_by = models.CharField('Кто добавил', max_length=150, blank=True)
+
+    class Meta:
+        verbose_name = 'Материал студии'
+        verbose_name_plural = 'Материалы студии'
+        ordering = ['created_at']
+
+
+class StudioVersion(TimeStampedModel):
+    """Версия ролика: сценарий, правка, ход сборки и готовые файлы по форматам."""
+
+    class Status(models.TextChoices):
+        QUEUED = 'queued', 'В очереди'
+        RENDERING = 'rendering', 'Собирается'
+        READY = 'ready', 'Готово'
+        FAILED = 'failed', 'Ошибка'
+
+    project = models.ForeignKey(StudioProject, on_delete=models.CASCADE, related_name='versions')
+    number = models.PositiveIntegerField('Номер')
+    instruction = models.TextField('Правка словами', blank=True)
+    scene = models.PositiveSmallIntegerField('Правка только сцены', null=True, blank=True)
+    scenario = models.JSONField('Сценарий', default=dict, blank=True)
+    changelog = models.JSONField('Что изменилось', default=list, blank=True)
+    style_version = models.PositiveIntegerField('Версия стиля', default=1)
+    style_snapshot = models.JSONField('Стиль на момент сборки', default=dict, blank=True)
+    status = models.CharField('Статус', max_length=10, choices=Status.choices, default=Status.QUEUED,
+                              db_index=True)
+    stage = models.CharField('Шаг', max_length=200, blank=True)
+    progress = models.PositiveSmallIntegerField('Готово, %', default=0)
+    error = models.TextField('Ошибка', blank=True)
+    worker = models.CharField('Сборщик', max_length=100, blank=True)
+    claimed_at = models.DateTimeField('Взят в сборку', null=True, blank=True)
+    finished_at = models.DateTimeField('Собран', null=True, blank=True)
+    remember_suggestion = models.CharField('Предложить запомнить', max_length=300, blank=True)
+
+    class Meta:
+        verbose_name = 'Версия ролика'
+        verbose_name_plural = 'Версии роликов'
+        ordering = ['project', 'number']
+        unique_together = [('project', 'number')]
+
+
+class StudioOutput(TimeStampedModel):
+    """Готовый MP4 одного формата одной версии."""
+
+    version = models.ForeignKey(StudioVersion, on_delete=models.CASCADE, related_name='files')
+    fmt = models.CharField('Формат', max_length=8)
+    file = models.FileField('MP4', upload_to='studio_out/')
+    poster = models.ImageField('Кадр', upload_to='studio_out/', null=True, blank=True)
+    width = models.PositiveIntegerField(default=0)
+    height = models.PositiveIntegerField(default=0)
+    duration = models.FloatField(default=0)
+
+    class Meta:
+        verbose_name = 'Файл ролика'
+        verbose_name_plural = 'Файлы роликов'
+        unique_together = [('version', 'fmt')]
