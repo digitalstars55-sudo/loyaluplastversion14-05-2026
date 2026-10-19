@@ -23,10 +23,23 @@ from apps.tenant.delivery.api.public_views import PublicDeliveryWebhook
 from apps.tenant.analytics.api.orders_public import PublicDailyOrdersIngest
 from main.views import health
 from apps.shared.guest.request_log import ClientLogView
+from apps.tenant.marketer.studio_worker import (
+    StudioClaimView, StudioDoneView, StudioFileView, StudioOutputView, StudioProgressView,
+)
 
 urlpatterns = [
     path('api/v1/health/', health, name='health'),
     path('api/v1/client-log/', ClientLogView.as_view(), name='public-client-log'),  # ошибки браузера гостя (15.10.2026)
+    # Очередь сборщика роликов студии (19.10.2026): токен X-Studio-Worker-Token.
+    path('api/v1/studio-worker/claim/', StudioClaimView.as_view(), name='studio-worker-claim'),
+    path('api/v1/studio-worker/<str:schema>/<int:vid>/file/<str:key>/', StudioFileView.as_view(),
+         name='studio-worker-file'),
+    path('api/v1/studio-worker/<str:schema>/<int:vid>/progress/', StudioProgressView.as_view(),
+         name='studio-worker-progress'),
+    path('api/v1/studio-worker/<str:schema>/<int:vid>/output/', StudioOutputView.as_view(),
+         name='studio-worker-output'),
+    path('api/v1/studio-worker/<str:schema>/<int:vid>/done/', StudioDoneView.as_view(),
+         name='studio-worker-done'),
     path('admin/', public_admin.urls),
     path('api/v1/', include('apps.shared.clients.api.urls')),
     path('api/v1/delivery/webhook/', PublicDeliveryWebhook.as_view(), name='public-delivery-webhook'),

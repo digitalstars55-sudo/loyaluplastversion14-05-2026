@@ -326,3 +326,36 @@ def generate_post_image_task(self, schema_name: str, post_id: int, job_id: int |
             post.save(update_fields=['error', 'updated_at'])
         progress.finish(job_id, result={'post_ids': [post.pk], 'source': source})
     return {'ok': True}
+
+
+# ── Студия видео (19.10.2026) ────────────────────────────────────────────────
+
+@shared_task(bind=True, ignore_result=True)
+def studio_script_task(self, schema_name: str, project_id: int, instruction: str = '',
+                       scene: int | None = None, author: str = '') -> str:
+    """Сценарий ролика (instruction пусто) или правка словами — новой версией."""
+    from django_tenants.utils import schema_context
+
+    from apps.tenant.marketer import studio
+    from apps.tenant.marketer.models import StudioProject
+
+    with schema_context(schema_name):
+        project = StudioProject.objects.filter(pk=project_id).first()
+        if project is None:
+            return 'missing'
+        try:
+            if instruction:
+                studio.edit(project, instruction, scene=scene, by=author)
+            else:
+                studio.plan(project)
+        except Exception as exc:  # ИИ, сеть, нечитаемый ответ — ролик не должен висеть «пишу»
+            logger.exception('studio script failed for %s/%s', schema_name, project_id)
+            project.refresh_from_db()
+            project.status = (StudioProject.Status.READY if project.current_version_id
+                              and project.current_version.status == 'ready'
+                              else StudioProject.Status.FAILED)
+            project.error = (str(exc) if isinstance(exc, studio.StudioError)
+                             else 'ИИ не ответил, попробуйте ещё раз')[:1000]
+            project.save(update_fields=['status', 'error', 'updated_at'])
+            return 'failed'
+        return project.status

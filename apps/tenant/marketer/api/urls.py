@@ -26,6 +26,22 @@ from .views import (
     MarketerSettingsAPIView,
 )
 
+from .studio_views import (
+    StudioAnswerAPIView,
+    StudioApprovalAPIView,
+    StudioAssetDetailAPIView,
+    StudioAssetListAPIView,
+    StudioEditAPIView,
+    StudioProjectDetailAPIView,
+    StudioProjectListAPIView,
+    StudioRememberAPIView,
+    StudioRerenderAPIView,
+    StudioRestoreAPIView,
+    StudioStyleAPIView,
+    StudioStyleRememberAPIView,
+    StudioStyleVersionsAPIView,
+)
+
 urlpatterns = [
     path('marketer/settings/', MarketerSettingsAPIView.as_view(), name='marketer-settings'),
     path('marketer/posts/', MarketerPostListAPIView.as_view(), name='marketer-posts'),
@@ -58,4 +74,18 @@ urlpatterns = [
     path('marketer/jobs/<int:pk>/', MarketerJobDetailAPIView.as_view(), name='marketer-job'),
     path('marketer/photos/', MarketerPhotoListAPIView.as_view(), name='marketer-photos'),
     path('marketer/photos/<int:pk>/', MarketerPhotoDetailAPIView.as_view(), name='marketer-photo'),
+    # Студия видео (19.10.2026)
+    path('marketer/studio/style/', StudioStyleAPIView.as_view(), name='studio-style'),
+    path('marketer/studio/style/remember/', StudioStyleRememberAPIView.as_view(), name='studio-style-remember'),
+    path('marketer/studio/style/versions/', StudioStyleVersionsAPIView.as_view(), name='studio-style-versions'),
+    path('marketer/studio/assets/', StudioAssetListAPIView.as_view(), name='studio-assets'),
+    path('marketer/studio/assets/<int:pk>/', StudioAssetDetailAPIView.as_view(), name='studio-asset'),
+    path('marketer/studio/projects/', StudioProjectListAPIView.as_view(), name='studio-projects'),
+    path('marketer/studio/projects/<int:pk>/', StudioProjectDetailAPIView.as_view(), name='studio-project'),
+    path('marketer/studio/projects/<int:pk>/answer/', StudioAnswerAPIView.as_view(), name='studio-answer'),
+    path('marketer/studio/projects/<int:pk>/edit/', StudioEditAPIView.as_view(), name='studio-edit'),
+    path('marketer/studio/projects/<int:pk>/restore/', StudioRestoreAPIView.as_view(), name='studio-restore'),
+    path('marketer/studio/projects/<int:pk>/rerender/', StudioRerenderAPIView.as_view(), name='studio-rerender'),
+    path('marketer/studio/projects/<int:pk>/remember/', StudioRememberAPIView.as_view(), name='studio-remember'),
+    path('marketer/studio/projects/<int:pk>/approval/', StudioApprovalAPIView.as_view(), name='studio-approval'),
 ]

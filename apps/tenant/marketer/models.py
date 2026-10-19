@@ -338,6 +338,7 @@ class StudioProject(TimeStampedModel):
         BANNER = 'banner', 'Баннер'
 
     class Status(models.TextChoices):
+        WRITING = 'writing', 'Пишу сценарий'
         ASKING = 'asking', 'Ждёт ответа'
         QUEUED = 'queued', 'В очереди'
         RENDERING = 'rendering', 'Собирается'
@@ -359,6 +360,7 @@ class StudioProject(TimeStampedModel):
     question = models.TextField('Вопрос ИИ', blank=True,
                                 help_text='Что ИИ уточняет перед сборкой (цена, предложение).')
     answer = models.TextField('Ответ', blank=True)
+    error = models.TextField('Что не получилось', blank=True)
     style_version = models.PositiveIntegerField('Версия стиля', default=1)
     current_version = models.ForeignKey('StudioVersion', null=True, blank=True, on_delete=models.SET_NULL,
                                         related_name='+')

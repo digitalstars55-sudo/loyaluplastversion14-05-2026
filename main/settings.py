@@ -513,6 +513,8 @@ CHECKUP_PLATFORM_ADMINS = os.getenv("CHECKUP_PLATFORM_ADMINS", "")
 # релей); пусто = ручка выключена (503). Сети — через запятую; пусто = НИ ОДНОЙ
 # (в отличие от обмена: выгрузка про поведение гостей, включается по сети).
 CHECKUP_SCANS_EXPORT_SECRET = os.getenv("CHECKUP_SCANS_EXPORT_SECRET", "")
+# Сборщик роликов студии (19.10.2026): пусто = очередь выключена (503).
+STUDIO_WORKER_TOKEN = os.getenv("STUDIO_WORKER_TOKEN", "")
 CHECKUP_SCANS_EXPORT_TENANTS = [
     s.strip().lower() for s in os.getenv("CHECKUP_SCANS_EXPORT_TENANTS", "").split(",") if s.strip()
 ]
