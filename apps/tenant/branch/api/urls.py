@@ -10,7 +10,7 @@ from .review_proofs import (
 )
 from .views import (
     BranchInfoView, ClientView, EmployeeView, PromotionView, TransactionsView,
-    ClientForgetView, TelegramSessionView, TestimonialCreateView, VKAuthView, VKCallbackView, VKStoryView, VKSyncView,
+    ClientForgetView, TelegramPhoneLinkView, TelegramSessionView, TestimonialCreateView, VKAuthView, VKCallbackView, VKStoryView, VKSyncView,
     VKSubscriptionStatusView,
 )
 
@@ -37,6 +37,7 @@ urlpatterns = [
     path('client-log/',              ClientLogView.as_view(),   name='client-log'),
     path('vk/auth/',                  VKAuthView.as_view(),      name='vk-auth'),
     path('vk/tg-session/',            TelegramSessionView.as_view(), name='vk-tg-session'),
+    path('vk/tg-phone-link/',         TelegramPhoneLinkView.as_view(), name='vk-tg-phone-link'),
     path('client/forget/',            ClientForgetView.as_view(), name='client-forget'),
     path('vk/story/',                 VKStoryView.as_view(),     name='vk-story'),
     path('vk/callback/',              VKCallbackView.as_view(),  name='vk-callback'),

@@ -549,6 +549,35 @@ class TelegramSessionView(APIView):
         })
 
 
+class TelegramPhoneLinkView(APIView):
+    """
+    POST /api/v1/vk/tg-phone-link/ — привязать Телеграм к гостю по номеру (21.10.2026).
+
+    `{contact: <подписанная строка requestContact>}` + `X-Telegram-Init-Data`.
+    Для тех, кто не может войти через VK ID внутри Телеграма (электронный ключ).
+    Ответ — как у `tg-session`: токен веб-сессии настоящего гостя.
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT})
+    def post(self, request: Request) -> Response:
+        from apps.shared.guest.tg_phone import Отказ, привязать
+        try:
+            client = привязать(request, str(request.data.get('contact') or ''))
+        except Отказ as e:
+            return Response({'detail': e.detail, 'code': e.code}, status=e.status)
+        web_token, expires_at = issue_web_token(client.vk_id)
+        return Response({
+            'vk_id': client.vk_id,
+            'first_name': client.first_name,
+            'last_name': client.last_name,
+            'photo_url': client.photo_url,
+            'web_token': web_token,
+            'web_token_expires_at': expires_at.isoformat(),
+        })
+
+
 class VKSubscriptionStatusView(APIView):
     """
     GET ?vk_id=&branch_id= — свежая проверка статуса подписки гостя через VK API
