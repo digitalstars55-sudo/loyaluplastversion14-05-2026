@@ -23,6 +23,22 @@ def _контакт(user_id=42, phone='79001234567', token=TG_TOKEN):
     })
 
 
+def _контакт_как_у_телеграма(user_id=42, phone='79001234567', token=TG_TOKEN):
+    """Точная форма getRequestedContact: только contact, auth_date и hash — без user и query_id."""
+    import hashlib
+    import hmac
+    from urllib.parse import urlencode
+    fields = {
+        'auth_date': str(int(time.time())),
+        'contact': json.dumps({'user_id': user_id, 'phone_number': phone, 'first_name': 'Гость'},
+                              separators=(',', ':')),
+    }
+    check = '\n'.join(f'{k}={fields[k]}' for k in sorted(fields))
+    secret = hmac.new(b'WebAppData', token.encode(), hashlib.sha256).digest()
+    fields['hash'] = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    return urlencode(fields)
+
+
 def _запрос(contact, tg_id=42):
     meta = {'HTTP_X_TELEGRAM_INIT_DATA': tg_init_data(user_id=tg_id)} if tg_id else {}
     return APIRequestFactory().post('/', {'contact': contact}, format='json', **meta)
@@ -50,6 +66,11 @@ class ПривязкаПоНомеру(TestCase):
         self.assertEqual(TelegramLink.objects.get(tg_user_id=42).client, self.vk)
         склеить.assert_called_once()
         self.assertEqual(склеить.call_args[0][:2], (служебная, self.vk))
+
+    def test_строка_ровно_как_у_телеграма_без_user(self):
+        r, _ = self._привязать(_контакт_как_у_телеграма(phone='+79001234567'))
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(TelegramLink.objects.get(tg_user_id=42).client, self.vk)
 
     def test_номер_с_восьмёркой_тоже_находит(self):
         r, _ = self._привязать(_контакт(phone='89001234567'))
