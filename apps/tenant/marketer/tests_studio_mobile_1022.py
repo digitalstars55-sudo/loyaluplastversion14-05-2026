@@ -201,3 +201,19 @@ class Прочее(_Схема):
         self.assertEqual(len(body['lines']), 3)
         with override_settings(LOYALUP_RELAY_SECRET=''):
             self.assertFalse(M.send_event(p, 'ready'))
+
+
+class Фотобанк(_Схема):
+
+    def test_фото_из_фотобанка_и_удаление_не_трогает_файл(self):
+        from apps.tenant.marketer.models import MarketerPhoto, StudioAsset
+        фото = MarketerPhoto.objects.create(image=SimpleUploadedFile('d.jpg', b'jpg'), title='Сет')
+        p = _project()
+        r = _call(V.StudioAssetListAPIView, {'photo_id': фото.pk, 'project_id': p.pk})
+        self.assertEqual(r.status_code, 201)
+        a = StudioAsset.objects.get(pk=r.data['id'])
+        self.assertEqual((a.kind, a.file.name, a.project_id), ('photo', фото.image.name, p.pk))
+        self.assertEqual(_call(V.StudioAssetDetailAPIView, method='delete', pk=a.pk).status_code, 204)
+        фото.refresh_from_db()
+        self.assertTrue(фото.image.storage.exists(фото.image.name))
+        self.assertEqual(_call(V.StudioAssetListAPIView, {'photo_id': 999999}).status_code, 404)

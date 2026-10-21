@@ -149,7 +149,9 @@ def project_to_dict(request, p: StudioProject, *, full: bool = False) -> dict:
 
 def _drop_file(asset: StudioAsset):
     """Файл материала удаляется, только если его не держит другая строка (копия из библиотеки)."""
-    if asset.file and not StudioAsset.objects.filter(file=asset.file.name).exclude(pk=asset.pk).exists():
+    from apps.tenant.marketer.models import MarketerPhoto
+    if asset.file and not StudioAsset.objects.filter(file=asset.file.name).exclude(pk=asset.pk).exists() \
+            and not MarketerPhoto.objects.filter(image=asset.file.name).exists():
         asset.file.delete(save=False)
 
 
@@ -269,6 +271,8 @@ class StudioAssetListAPIView(APIView):
     def post(self, request):
         if not _may_write(request.user):
             return _deny('материалы добавляет')
+        if request.data.get('photo_id') not in (None, ''):
+            return self._из_фотобанка(request)
         f = request.FILES.get('file')
         kind = str(request.data.get('kind') or '')
         if f is None or kind not in MIME:
@@ -292,6 +296,27 @@ class StudioAssetListAPIView(APIView):
         asset = StudioAsset.objects.create(
             project=project, kind=kind, file=f, title=str(request.data.get('title') or '').strip()[:200],
             duration=duration, size=f.size, created_by=_author(request.user))
+        return Response(asset_to_dict(request, asset), status=http_status.HTTP_201_CREATED)
+
+
+    def _из_фотобанка(self, request):
+        """Фото из фотобанка маркетолога (22.10.2026, макет «можно из фотобанка»): файл общий,
+        строка своя. Удаление материала файл фотобанка не трогает (см. `_drop_file`)."""
+        from apps.tenant.marketer.models import MarketerPhoto
+        photo = MarketerPhoto.objects.filter(pk=str(request.data.get('photo_id'))).first() \
+            if str(request.data.get('photo_id')).isdigit() else None
+        if photo is None or not photo.image:
+            return _error('not_found', 'Фото не найдено в фотобанке', http_status.HTTP_404_NOT_FOUND)
+        project = None
+        pid = request.data.get('project_id')
+        if pid not in (None, ''):
+            project = StudioProject.objects.filter(pk=pid).first()
+            if project is None:
+                return _error('not_found', 'Ролик не найден', http_status.HTTP_404_NOT_FOUND)
+        asset = StudioAsset.objects.create(
+            project=project, kind=StudioAsset.Kind.PHOTO, file=photo.image.name,
+            title=(photo.title or '')[:200], size=getattr(photo.image, 'size', 0) or 0,
+            created_by=_author(request.user))
         return Response(asset_to_dict(request, asset), status=http_status.HTTP_201_CREATED)
 
 
