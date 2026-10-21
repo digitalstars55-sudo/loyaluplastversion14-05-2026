@@ -334,6 +334,16 @@ def _set_question(project: StudioProject, question: str) -> StudioProject:
     return project
 
 
+def _остановлен(project: StudioProject, было: str) -> bool:
+    """Пока ИИ думал, нажали «Остановить» (22.10.2026) — ответ ИИ не применяем.
+    Признак — статус ролика сменился за время ответа (остановка ставит готово/ошибку)."""
+    status = StudioProject.objects.filter(pk=project.pk).values_list('status', flat=True).first()
+    if status != было:
+        project.refresh_from_db()
+        return True
+    return False
+
+
 def plan(project: StudioProject) -> StudioProject:
     """Первый сценарий (или после ответа на вопрос). Итог — версия в очереди или вопрос."""
     style = style_obj()
@@ -349,7 +359,10 @@ def plan(project: StudioProject) -> StudioProject:
     parts += ['МАТЕРИАЛЫ:\n' + _asset_lines(assets), 'СТИЛЬ БРЕНДА:\n' + _style_text(snap)]
     if kb.strip():
         parts.append('БАЗА ЗНАНИЙ СЕТИ (меню, цены, правила):\n' + kb)
+    было = project.status
     data = _ask_ai(_PLAN_PROMPT, '\n\n'.join(parts))
+    if _остановлен(project, было):
+        return project
     if data.get('question') and not data.get('scenario'):
         return _set_question(project, str(data['question']))
     scn = clean_scenario(data.get('scenario') or {}, assets, project.duration, snap.get('address', ''))
@@ -379,7 +392,10 @@ def edit(project: StudioProject, instruction: str, scene: int | None = None, by:
     ]
     if kb.strip():
         parts.append('БАЗА ЗНАНИЙ СЕТИ:\n' + kb)
+    было = project.status
     data = _ask_ai(_EDIT_PROMPT, '\n\n'.join(parts))
+    if _остановлен(project, было):
+        return project
     if data.get('question') and not data.get('scenario'):
         return _set_question(project, str(data['question']))
     scn = clean_scenario(data.get('scenario') or {}, assets, project.duration, snap.get('address', ''))

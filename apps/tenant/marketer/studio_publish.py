@@ -31,8 +31,8 @@ from .publisher import VK_API_VERSION, _resolve_group_id
 
 logger = logging.getLogger(__name__)
 
-CHANNELS = ('vk', 'tg')
-DEFAULT_FMT = {'vk': '9x16', 'tg': '1x1'}
+CHANNELS = ('vk', 'tg', 'vk_story')
+DEFAULT_FMT = {'vk': '9x16', 'tg': '1x1', 'vk_story': '6s'}
 SLOT_HOUR = 18
 TG_CAPTION = 1024
 
@@ -86,6 +86,43 @@ def в_вк(project: StudioProject, fmt: str, text: str) -> str:
         e = data['error']
         raise PublishError(f"VK wall.post {e.get('error_code')}: {e.get('error_msg')}")
     return str(data.get('response', {}).get('post_id', ''))
+
+
+def в_вк_сторис(project: StudioProject, fmt: str, text: str) -> str:
+    """История сообщества (22.10.2026, план «сторис 6 с» из макета): stories.getVideoUploadServer
+    → загрузка → stories.save. Токену стены нужно право «Истории»; нет — текст ВК в строке плана."""
+    cfg = MarketerSettings.objects.first()
+    if cfg is None or not cfg.vk_wall_token:
+        raise PublishError('не задан токен стены ВК (админка маркетолога)')
+    group_id = _resolve_group_id(cfg)
+    if not group_id:
+        raise PublishError('не удалось определить сообщество ВК')
+    out = _файл(project, fmt)
+    base = {'access_token': cfg.vk_wall_token, 'v': VK_API_VERSION}
+    data = requests.post('https://api.vk.com/method/stories.getVideoUploadServer', data={
+        **base, 'group_id': group_id, 'add_to_news': 1,
+    }, timeout=20).json()
+    if 'error' in data:
+        e = data['error']
+        raise PublishError(f"VK stories.getVideoUploadServer {e.get('error_code')}: {e.get('error_msg')}")
+    with out.file.open('rb') as fh:
+        up = requests.post(data['response']['upload_url'],
+                           files={'video_file': (out.file.name.rsplit('/', 1)[-1], fh, 'video/mp4')}, timeout=300)
+    try:
+        up_json = up.json()
+    except ValueError:
+        up_json = {}
+    upload = (up_json.get('response') or {}).get('upload_result')
+    if up.status_code >= 400 or not upload:
+        raise PublishError(f'ВК не принял сторис: {up.status_code} {str(up_json)[:200]}')
+    saved = requests.post('https://api.vk.com/method/stories.save', data={
+        **base, 'upload_results': upload,
+    }, timeout=20).json()
+    if 'error' in saved:
+        e = saved['error']
+        raise PublishError(f"VK stories.save {e.get('error_code')}: {e.get('error_msg')}")
+    items = (saved.get('response') or {}).get('items') or [{}]
+    return str(items[0].get('id', ''))
 
 
 def в_телеграм(project: StudioProject, fmt: str, text: str) -> str:
@@ -144,7 +181,7 @@ def запланировать(project: StudioProject, rows: list[dict], text: s
     for row in rows:
         ch = row.get('channel')
         if ch not in CHANNELS:
-            raise PublishError('channel: vk или tg')
+            raise PublishError('channel: vk, tg или vk_story')
         at = row.get('at')
         if at:
             try:
@@ -204,7 +241,7 @@ def опубликовать_назревшее(now=None) -> dict:
                     менялось = True
                     continue
                 try:
-                    fn = в_вк if row['channel'] == 'vk' else в_телеграм
+                    fn = {'vk': в_вк, 'tg': в_телеграм, 'vk_story': в_вк_сторис}[row['channel']]
                     row['post_id'] = fn(project, row.get('fmt') or DEFAULT_FMT[row['channel']], project.post_text or '')
                     row.update(status='published', error='', published_at=timezone.now().isoformat())
                     итог['published'] += 1

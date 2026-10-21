@@ -378,6 +378,14 @@ class StudioProject(TimeStampedModel):
     publish_plan = models.JSONField('Публикация', default=list, blank=True,
                                     help_text='[{"channel", "format", "at", "status", "post_id"}].')
     created_by = models.CharField('Автор', max_length=150, blank=True)
+    # Мобильная студия по макету (22.10.2026): серия внутри бренда («реклама блюд»),
+    # кому слать «готово» в CheckUp и план «на согласование и в контент-план».
+    series = models.CharField('Серия', max_length=120, blank=True,
+                              help_text='Серия роликов бренда: «реклама блюд», «команда»…')
+    author_checkup_id = models.CharField('Автор в CheckUp', max_length=64, blank=True,
+                                         help_text='id пользователя CheckUp — ему пуш «ролик готов».')
+    proposed_plan = models.JSONField('Предложенный план публикации', default=list, blank=True,
+                                     help_text='[{"channel", "fmt", "at"}] — встанет в план после «Опубликовать».')
 
     class Meta:
         verbose_name = 'Ролик студии'

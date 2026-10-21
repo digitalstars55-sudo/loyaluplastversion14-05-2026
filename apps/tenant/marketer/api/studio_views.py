@@ -20,7 +20,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.shared.users.feature_permissions import HasFeatureAccess
-from apps.tenant.marketer import studio
+from apps.tenant.marketer import studio, studio_mobile
 from apps.tenant.marketer.api.views import _author, _error, _iso, _may_write
 from apps.tenant.marketer.models import (
     StudioAsset,
@@ -129,8 +129,16 @@ def project_to_dict(request, p: StudioProject, *, full: bool = False) -> dict:
         'publish_plan': p.publish_plan, 'post_text': p.post_text, 'created_by': p.created_by,
         'created_at': _iso(p.created_at), 'updated_at': _iso(p.updated_at),
         'current': version_to_dict(request, cur, full=full) if cur else None,
+        'series': p.series,
+        'proposed_plan': p.proposed_plan or [],
+        'proposed_lines': studio_mobile.plan_lines(p),
     }
+    # Ход сборки (экран «Собираем ролик») — шаги, очередь сети, примерное время.
+    if full or p.status in (StudioProject.Status.WRITING, StudioProject.Status.ASKING,
+                            StudioProject.Status.QUEUED, StudioProject.Status.RENDERING):
+        out['build'] = studio_mobile.build_info(p)
     if full:
+        out['price_line'] = studio_mobile.price_line(cur)
         from apps.tenant.marketer.studio_publish import свободный_слот
         out['suggested_slot'] = свободный_слот().isoformat()
         out['versions'] = [version_to_dict(request, v, full=False)
@@ -327,7 +335,9 @@ class StudioProjectListAPIView(APIView):
     def get(self, request):
         qs = (StudioProject.objects.select_related('current_version')
               .prefetch_related('current_version__files').order_by('-updated_at')[:100])
-        return Response({'results': [project_to_dict(request, p) for p in qs]})
+        серии = sorted({x for x in StudioProject.objects.exclude(series='').values_list('series', flat=True)})
+        return Response({'results': [project_to_dict(request, p) for p in qs], 'series': серии,
+                         'style_version': studio.style_obj().version})
 
     def post(self, request):
         if not _may_write(request.user):
@@ -351,7 +361,8 @@ class StudioProjectListAPIView(APIView):
         project = StudioProject.objects.create(
             title=title, kind=kind, brief=brief[:MAX_BRIEF], duration=duration,
             status=StudioProject.Status.WRITING, style_version=studio.style_obj().version,
-            created_by=_author(request.user))
+            created_by=_author(request.user), series=str(data.get('series') or '').strip()[:120],
+            author_checkup_id=studio_mobile.checkup_id_of(request.user))
         # Из библиотеки сети — копия строки (файл общий): ролик видит свои материалы.
         for asset in StudioAsset.objects.filter(pk__in=[i for i in ids if str(i).isdigit()]):
             if asset.project_id is None:
@@ -391,6 +402,9 @@ class StudioProjectDetailAPIView(APIView):
         if 'post_text' in data:
             project.post_text = str(data.get('post_text') or '').strip()[:5000]
             fields.append('post_text')
+        if 'series' in data:
+            project.series = str(data.get('series') or '').strip()[:120]
+            fields.append('series')
         if not fields:
             return _error('invalid_payload', 'нечего менять', http_status.HTTP_400_BAD_REQUEST)
         project.save(update_fields=fields + ['updated_at'])
@@ -561,4 +575,95 @@ class StudioPublishAPIView(_ProjectAction):
                 sp.запланировать(project, rows, None if text is None else str(text))
         except sp.PublishError as exc:
             return _error('not_publishable', str(exc), http_status.HTTP_409_CONFLICT)
+        return Response(project_to_dict(request, _project(project.pk), full=True))
+
+
+# ── студия в телефоне по макету (22.10.2026) ────────────────────────────────
+
+class StudioStopAPIView(_ProjectAction):
+    """POST …/stop/ — «Остановить» на экране «Собираем ролик».
+
+    Сценарий пишется → ролик помечается остановленным (готовую версию задача не
+    переиграет: её проверка статуса ниже). Версия в очереди или в сборке →
+    «Остановлено»; сборщику после этого сервер не даёт отчитываться (он
+    принимает только версию в сборке). Была прежняя готовая версия — ролик
+    возвращается к ней.
+    """
+    what = 'сборку останавливает'
+
+    def act(self, request, project, data):
+        from apps.tenant.marketer.models import StudioVersion
+        S = StudioProject.Status
+        v = project.current_version
+        if project.status not in (S.WRITING, S.ASKING, S.QUEUED, S.RENDERING):
+            return _error('not_busy', 'ролик сейчас не собирается', http_status.HTTP_409_CONFLICT)
+        if v is not None and v.status in (StudioVersion.Status.QUEUED, StudioVersion.Status.RENDERING) \
+                and project.status in (S.QUEUED, S.RENDERING):
+            v.status = StudioVersion.Status.FAILED
+            v.error = f'Остановлено: {_author(request.user)}'[:2000]
+            v.stage = 'Остановлено'
+            v.finished_at = timezone.now()
+            v.save(update_fields=['status', 'error', 'stage', 'finished_at', 'updated_at'])
+        прежняя = (project.versions.filter(status=StudioVersion.Status.READY)
+                   .exclude(pk=getattr(v, 'pk', None)).order_by('-number').first())
+        if прежняя is not None:
+            project.current_version = прежняя
+            project.status = S.READY
+            project.error = ''
+        else:
+            project.status = S.FAILED
+            project.error = 'Сборку остановили'
+        project.question = ''
+        project.save(update_fields=['current_version', 'status', 'error', 'question', 'updated_at'])
+        return Response(project_to_dict(request, _project(project.pk), full=True))
+
+
+class StudioSubmitPlanAPIView(_ProjectAction):
+    """POST …/submit-plan/ — «На согласование и в контент-план».
+
+    Ролик уходит на согласование с ПРЕДЛОЖЕННЫМ планом (ВК клип + пост и Телеграм
+    в свободный слот, сторис 6 с на следующий день). Ничего не публикуется, пока
+    согласующий не нажмёт «Опубликовать» (в пуше или на экране).
+    """
+    what = 'ролики отправляет на согласование'
+
+    def act(self, request, project, data):
+        if project.status != StudioProject.Status.READY:
+            return _error('not_ready', 'ролик ещё не собран', http_status.HTTP_409_CONFLICT)
+        project.proposed_plan = studio_mobile.propose_plan(project)
+        project.approval = StudioProject.Approval.WAITING
+        if data.get('post_text') is not None:
+            project.post_text = str(data.get('post_text') or '').strip()[:5000]
+        project.save(update_fields=['proposed_plan', 'approval', 'post_text', 'updated_at'])
+        studio_mobile.send_event_later(project, 'approval')
+        return Response(project_to_dict(request, _project(project.pk), full=True))
+
+
+class StudioPublishPlanAPIView(_ProjectAction):
+    """POST …/publish-plan/ {confirm: true} — «Опубликовать»: согласовать и поставить
+    предложенный план в публикацию. Посты выйдут сами в своё время."""
+    what = 'ролики публикует'
+
+    def act(self, request, project, data):
+        from apps.tenant.marketer import studio_publish as sp
+        if data.get('confirm') is not True:
+            return _error('confirm_required', 'нужно подтверждение публикации', http_status.HTTP_400_BAD_REQUEST)
+        if project.status != StudioProject.Status.READY:
+            return _error('not_ready', 'ролик ещё не собран', http_status.HTTP_409_CONFLICT)
+        rows = project.proposed_plan or studio_mobile.propose_plan(project)
+        уже = {(r.get('channel'), r.get('version')) for r in (project.publish_plan or [])
+               if r.get('status') in ('scheduled', 'published')}
+        номер = project.current_version.number if project.current_version else None
+        rows = [r for r in rows if (r.get('channel'), номер) not in уже]
+        project.approval = StudioProject.Approval.APPROVED
+        project.approved_by = _author(request.user)
+        project.approved_at = timezone.now()
+        project.save(update_fields=['approval', 'approved_by', 'approved_at', 'updated_at'])
+        try:
+            if rows:
+                sp.запланировать(project, rows, None)
+        except sp.PublishError as exc:
+            return _error('not_publishable', str(exc), http_status.HTTP_409_CONFLICT)
+        project.proposed_plan = []
+        project.save(update_fields=['proposed_plan', 'updated_at'])
         return Response(project_to_dict(request, _project(project.pk), full=True))

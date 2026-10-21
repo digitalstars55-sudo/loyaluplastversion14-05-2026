@@ -362,5 +362,26 @@ def studio_script_task(self, schema_name: str, project_id: int, instruction: str
             project.error = (str(exc) if isinstance(exc, studio.StudioError)
                              else 'ИИ не ответил, попробуйте ещё раз')[:1000]
             project.save(update_fields=['status', 'error', 'updated_at'])
+            if project.status == StudioProject.Status.FAILED:
+                studio_event_task.delay(schema_name, project.pk, 'failed')
             return 'failed'
+        project.refresh_from_db()
+        if project.status == StudioProject.Status.ASKING:
+            studio_event_task.delay(schema_name, project.pk, 'asking')
         return project.status
+
+
+@shared_task(bind=True, ignore_result=True)
+def studio_event_task(self, schema_name: str, project_id: int, event: str) -> bool:
+    """Событие ролика → CheckUp (пуш автору или согласующим). Реле не ответило — без повтора."""
+    from django_tenants.utils import schema_context
+
+    from apps.tenant.marketer import studio_mobile
+    from apps.tenant.marketer.models import StudioProject
+
+    with schema_context(schema_name):
+        project = (StudioProject.objects.select_related('current_version')
+                   .filter(pk=project_id).first())
+        if project is None:
+            return False
+        return studio_mobile.send_event(project, event)

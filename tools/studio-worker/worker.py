@@ -113,6 +113,54 @@ def poster_of(mp4: Path, at: float) -> Path:
     return dest
 
 
+def _ожидаемая_длина(job: dict, fmt: str) -> float | None:
+    if fmt == '6s':
+        return compose.SHORT_BODY + compose.SHORT_FINAL
+    scn = job.get('scenario') or {}
+    сцены = scn.get('scenes') or []
+    if not сцены:
+        return None
+    return sum(float(x.get('length') or 0) for x in сцены) + float((scn.get('final') or {}).get('length') or 0)
+
+
+def check(job: dict, fmt: str, mp4: Path, meta: dict, with_music: bool) -> list[str]:
+    """«Проверка: звук, стыки, поля» (22.10.2026): размер кадра, длина, звук без
+    перегруза, нет чёрных провалов (стыки) и чёрных полос по краям (поля).
+    Пусто — всё в порядке; иначе — что не так, словами."""
+    беды = []
+    w, h = compose.FORMATS[fmt]
+    if (meta.get('width'), meta.get('height')) != (w, h):
+        беды.append(f'{fmt}: кадр {meta.get("width")}×{meta.get("height")} вместо {w}×{h}')
+    ждём = _ожидаемая_длина(job, fmt)
+    if ждём and abs(meta.get('duration', 0) - ждём) > 1.5:
+        беды.append(f'{fmt}: длина {meta.get("duration")} с вместо ~{ждём:.1f} с')
+    res = subprocess.run(['ffmpeg', '-hide_banner', '-nostats', '-i', str(mp4), '-vf',
+                          'blackdetect=d=1.0:pix_th=0.03,cropdetect=limit=16:round=2:reset=0',
+                          '-af', 'volumedetect', '-f', 'null', '-'],
+                         capture_output=True, text=True, timeout=300)
+    лог = res.stderr or ''
+    if 'black_start' in лог:
+        беды.append(f'{fmt}: чёрный провал на стыке дольше секунды')
+    crops = [ln.rsplit('crop=', 1)[1].split()[0] for ln in лог.splitlines() if 'crop=' in ln]
+    if crops:
+        try:
+            cw, ch = (int(x) for x in crops[-1].split(':')[:2])
+            if cw < w * 0.9 or ch < h * 0.9:
+                беды.append(f'{fmt}: чёрные поля по краям ({cw}×{ch} из {w}×{h})')
+        except ValueError:
+            pass
+    пик = next((ln.split('max_volume:')[1].strip() for ln in лог.splitlines() if 'max_volume:' in ln), '')
+    if with_music and not пик:
+        беды.append(f'{fmt}: нет звука, хотя музыка в ролике есть')
+    elif пик:
+        try:
+            if float(пик.split()[0]) > -0.1:
+                беды.append(f'{fmt}: звук перегружен (пик {пик})')
+        except ValueError:
+            pass
+    return беды
+
+
 def prepare(job: dict, root: Path, fetch) -> dict:
     """Папка проекта: assets/, fonts/, gsap. fetch(url_path, dest) скачивает файл."""
     (root / 'assets').mkdir(parents=True, exist_ok=True)
@@ -168,6 +216,11 @@ def run_job(api: Api, job: dict):
         api.progress(job, 'Скачиваю материалы', 2)
         files = prepare(job, root, lambda url, dest: api.download(job, url, dest))
         results = render_all(job, root, files, lambda st, p: api.progress(job, st, p))
+        api.progress(job, 'Проверяю: звук, стыки, поля', 93)
+        музыка = 'music' in files and (job.get('scenario') or {}).get('music') != 'none'
+        беды = [b for fmt, mp4, _p, meta in results for b in check(job, fmt, mp4, meta, музыка)]
+        if беды:
+            raise RuntimeError('проверка не прошла: ' + '; '.join(беды))
         api.progress(job, 'Отправляю файлы', 96)
         for fmt, mp4, poster, meta in results:
             api.output(job, fmt, mp4, poster, meta)

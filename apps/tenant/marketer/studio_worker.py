@@ -256,5 +256,8 @@ class StudioDoneView(_VersionView):
             StudioProject.objects.filter(pk=version.project_id).update(
                 status=StudioProject.Status.FAILED if error else StudioProject.Status.READY,
                 error=('Сборка: ' + error)[:1000] if error else '', updated_at=now)
+            # Пуш автору «готово» / «не собралось» (22.10.2026) — после коммита, задачей.
+            from apps.tenant.marketer.studio_mobile import send_event_later
+            send_event_later(version.project, 'failed' if error else 'ready')
         log.info('studio done v%s: %s', version.pk, error or 'ok')
         return JsonResponse({'ok': True})
