@@ -39,6 +39,11 @@ log = logging.getLogger(__name__)
 
 FORMATS = ('9x16', '1x1', '16x9', '6s')
 MOTIONS = ('zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'none')
+# Монтаж «круче монтажника» (владелец 23.10.2026: «у него должны быть всевозможные скиллы»).
+TRANSITIONS = ('cut', 'fade', 'zoom', 'slide_left', 'slide_up', 'whip', 'flash', 'blur')
+CAPTION_STYLES = ('plate', 'pop', 'words', 'big')
+CAPTION_POSITIONS = ('bottom', 'center', 'top')
+GRADES = ('none', 'warm', 'cinematic', 'bright', 'vivid', 'bw')
 MIN_SCENE = 0.6
 MAX_SCENE = 8.0
 MAX_SCENES = 24
@@ -151,15 +156,35 @@ _PLAN_PROMPT = """Ты — режиссёр монтажа коротких ро
 9. Сцен столько, сколько даёт хороший материал: лучше 8 сильных, чем 20 случайных. Один и тот же кусок не повторяй.
 10. Есть БРИФ РЕЖИССЁРА — выполняй его.
 6. Сумма "length" всех сцен = длине ролика (±0,5 с), не считая финала. Финал — отдельно, 2–3 с.
-7. "motion" для фото: zoom_in, zoom_out, pan_left, pan_right; для видео — none.
+7. "motion" — движение камеры по кадру: zoom_in, zoom_out, pan_left, pan_right, none. Для фото обязательно; для
+   видео — лёгкий наезд оживляет статичный кадр, на динамичном видео — none.
+
+МОНТАЖНЫЕ ПРИЁМЫ (ты — монтажёр уровня топовых Reels/TikTok, используй их со смыслом, не всё сразу):
+- "transition" у сцены — как она входит: cut (резкая склейка, по умолчанию, держит ритм), fade (мягкое
+  растворение — настроение, вкус), zoom (влёт с увеличением — акцент, «вау»), slide_left / slide_up (смена
+  темы, «а ещё…»), whip (быстрый смаз — энергия), flash (белая вспышка — удар, раскрытие блюда), blur
+  (размытие — мягкий переход времени). «Красивый переход» = разнообразные осмысленные переходы, не один и тот же.
+- "caption_pos" у сцены: bottom / center / top — титр не должен закрывать главное в кадре (по раскадровке).
+- "caption_style" ролика: plate (плашка снизу — спокойно), pop (выпрыгивает с отскоком — энергично),
+  words (слова появляются по одному — кинетика), big (крупно по центру — хук и акценты).
+- "grade" ролика — цвет: none, warm (тёплый, еда), cinematic (кино, контраст и виньетка), bright (светлый,
+  кофейня), vivid (сочный), bw (чёрно-белый). Еду обычно warm или vivid.
+- "sfx": true — звуки на переходах (вжух, удар) поверх музыки; для динамичного ролика.
+- Хук: первые 1–1,5 с — самый сильный кадр, часто с zoom или flash и титром-интригой (big или pop).
+- Ритм: склейки в такт — короткие 0,6–1,2 с в динамике, 2–3 с на «вкусном» кадре; финал не обрывай.
 
 Ответ — строго JSON без markdown, ОДИН из двух:
 {"question": "что уточнить"}
 или
-{"scenario": {"title": "...", "scenes": [{"asset_id": 1, "start": 0.0, "length": 1.2, "caption": "", "motion": "none"}], "final": {"offer": "одно предложение", "address": "адрес"}, "music": "brand" | "none", "post": "текст поста к ролику для ВК и Телеграма: 200–600 знаков, по голосу бренда из базы знаний, те же факты, что в ролике"}}"""
+{"scenario": {"title": "...", "scenes": [{"asset_id": 1, "start": 0.0, "length": 1.2, "caption": "", "motion": "none", "transition": "cut", "caption_pos": "bottom"}], "final": {"offer": "одно предложение", "address": "адрес"}, "music": "brand" | "none", "caption_style": "plate", "grade": "warm", "sfx": false, "post": "текст поста к ролику для ВК и Телеграма: 200–600 знаков, по голосу бренда из базы знаний, те же факты, что в ролике"}}"""
 
 _EDIT_PROMPT = """Ты — режиссёр монтажа коротких роликов кафе. Тебе дают сценарий ролика (JSON) и правку владельца словами.
 Внеси ТОЛЬКО эту правку, остальное оставь как было. Факты — только из базы знаний и прежнего сценария; новых цен не придумывай.
+Ты умеешь всё, что в сценарии: переход у каждой сцены ("transition": cut, fade, zoom, slide_left, slide_up, whip, flash,
+blur), движение ("motion": zoom_in, zoom_out, pan_left, pan_right, none — и для видео), место титра ("caption_pos":
+bottom, center, top), стиль титров ролика ("caption_style": plate, pop, words, big), цвет ("grade": none, warm,
+cinematic, bright, vivid, bw), звуки на переходах ("sfx": true/false), музыку, порядок и длину сцен, финал.
+«Красивые переходы / анимацию / динамичнее» — делай этими средствами, разнообразно и со смыслом. Не отказывай.
 Если правка касается одной сцены (указан номер) — меняй только её.
 Если правка похожа на постоянное правило бренда (размер логотипа, музыка, шрифт, цвет плашек, «всегда/никогда»), предложи запомнить её одной короткой фразой в "remember"; иначе "remember": "".
 Если правку нельзя выполнить без факта, которого нет, — {"question": "..."}.
@@ -350,6 +375,8 @@ def clean_scenario(raw: dict, assets, duration: int, address: str = '') -> dict:
             'length': round(length, 2),
             'caption': str(item.get('caption') or '').strip()[:80],
             'motion': motion if asset else 'none',
+            'transition': item.get('transition') if item.get('transition') in TRANSITIONS else 'cut',
+            'caption_pos': item.get('caption_pos') if item.get('caption_pos') in CAPTION_POSITIONS else 'bottom',
         })
     if not scenes:
         raise StudioError('в сценарии нет ни одной сцены из ваших материалов')
@@ -365,6 +392,9 @@ def clean_scenario(raw: dict, assets, duration: int, address: str = '') -> dict:
         },
         'music': 'none' if raw.get('music') == 'none' else 'brand',
         'post': str(raw.get('post') or '').strip()[:1500],
+        'caption_style': raw.get('caption_style') if raw.get('caption_style') in CAPTION_STYLES else 'plate',
+        'grade': raw.get('grade') if raw.get('grade') in GRADES else 'none',
+        'sfx': bool(raw.get('sfx')),
     }
 
 

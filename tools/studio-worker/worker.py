@@ -217,6 +217,30 @@ def shrink_video(src: Path) -> Path:
     return out
 
 
+def make_sfx(assets: Path) -> dict:
+    """Звуки переходов без сторонних библиотек: «вжух» из розового шума, «удар» — низкий тон с шумом."""
+    out = {}
+    рецепты = {
+        'sfx_whoosh': ('whoosh.mp3', ['-f', 'lavfi', '-i', 'anoisesrc=d=0.6:c=pink:a=0.6',
+                                      '-af', 'highpass=f=350,lowpass=f=7000,afade=t=in:d=0.28,'
+                                             'afade=t=out:st=0.3:d=0.3,volume=1.6']),
+        'sfx_hit': ('hit.mp3', ['-f', 'lavfi', '-i', 'sine=f=70:d=0.5', '-f', 'lavfi', '-i',
+                                'anoisesrc=d=0.12:c=white:a=0.4',
+                                '-filter_complex', '[0]afade=t=out:st=0.05:d=0.45,volume=2.2[a];'
+                                                   '[1]lowpass=f=2500,afade=t=out:d=0.12[b];'
+                                                   '[a][b]amix=inputs=2:normalize=0']),
+    }
+    for key, (name, args) in рецепты.items():
+        dest = assets / name
+        res = subprocess.run(['ffmpeg', '-y', '-v', 'error', *args, '-ar', '44100', str(dest)],
+                             capture_output=True, text=True, timeout=30)
+        if res.returncode == 0 and dest.exists():
+            out[key] = f'assets/{name}'
+        else:
+            log('sfx failed', name, (res.stderr or '')[-200:])
+    return out if len(out) == 2 else {}
+
+
 def prepare(job: dict, root: Path, fetch) -> dict:
     """Папка проекта: assets/, fonts/, gsap. fetch(url_path, dest) скачивает файл."""
     (root / 'assets').mkdir(parents=True, exist_ok=True)
@@ -235,6 +259,8 @@ def prepare(job: dict, root: Path, fetch) -> dict:
         if a['kind'] == 'video':
             rel = str(shrink_video(root / rel).relative_to(root))
         files[f"asset-{a['id']}"] = rel
+    if (job.get('scenario') or {}).get('sfx'):
+        files.update(make_sfx(root / 'assets'))
     for key, url in (job.get('brand') or {}).items():
         rel = f'assets/{key}{".mp3" if key == "music" else ".png"}'
         try:
