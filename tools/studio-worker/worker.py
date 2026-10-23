@@ -51,6 +51,7 @@ SHRINK_TIMEOUT = 10 * 60
 # Сколько раз сборщик может умереть на одном ролике (нехватка памяти, убит), прежде чем ролик
 # получит честную ошибку. Без этого сервер возвращал его в очередь бесконечно (26 падений 23.10).
 MAX_ATTEMPTS = 2
+DOWNLOAD_ATTEMPTS = 5  # обрыв скачивания материала — не падение сборки
 EXT = {'video': '.mp4', 'photo': '.jpg', 'music': '.mp3'}
 
 
@@ -71,12 +72,29 @@ class Api:
     def _v(self, job, tail):
         return f"{API}/api/v1/studio-worker/{job['schema']}/{job['version_id']}/{tail}"
 
-    def download(self, job, url_path, dest: Path):
-        with self.s.get(API + url_path, stream=True, timeout=120) as r:
-            r.raise_for_status()
-            with open(dest, 'wb') as f:
-                for chunk in r.iter_content(1 << 20):
-                    f.write(chunk)
+    def download(self, job, url_path, dest: Path, attempts: int = DOWNLOAD_ATTEMPTS):
+        """Скачать материал. Канал до сервера LoyalUP рвётся на больших видео (23.10:
+        «IncompleteRead 27 из 106 МБ» — и ролик падал целиком), поэтому повторяем: с места
+        обрыва, если сервер понимает Range (206), иначе заново."""
+        for n in range(1, attempts + 1):
+            have = dest.stat().st_size if dest.exists() else 0
+            headers = {'Range': f'bytes={have}-'} if have else {}
+            try:
+                with self.s.get(API + url_path, stream=True, timeout=120, headers=headers) as r:
+                    if have and r.status_code == 416:
+                        return  # уже целиком
+                    r.raise_for_status()
+                    mode = 'ab' if have and r.status_code == 206 else 'wb'
+                    with open(dest, mode) as f:
+                        for chunk in r.iter_content(1 << 20):
+                            f.write(chunk)
+                return
+            except (requests.ConnectionError, requests.Timeout,
+                    requests.exceptions.ChunkedEncodingError) as e:
+                if n == attempts:
+                    raise
+                log('download retry', n, url_path, e)
+                time.sleep(min(30, 3 * n))
 
     def progress(self, job, stage, pct):
         try:
