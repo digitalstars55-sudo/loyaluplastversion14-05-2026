@@ -47,6 +47,10 @@ WORK = Path(os.environ.get('STUDIO_WORK_DIR', Path.home() / '.local/state/studio
 NAME = os.environ.get('STUDIO_WORKER_NAME', socket.gethostname())
 IDLE_SLEEP = 15
 RENDER_TIMEOUT = 20 * 60
+SHRINK_TIMEOUT = 10 * 60
+# Сколько раз сборщик может умереть на одном ролике (нехватка памяти, убит), прежде чем ролик
+# получит честную ошибку. Без этого сервер возвращал его в очередь бесконечно (26 падений 23.10).
+MAX_ATTEMPTS = 2
 EXT = {'video': '.mp4', 'photo': '.jpg', 'music': '.mp3'}
 
 
@@ -161,6 +165,27 @@ def check(job: dict, fmt: str, mp4: Path, meta: dict, with_music: bool) -> list[
     return беды
 
 
+def shrink_video(src: Path) -> Path:
+    """Видео с телефона → 1080 по длинной стороне, H.264, 30 к/с, ключевой кадр раз в секунду.
+
+    Рендер держит декодер на каждую сцену; 4K HEVC с iPhone на 20 сценах не влезал в 4 ГБ службы —
+    сборщик падал от нехватки памяти и ролик висел на «Собираю 5%» (23.10.2026). Поворот iPhone
+    ffmpeg применяет сам. Не вышло — отдаём исходник: пусть рендер попробует.
+    """
+    out = src.with_name(src.stem + '-1080.mp4')
+    res = subprocess.run(
+        ['ffmpeg', '-y', '-v', 'error', '-i', str(src),
+         '-vf', 'scale=w=min(1920\\,iw):h=min(1920\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2,fps=30',
+         '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-g', '30', '-pix_fmt', 'yuv420p',
+         '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-threads', '2', str(out)],
+        capture_output=True, text=True, timeout=SHRINK_TIMEOUT)
+    if res.returncode != 0 or not out.exists() or out.stat().st_size == 0:
+        log('shrink failed, using original', src.name, (res.stderr or '').strip()[-300:])
+        return src
+    src.unlink(missing_ok=True)
+    return out
+
+
 def prepare(job: dict, root: Path, fetch) -> dict:
     """Папка проекта: assets/, fonts/, gsap. fetch(url_path, dest) скачивает файл."""
     (root / 'assets').mkdir(parents=True, exist_ok=True)
@@ -172,6 +197,8 @@ def prepare(job: dict, root: Path, fetch) -> dict:
         ext = Path(a.get('name') or '').suffix.lower() or EXT.get(a['kind'], '')
         rel = f"assets/a{a['id']}{ext}"
         fetch(a['url'], root / rel)
+        if a['kind'] == 'video':
+            rel = str(shrink_video(root / rel).relative_to(root))
         files[f"asset-{a['id']}"] = rel
     for key, url in (job.get('brand') or {}).items():
         rel = f'assets/{key}{".mp3" if key == "music" else ".png"}'
@@ -207,11 +234,34 @@ def render_all(job: dict, root: Path, files: dict, report=lambda stage, pct: Non
     return out
 
 
+def _attempt(job: dict) -> int:
+    """Номер попытки этого ролика у этого сборщика; файл переживает гибель процесса."""
+    path = WORK / 'attempts.json'
+    try:
+        счёт = json.loads(path.read_text())
+    except (OSError, ValueError):
+        счёт = {}
+    ключ = f"{job['schema']}-v{job['version_id']}"
+    счёт[ключ] = счёт.get(ключ, 0) + 1
+    path.write_text(json.dumps(dict(list(счёт.items())[-200:])))
+    return счёт[ключ]
+
+
 def run_job(api: Api, job: dict):
     root = WORK / f"{job['schema']}-v{job['version_id']}"
     if root.exists():
         shutil.rmtree(root)
     log('job', job['schema'], job['version_id'], job.get('title'))
+    попытка = _attempt(job)
+    if попытка > MAX_ATTEMPTS:
+        log('giving up after', попытка - 1, 'crashes', job['version_id'])
+        try:
+            api.done(job, f'Сборщик {попытка - 1} раза не справился с этим роликом (не хватило памяти). '
+                          'Попробуйте короче ролик или меньше материалов; мы уже знаем об ошибке.')
+        except Exception as e:
+            log('could not report failure', e)
+        shutil.rmtree(root, ignore_errors=True)
+        return
     try:
         api.progress(job, 'Скачиваю материалы', 2)
         files = prepare(job, root, lambda url, dest: api.download(job, url, dest))
