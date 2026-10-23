@@ -692,3 +692,25 @@ class StudioPublishPlanAPIView(_ProjectAction):
         project.proposed_plan = []
         project.save(update_fields=['proposed_plan', 'updated_at'])
         return Response(project_to_dict(request, _project(project.pk), full=True))
+
+
+class StudioImproveAPIView(APIView):
+    """POST marketer/studio/improve/ {text, kind?} — «Улучшить»: идея в двух словах → бриф ролика.
+
+    Владелец 23.10.2026: «написал идею, нажал — ИИ обернул в промт, чтобы в конце вышла пушка».
+    Ничего не собирает: возвращает текст, человек правит и жмёт «Собрать».
+    """
+    permission_classes = PERMS
+
+    def post(self, request):
+        if not _may_write(request.user):
+            return _deny('ролики делает')
+        text = str((request.data or {}).get('text') or '').strip()
+        if not text:
+            return _error('invalid_payload', 'Напишите идею хотя бы парой слов', http_status.HTTP_400_BAD_REQUEST)
+        try:
+            out = studio.improve(text, str((request.data or {}).get('kind') or ''))
+        except Exception as exc:  # noqa: BLE001 — модель недоступна: человек пишет сам
+            log.warning('studio improve: %s', exc)
+            return _error('ai_unavailable', 'ИИ сейчас не ответил — попробуйте ещё раз', http_status.HTTP_502_BAD_GATEWAY)
+        return Response({'text': out})

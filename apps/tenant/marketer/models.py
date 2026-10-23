@@ -396,6 +396,10 @@ class StudioProject(TimeStampedModel):
         return self.title
 
 
+SEEN_BUSY = '…'      # сборщик взял видео посмотреть
+SEEN_FAILED = '-'    # посмотреть не вышло — сценарий пишется вслепую
+
+
 class StudioAsset(TimeStampedModel):
     """Материал: видео, фото, логотип, музыка. Без проекта — библиотека сети."""
 
@@ -412,6 +416,10 @@ class StudioAsset(TimeStampedModel):
     duration = models.FloatField('Длительность, с', null=True, blank=True)
     size = models.PositiveBigIntegerField('Размер, байт', default=0)
     created_by = models.CharField('Кто добавил', max_length=150, blank=True)
+    # Раскадровка видео (23.10.2026): что на какой секунде, лучшие моменты и брак — по листу
+    # кадров от сборщика. Сценарий режет по ней, а не вслепую. «…» — смотрит, «-» — не вышло.
+    seen = models.TextField('Раскадровка', blank=True)
+    seen_at = models.DateTimeField('Когда посмотрел', null=True, blank=True)
 
     class Meta:
         verbose_name = 'Материал студии'

@@ -32,6 +32,7 @@ from apps.tenant.marketer.models import (
     StudioStyle,
     StudioStyleVersion,
     StudioVersion,
+    SEEN_BUSY, SEEN_FAILED,
 )
 
 log = logging.getLogger(__name__)
@@ -145,7 +146,10 @@ _PLAN_PROMPT = """Ты — режиссёр монтажа коротких ро
 2. Если для ролика не хватает факта, без которого он врёт (цена, условие акции, дата), — НЕ пиши сценарий, задай ОДИН короткий вопрос: {"question": "..."}.
 3. Используй только переданные материалы (по их id). Видео режь кусками: "start" — с какой секунды файла, "length" — сколько секунд в ролике. Фото — "start": 0.
 4. Ритм склеек, титры, финал, цвета и запреты — из СТИЛЯ БРЕНДА. Правила «Запомнено для бренда» обязательны.
-5. Титр — до 6 слов, без хэштегов и эмодзи. Не на каждой сцене.
+5. Титр — до 6 слов, без хэштегов и эмодзи. Не на каждой сцене. Титр говорит о деле (блюдо, вкус, повод, предложение из базы знаний) — без пустых фраз вроде «Сделайте паузу».
+8. Если у видео есть РАСКАДРОВКА (что на какой секунде) — бери лучшие моменты по ней, брак (размыто, темно, пальцы, пустой кадр) не бери. Первая сцена — самый аппетитный или неожиданный кадр.
+9. Сцен столько, сколько даёт хороший материал: лучше 8 сильных, чем 20 случайных. Один и тот же кусок не повторяй.
+10. Есть БРИФ РЕЖИССЁРА — выполняй его.
 6. Сумма "length" всех сцен = длине ролика (±0,5 с), не считая финала. Финал — отдельно, 2–3 с.
 7. "motion" для фото: zoom_in, zoom_out, pan_left, pan_right; для видео — none.
 
@@ -165,6 +169,98 @@ _EDIT_PROMPT = """Ты — режиссёр монтажа коротких ро
 или {"question": "..."}"""
 
 
+_DIRECTOR_PROMPT = """Ты — режиссёр коротких роликов кафе и ресторанов (ВКонтакте, Телеграм, сторис).
+Владелец пишет идею в двух словах — ты превращаешь её в чёткий бриф для монтажа, чтобы вышел сильный ролик.
+Опирайся только на материалы (их раскадровку) и базу знаний сети; факты (цены, акции) не выдумывай.
+Бриф по-русски, 6–9 коротких строк:
+Цель: что зритель должен почувствовать и сделать.
+Хук (0–1,5 с): какой кадр первым (материал и секунды) и почему цепляет.
+Сюжет: последовательность сцен по смыслу (какие материалы и моменты).
+Ритм и переходы: где быстрее, где задержаться; эффекты без перегруза.
+Титры: 2–4 титра по делу, о чём каждый.
+Музыка и настроение.
+Финал: предложение из базы знаний и призыв.
+Пожелание владельца — главное: не спорь с ним, а доводи до лучшего исполнения."""
+
+
+def direct(project: StudioProject, assets, snap: dict, kb: str) -> str:
+    """Бриф режиссёра из идеи владельца (владелец 23.10.2026: «написал идею — ИИ обернул в промт, и вышла
+    пушка»). Ошибка модели не роняет сценарий — он пишется по заданию как раньше."""
+    from apps.tenant.marketer.generator import _ask
+    parts = [f'РОЛИК: {project.get_kind_display()}, длина {project.duration} с.',
+             'ИДЕЯ ВЛАДЕЛЬЦА:\n' + (project.brief.strip()[:3000] or '(нет — реши сам)'),
+             'МАТЕРИАЛЫ:\n' + _asset_lines(assets), 'СТИЛЬ БРЕНДА:\n' + _style_text(snap)]
+    if kb.strip():
+        parts.append('БАЗА ЗНАНИЙ СЕТИ:\n' + kb)
+    try:
+        raw, _model = _ask(_DIRECTOR_PROMPT, '\n\n'.join(parts), 900)
+    except Exception as e:  # noqa: BLE001
+        log.warning('studio: бриф режиссёра не составлен: %s', e)
+        return ''
+    return (raw or '').strip()[:2500]
+
+
+def improve(text: str, kind: str = '') -> str:
+    """Кнопка «Улучшить»: идея словами → задание для ролика (без сборки)."""
+    from apps.tenant.marketer.generator import _ask
+    kb = _kb_text()
+    msg = (f'ВИД: {kind or "ролик"}\nИДЕЯ ВЛАДЕЛЬЦА:\n{text.strip()[:2000]}'
+           + (f'\n\nБАЗА ЗНАНИЙ СЕТИ:\n{kb}' if kb.strip() else ''))
+    raw, _model = _ask(_DIRECTOR_PROMPT + '\nВерни только бриф, без вступлений.', msg, 900)
+    return (raw or '').strip()[:2500]
+
+
+_SEE_PROMPT = """Перед тобой лист кадров одного видео для ролика кафе: кадры слева направо, сверху вниз,
+на каждом подписана секунда видео. Напиши раскадровку по-русски, строками «с–с: что в кадре» (крупность,
+блюдо/люди/действие, движение камеры). Отметь брак: размыто, темно, пальцы на объективе, пустой кадр.
+Последней строкой: «Лучшее: с–с, с–с» — самые аппетитные, живые или неожиданные моменты.
+Не больше 12 строк, без вступлений."""
+
+
+def describe_sheet(jpeg: bytes, times: list[float], duration: float) -> str:
+    """Лист кадров от сборщика → раскадровка видео (модель со зрением)."""
+    import base64
+    import os
+    from django.conf import settings
+    from apps.shared.ai import openai_compat as anthropic
+    from apps.shared.ai.usage import log_usage
+    api_key = getattr(settings, 'OPENAI_API_KEY', None)
+    if not api_key:
+        raise RuntimeError('OPENAI_API_KEY не задан')
+    base_url = os.getenv('OPENAI_BASE_URL', '')
+    client = anthropic.Anthropic(api_key=api_key, base_url=base_url) if base_url else anthropic.Anthropic(api_key=api_key)
+    from apps.tenant.marketer.generator import DEFAULT_MODEL
+    подписи = ', '.join(f'{t:.1f}' for t in times)
+    message = client.messages.create(
+        model=getattr(settings, 'MARKETER_AI_MODEL', DEFAULT_MODEL), max_tokens=700, system=_SEE_PROMPT,
+        messages=[{'role': 'user', 'content': [
+            {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg',
+                                         'data': base64.b64encode(jpeg).decode()}},
+            {'type': 'text', 'text': f'Длина видео {duration:.1f} с. Секунды кадров по порядку: {подписи}.'},
+        ]}])
+    log_usage('marketer', message)
+    текст = ''.join(getattr(b, 'text', '') for b in message.content if getattr(b, 'type', '') == 'text')
+    return текст.strip()[:2000]
+
+
+#: Сколько сценарий ждёт раскадровку новых видео от сборщика.
+SEEN_WAIT_SECONDS = 120
+
+
+def wait_seen(assets, timeout: float = SEEN_WAIT_SECONDS, tick: float = 3.0) -> list:
+    """Ждёт, пока сборщик «посмотрит» новые видео. Не дождался — сценарий пишется вслепую, как раньше."""
+    import time
+    from django.conf import settings
+    if not getattr(settings, 'STUDIO_WORKER_TOKEN', ''):
+        return list(assets)            # сборщика нет — смотреть некому
+    ids = [a.pk for a in assets if a.kind == StudioAsset.Kind.VIDEO and a.seen in ('', SEEN_BUSY)]
+    end = time.monotonic() + timeout
+    while ids and time.monotonic() < end:
+        time.sleep(tick)
+        ids = list(StudioAsset.objects.filter(pk__in=ids, seen__in=('', SEEN_BUSY)).values_list('pk', flat=True))
+    return list(StudioAsset.objects.filter(pk__in=[a.pk for a in assets]).order_by('pk'))
+
+
 def _assets_for(project: StudioProject) -> list[StudioAsset]:
     return list(StudioAsset.objects.filter(project=project).order_by('pk'))
 
@@ -174,6 +270,9 @@ def _asset_lines(assets) -> str:
     for a in assets:
         d = f', {a.duration:.1f} с' if a.duration else ''
         rows.append(f'- id {a.pk}: {a.get_kind_display().lower()}{d} — {a.title or "без подписи"}')
+        seen = (a.seen or '').strip()
+        if seen and seen not in (SEEN_BUSY, SEEN_FAILED):
+            rows.append('  РАСКАДРОВКА:\n' + '\n'.join('    ' + r for r in seen.splitlines()))
     return '\n'.join(rows) or '- материалов нет: ролик только из титров на фоне цветов бренда'
 
 
@@ -348,12 +447,15 @@ def plan(project: StudioProject) -> StudioProject:
     """Первый сценарий (или после ответа на вопрос). Итог — версия в очереди или вопрос."""
     style = style_obj()
     snap = snapshot(style)
-    assets = _assets_for(project)
+    assets = wait_seen(_assets_for(project))
     kb = _kb_text()
+    бриф = direct(project, assets, snap, kb)
     parts = [
         f'РОЛИК: {project.get_kind_display()}, длина {project.duration} с.',
         'ЗАДАНИЕ ВЛАДЕЛЬЦА:\n' + project.brief.strip()[:3000],
     ]
+    if бриф:
+        parts.append('БРИФ РЕЖИССЁРА:\n' + бриф)
     if project.answer.strip():
         parts.append(f'ТЫ СПРАШИВАЛ: {project.question}\nОТВЕТ ВЛАДЕЛЬЦА: {project.answer.strip()[:1000]}')
     parts += ['МАТЕРИАЛЫ:\n' + _asset_lines(assets), 'СТИЛЬ БРЕНДА:\n' + _style_text(snap)]
@@ -372,7 +474,9 @@ def plan(project: StudioProject) -> StudioProject:
                              + '. Какую цену поставить в ролик — или убрать её?')
     if not scn['title']:
         scn['title'] = project.title
-    _new_version(project, scn, changelog=['Первая версия по заданию'])
+    if бриф:
+        scn['director'] = бриф
+    _new_version(project, scn, changelog=['Первая версия по брифу режиссёра' if бриф else 'Первая версия по заданию'])
     return project
 
 
@@ -385,7 +489,9 @@ def edit(project: StudioProject, instruction: str, scene: int | None = None, by:
     snap = snapshot(style_obj())
     kb = _kb_text()
     parts = [
-        'СЦЕНАРИЙ:\n' + json.dumps(base.scenario, ensure_ascii=False),
+        'СЦЕНАРИЙ:\n' + json.dumps({k: v for k, v in base.scenario.items() if k != 'director'}, ensure_ascii=False),
+        *(['БРИФ РЕЖИССЁРА (держись его, если правка не говорит иное):\n' + base.scenario['director']]
+          if base.scenario.get('director') else []),
         'ПРАВКА ВЛАДЕЛЬЦА' + (f' (только сцена {scene})' if scene else '') + ':\n' + instruction.strip()[:2000],
         'МАТЕРИАЛЫ:\n' + _asset_lines(assets),
         'СТИЛЬ БРЕНДА:\n' + _style_text(snap),
@@ -412,6 +518,8 @@ def edit(project: StudioProject, instruction: str, scene: int | None = None, by:
         return _set_question(project, 'В меню нет цены ' + ', '.join(_fmt_price(p) for p in bad)
                              + '. Какую цену поставить в ролик — или убрать её?')
     scn['title'] = scn['title'] or base.scenario.get('title') or project.title
+    if base.scenario.get('director'):
+        scn['director'] = base.scenario['director']
     changelog = [str(c).strip()[:200] for c in (data.get('changelog') or []) if str(c).strip()]
     _new_version(project, scn, instruction=instruction, scene=scene,
                  changelog=changelog or [instruction.strip()[:200]],

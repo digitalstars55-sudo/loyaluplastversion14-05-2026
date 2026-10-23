@@ -261,3 +261,100 @@ class StudioDoneView(_VersionView):
             send_event_later(version.project, 'failed' if error else 'ready')
         log.info('studio done v%s: %s', version.pk, error or 'ok')
         return JsonResponse({'ok': True})
+
+
+# ── Раскадровка (23.10.2026): сборщик «смотрит» новые видео ─────────────────
+#
+#   POST /api/v1/studio-worker/see/claim/                         → видео, которое ещё не смотрели
+#   GET  /api/v1/studio-worker/see/<схема>/<материал>/file/        → скачать его
+#   POST /api/v1/studio-worker/see/<схема>/<материал>/             multipart sheet (лист кадров), times
+#
+# Сценарий раньше резал видео вслепую: ИИ знал только длину файла. Теперь сборщик
+# делает лист из ~12 кадров с секундами, ИИ по нему пишет раскадровку, сценарий
+# ждёт её до двух минут (`studio.wait_seen`).
+
+SEE_STALE = timedelta(minutes=10)
+SEE_FRESH = timedelta(days=2)
+MAX_SHEET = 8 * 1024 * 1024
+
+
+def see_claim_one(schema: str):
+    from apps.tenant.marketer.models import SEEN_BUSY, StudioAsset
+    with schema_context(schema):
+        now = timezone.now()
+        StudioAsset.objects.filter(seen=SEEN_BUSY, seen_at__lt=now - SEE_STALE).update(seen='')
+        with transaction.atomic():
+            asset = (StudioAsset.objects.select_for_update(skip_locked=True)
+                     .filter(kind=StudioAsset.Kind.VIDEO, seen='', created_at__gte=now - SEE_FRESH)
+                     .order_by('-created_at').first())
+            if asset is None:
+                return None
+            asset.seen, asset.seen_at = SEEN_BUSY, now
+            asset.save(update_fields=['seen', 'seen_at'])
+        return {'schema': schema, 'asset_id': asset.pk, 'duration': asset.duration,
+                'url': f'/api/v1/studio-worker/see/{schema}/{asset.pk}/file/',
+                'name': asset.file.name.rsplit('/', 1)[-1]}
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class StudioSeeClaimView(View):
+    def post(self, request):
+        bad = _auth(request)
+        if bad:
+            return bad
+        for schema in _schemas():
+            try:
+                job = see_claim_one(schema)
+            except Exception:
+                log.exception('studio see claim failed in %s', schema)
+                continue
+            if job:
+                return JsonResponse({'see': job})
+        return JsonResponse({'see': None})
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class _SeeView(View):
+    """Токен, схема, материал «смотрится»."""
+
+    def dispatch(self, request, schema: str, aid: int, *args, **kwargs):
+        bad = _auth(request)
+        if bad:
+            return bad
+        if not _SCHEMA_RE.match(schema or '') or schema not in _schemas():
+            return _err(404, 'no_schema')
+        with schema_context(schema):
+            from apps.tenant.marketer.models import SEEN_BUSY, StudioAsset
+            asset = StudioAsset.objects.filter(pk=aid, kind=StudioAsset.Kind.VIDEO).first()
+            if asset is None or asset.seen != SEEN_BUSY:
+                return _err(409, 'not_seeing', 'материал не на просмотре')
+            return super().dispatch(request, asset, *args, **kwargs)
+
+
+class StudioSeeFileView(_SeeView):
+    def get(self, request, asset):
+        return FileResponse(asset.file.open('rb'), filename=asset.file.name.rsplit('/', 1)[-1])
+
+
+class StudioSeeResultView(_SeeView):
+    def post(self, request, asset):
+        from apps.tenant.marketer import studio
+        from apps.tenant.marketer.models import SEEN_FAILED
+        sheet = request.FILES.get('sheet')
+        error = (request.POST.get('error') or '').strip()
+        текст = ''
+        if sheet is not None and not error and sheet.size <= MAX_SHEET:
+            try:
+                times = [float(t) for t in json.loads(request.POST.get('times') or '[]')][:30]
+            except (TypeError, ValueError):
+                times = []
+            try:
+                текст = studio.describe_sheet(sheet.read(), times, asset.duration or 0)
+            except Exception:
+                log.exception('studio see: модель не описала материал %s', asset.pk)
+        elif error:
+            log.warning('studio see: сборщик не смог посмотреть %s: %s', asset.pk, error[:300])
+        asset.seen = текст or SEEN_FAILED
+        asset.seen_at = timezone.now()
+        asset.save(update_fields=['seen', 'seen_at'])
+        return JsonResponse({'ok': bool(текст)})

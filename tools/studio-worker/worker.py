@@ -27,6 +27,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -115,6 +116,18 @@ class Api:
 
     def done(self, job, error=''):
         r = self.s.post(self._v(job, 'done/'), json={'error': error} if error else {}, timeout=30)
+        r.raise_for_status()
+
+    # ── раскадровка: «посмотреть» новое видео до того, как по нему пишут сценарий ──
+    def see_claim(self):
+        r = self.s.post(f'{API}/api/v1/studio-worker/see/claim/', json={'worker': NAME}, timeout=30)
+        r.raise_for_status()
+        return r.json().get('see')
+
+    def see_result(self, see, sheet: bytes | None, times: list, error: str = ''):
+        url = f"{API}/api/v1/studio-worker/see/{see['schema']}/{see['asset_id']}/"
+        files = {'sheet': ('sheet.jpg', sheet, 'image/jpeg')} if sheet else None
+        r = self.s.post(url, data={'times': json.dumps(times), 'error': error}, files=files, timeout=120)
         r.raise_for_status()
 
 
@@ -214,7 +227,11 @@ def prepare(job: dict, root: Path, fetch) -> dict:
     for a in job.get('assets') or []:
         ext = Path(a.get('name') or '').suffix.lower() or EXT.get(a['kind'], '')
         rel = f"assets/a{a['id']}{ext}"
-        fetch(a['url'], root / rel)
+        кэш = _cache_path(job.get('schema', ''), a['id'])
+        if a['kind'] == 'video' and кэш.exists():
+            shutil.copy(кэш, root / rel)        # уже скачано при просмотре
+        else:
+            fetch(a['url'], root / rel)
         if a['kind'] == 'video':
             rel = str(shrink_video(root / rel).relative_to(root))
         files[f"asset-{a['id']}"] = rel
@@ -250,6 +267,86 @@ def render_all(job: dict, root: Path, files: dict, report=lambda stage, pct: Non
         poster = poster_of(mp4, min(1.0, meta['duration'] / 2))
         out.append((fmt, mp4, poster, meta))
     return out
+
+
+SHEET_FRAMES = 12
+
+
+def contact_sheet(video: Path, duration: float) -> tuple[bytes, list[float]]:
+    """Лист 4×3 из кадров видео с секундой на каждом → (JPEG, секунды кадров)."""
+    dur = duration or probe(video).get('duration') or 0
+    if dur <= 0:
+        raise RuntimeError('не узнал длину видео')
+    times = [round(dur * (i + 0.5) / SHEET_FRAMES, 2) for i in range(SHEET_FRAMES)]
+    tmp = Path(tempfile.mkdtemp(prefix='see-'))
+    try:
+        кадры = []
+        for n, t in enumerate(times):
+            out = tmp / f'f{n:02d}.jpg'
+            subprocess.run(['ffmpeg', '-y', '-v', 'error', '-ss', f'{t:.2f}', '-i', str(video), '-frames:v', '1',
+                            '-vf', 'scale=360:360:force_original_aspect_ratio=decrease,'
+                                   'pad=360:360:(ow-iw)/2:(oh-ih)/2:color=black,'
+                                   f"drawtext=fontfile={HERE / 'fonts/Manrope.ttf'}:text='{t:.1f} c':x=10:y=10:"
+                                   'fontsize=30:fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=6',
+                            '-q:v', '4', str(out)], capture_output=True, timeout=60, check=False)
+            if out.exists() and out.stat().st_size:
+                кадры.append((t, out))
+        if not кадры:
+            raise RuntimeError('не вынул ни одного кадра')
+        список = tmp / 'list.txt'
+        список.write_text(''.join(f"file '{p}'\n" for _t, p in кадры))
+        sheet = tmp / 'sheet.jpg'
+        res = subprocess.run(['ffmpeg', '-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', str(список),
+                              '-vf', 'tile=4x3:padding=4:color=white', '-frames:v', '1', '-q:v', '4', str(sheet)],
+                             capture_output=True, text=True, timeout=60)
+        if res.returncode != 0 or not sheet.exists():
+            raise RuntimeError('лист кадров не собрался: ' + (res.stderr or '')[-200:])
+        return sheet.read_bytes(), [t for t, _p in кадры]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+CACHE_TTL = 3 * 3600
+
+
+def _cache_path(schema: str, asset_id) -> Path:
+    return WORK / 'cache' / f'{schema}-{asset_id}'
+
+
+def _cache_cleanup():
+    d = WORK / 'cache'
+    if not d.exists():
+        return
+    for f in d.iterdir():
+        try:
+            if time.time() - f.stat().st_mtime > CACHE_TTL:
+                f.unlink()
+        except OSError:
+            pass
+
+
+def run_see(api: Api, see: dict):
+    """Посмотреть одно видео: скачать, лист кадров, отправить. Ошибка — сообщаем, сценарий пойдёт вслепую."""
+    tmp = Path(tempfile.mkdtemp(prefix='see-dl-', dir=WORK))
+    try:
+        src = tmp / (see.get('name') or 'video.mp4')
+        api.download({'schema': see['schema']}, see['url'], src)
+        sheet, times = contact_sheet(src, see.get('duration') or 0)
+        api.see_result(see, sheet, times)
+        # Скачанное не выбрасываем: сборка этого же ролика возьмёт файл отсюда, а не скачает второй раз.
+        _cache_cleanup()
+        кэш = _cache_path(see['schema'], see['asset_id'])
+        кэш.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), кэш)
+        log('seen', see['schema'], see['asset_id'], len(times), 'frames')
+    except Exception as e:  # noqa: BLE001
+        log('see failed', see.get('asset_id'), e)
+        try:
+            api.see_result(see, None, [], error=str(e)[:500] or 'ошибка')
+        except Exception as e2:  # noqa: BLE001
+            log('could not report see failure', e2)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _attempt(job: dict) -> int:
@@ -322,6 +419,15 @@ def main():
     api = Api()
     log('studio worker', NAME, '→', API)
     while True:
+        # Сначала «посмотреть» новые видео: по ним пишется сценарий, и он их ждёт.
+        try:
+            see = api.see_claim()
+        except requests.RequestException as e:
+            log('see claim failed', e)
+            see = None
+        if see:
+            run_see(api, see)
+            continue
         try:
             job = api.claim()
         except requests.RequestException as e:

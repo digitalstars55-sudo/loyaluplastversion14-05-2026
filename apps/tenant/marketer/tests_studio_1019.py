@@ -50,11 +50,15 @@ class _Схема(FastTenantTestCase):
     def setUpClass(cls):
         cls._over = override_settings(MEDIA_ROOT=MEDIA, **cls.extra_settings)
         cls._over.enable()
+        # Бриф режиссёра (23.10.2026) — внешний вызов модели; здесь проверяется сценарий, не он.
+        cls._режиссёр = patch('apps.tenant.marketer.studio.direct', return_value='')
+        cls._режиссёр.start()
         super().setUpClass()
 
     @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
+        cls._режиссёр.stop()
         cls._over.disable()
 
     @classmethod
