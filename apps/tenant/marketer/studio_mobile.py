@@ -155,12 +155,34 @@ def steps(project: StudioProject, version: StudioVersion | None) -> list[dict]:
     return s
 
 
+def elapsed_seconds(version: StudioVersion) -> int | None:
+    """Сколько ролик ждёт с нажатия «Собрать» (очередь + сборка)."""
+    if version.status not in (StudioVersion.Status.QUEUED, StudioVersion.Status.RENDERING):
+        return None
+    return max(int((timezone.now() - version.created_at).total_seconds()), 0)
+
+
+def is_stalled(version: StudioVersion) -> bool:
+    """Дольше обычного вдвое (и минимум на 5 минут сверх среднего) — честно сказать «долго», а не «меньше минуты».
+
+    Прогноз `eta_seconds` не опускается ниже 30 с, и зависший ролик (сборщик падал от нехватки памяти, 23.10.2026)
+    вечно обещал «меньше чем через минуту». Очередь из других роликов в «долго» не считается.
+    """
+    прошло = elapsed_seconds(version)
+    if прошло is None or queue_ahead(version):
+        return False
+    avg = average_render_seconds()
+    return прошло > max(2 * avg, avg + 300)
+
+
 def build_info(project: StudioProject) -> dict:
     v = project.current_version
     return {
         'steps': steps(project, v),
         'queue_ahead': queue_ahead(v) if v else 0,
         'eta_seconds': eta_seconds(v) if v else None,
+        'elapsed_seconds': elapsed_seconds(v) if v else None,
+        'stalled': is_stalled(v) if v else False,
     }
 
 

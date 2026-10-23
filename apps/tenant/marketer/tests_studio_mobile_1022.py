@@ -67,6 +67,27 @@ class Шаги(_Схема):
         v.refresh_from_db()
         self.assertTrue(all(s['state'] == 'done' for s in M.steps(p, v)))
 
+    def test_долгая_сборка_честно_долгая(self):
+        """23.10.2026: сборщик падал, а экран вечно обещал «меньше чем через минуту»."""
+        from datetime import timedelta
+        from django.utils import timezone
+        p = _project()
+        a = _asset(p)
+        v = studio._new_version(p, studio.clean_scenario(_scn([a]), [a], 10))
+        StudioVersion.objects.filter(pk=v.pk).update(status='rendering', claimed_at=timezone.now())
+        v.refresh_from_db()
+        self.assertFalse(M.is_stalled(v))
+        давно = timezone.now() - timedelta(seconds=M.DEFAULT_RENDER_SECONDS + 400)
+        StudioVersion.objects.filter(pk=v.pk).update(created_at=давно)
+        v.refresh_from_db()
+        self.assertTrue(M.is_stalled(v))
+        self.assertGreater(M.elapsed_seconds(v), M.DEFAULT_RENDER_SECONDS)
+        p.refresh_from_db()
+        self.assertTrue(M.build_info(p)['stalled'])
+        StudioVersion.objects.filter(pk=v.pk).update(status='ready')
+        v.refresh_from_db()
+        self.assertFalse(M.is_stalled(v))
+
     def test_очередь_только_раньше(self):
         p1, p2 = _project(), _project()
         a1, a2 = _asset(p1), _asset(p2)
