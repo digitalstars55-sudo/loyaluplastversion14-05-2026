@@ -378,6 +378,7 @@ def clean_scenario(raw: dict, assets, duration: int, address: str = '') -> dict:
             'transition': item.get('transition') if item.get('transition') in TRANSITIONS else 'cut',
             'caption_pos': item.get('caption_pos') if item.get('caption_pos') in CAPTION_POSITIONS else 'bottom',
         })
+    scenes = _merge_runs(scenes)
     if not scenes:
         raise StudioError('в сценарии нет ни одной сцены из ваших материалов')
     final = raw.get('final') if isinstance(raw.get('final'), dict) else {}
@@ -396,6 +397,31 @@ def clean_scenario(raw: dict, assets, duration: int, address: str = '') -> dict:
         'grade': raw.get('grade') if raw.get('grade') in GRADES else 'none',
         'sfx': bool(raw.get('sfx')),
     }
+
+
+def _merge_runs(scenes: list[dict]) -> list[dict]:
+    """Куски одного видео подряд, встык и без перехода — одна сцена.
+
+    24.10.2026: ИИ резал клип по секунде (2,1–3,1 и 3,1–4,1) и каждому куску давал ту же подпись —
+    на каждой склейке подпись всплывала заново («каждый субтитр дважды»), а склейка внутри
+    непрерывного кадра выглядела как сбой. Подпись остаётся первая непустая.
+    """
+    out: list[dict] = []
+    for s in scenes:
+        prev = out[-1] if out else None
+        if (prev and s['asset_id'] and s['asset_id'] == prev['asset_id'] and s['kind'] == 'video'
+                and s['transition'] == 'cut' and abs(prev['start'] + prev['length'] - s['start']) <= 0.15
+                and (not s['caption'] or not prev['caption'] or s['caption'] == prev['caption'])
+                and prev['length'] + s['length'] <= MAX_SCENE):
+            prev['length'] = round(s['start'] + s['length'] - prev['start'], 2)
+            prev['caption'] = prev['caption'] or s['caption']
+            if prev['motion'] == 'none':
+                prev['motion'] = s['motion']
+            continue
+        out.append(dict(s))
+    for i, s in enumerate(out, 1):
+        s['n'] = i
+    return out
 
 
 def scenario_length(scn: dict) -> float:

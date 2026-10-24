@@ -199,8 +199,17 @@ def build(job: dict, fmt: str, files: dict) -> str:
             d0 = TRANSITION_LEN.get(tr, 0) if (tr == 'zoom' and move_sel == sel and i > 0) else 0
             tweens.append(_tw(move_sel, frm, dict(to, duration=round(max(shown - d0, 0.3), 2), ease='none'), at + d0))
         cap = (s.get('caption') or '').strip()
+        prev_cap = ((scenes[i - 1].get('caption') or '').strip() if i > 0 else '')
+        if cap and cap == prev_cap:
+            cap = ''  # та же подпись, что у прошлой сцены, — держится одним титром (24.10: «всплывает дважды»)
         if cap and s.get('kind') in ('video', 'photo') and src:
-            html_cap, tw = _caption(n, cap, cap_style, s.get('caption_pos') or 'bottom', at, ln)
+            # Одна подпись на несколько сцен подряд — титр идёт до конца последней из них.
+            span = ln
+            for nx in scenes[i + 1:]:
+                if (nx.get('caption') or '').strip() != cap:
+                    break
+                span += float(nx['length'])
+            html_cap, tw = _caption(n, cap, cap_style, s.get('caption_pos') or 'bottom', at, round(span, 2))
             caps.append(html_cap)
             tweens += tw
         prev_sel = sel

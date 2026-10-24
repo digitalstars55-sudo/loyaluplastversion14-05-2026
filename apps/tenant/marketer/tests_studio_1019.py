@@ -125,6 +125,26 @@ class СценарийЧистится(_Схема):
         self.assertEqual(ph['motion'], 'zoom_in')
         self.assertEqual(scn['final']['address'], 'Ленина, 1')
 
+    def test_куски_одного_клипа_встык_одна_сцена(self):
+        # 24.10.2026: клип резали по секунде с той же подписью — подпись всплывала на каждой склейке.
+        p = _project()
+        a = _asset(p, 'video', duration=10.0)
+        b = _asset(p, 'video', duration=10.0)
+        raw = {'scenes': [
+            {'asset_id': a.pk, 'start': 2.1, 'length': 1.0, 'caption': 'Сделайте паузу'},
+            {'asset_id': a.pk, 'start': 3.1, 'length': 1.0, 'caption': 'Сделайте паузу'},
+            {'asset_id': a.pk, 'start': 4.1, 'length': 1.2, 'caption': ''},
+            {'asset_id': b.pk, 'start': 0.5, 'length': 1.0, 'caption': 'Поближе', 'transition': 'blur'},
+            {'asset_id': b.pk, 'start': 6.0, 'length': 1.0, 'caption': 'Поближе'},   # не встык — отдельно
+        ]}
+        scn = studio.clean_scenario(raw, [a, b], 20)
+        self.assertEqual([(s['n'], s['asset_id'], s['start'], s['length'], s['caption']) for s in scn['scenes']], [
+            (1, a.pk, 2.1, 3.2, 'Сделайте паузу'),
+            (2, b.pk, 0.5, 1.0, 'Поближе'),
+            (3, b.pk, 6.0, 1.0, 'Поближе'),
+        ])
+        self.assertEqual(scn['scenes'][1]['transition'], 'blur')
+
     def test_пустой_сценарий_ошибка(self):
         with self.assertRaises(studio.StudioError):
             studio.clean_scenario({'scenes': [{'asset_id': 5}]}, [], 10)
