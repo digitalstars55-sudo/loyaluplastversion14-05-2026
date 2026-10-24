@@ -185,6 +185,9 @@ blur), движение ("motion": zoom_in, zoom_out, pan_left, pan_right, none 
 bottom, center, top), стиль титров ролика ("caption_style": plate, pop, words, big), цвет ("grade": none, warm,
 cinematic, bright, vivid, bw), звуки на переходах ("sfx": true/false), музыку, порядок и длину сцен, финал.
 «Красивые переходы / анимацию / динамичнее» — делай этими средствами, разнообразно и со смыслом. Не отказывай.
+Если правка ОБЩАЯ («переделай», «нормально», «заново», «красиво», «динамичнее», «не нравится») — перестрой сценарий
+целиком: лучшие моменты по раскадровке материалов, длина ролика из сценария, разный ритм сцен (короткие склейки
+и 2–3 с на самом вкусном кадре), один кусок не повторяй, подпись — один раз, а не на каждой сцене.
 Если правка касается одной сцены (указан номер) — меняй только её.
 Если правка похожа на постоянное правило бренда (размер логотипа, музыка, шрифт, цвет плашек, «всегда/никогда»), предложи запомнить её одной короткой фразой в "remember"; иначе "remember": "".
 Если правку нельзя выполнить без факта, которого нет, — {"question": "..."}.
@@ -424,6 +427,56 @@ def _merge_runs(scenes: list[dict]) -> list[dict]:
     return out
 
 
+def замечания(scn: dict, duration: int) -> list[str]:
+    """Чем сценарий плох как монтаж — для одной переделки моделью (24.10.2026).
+
+    Проект 2 LevOne: 20 сцен ровно по 1,0 с вперемешку из двух клипов, сумма 9 с при заказанных 20 —
+    «склейки ради склеек»; правка «переделай нормально» эту нарезку сохранила.
+    """
+    out = []
+    scenes = scn.get('scenes') or []
+    видео = [x for x in scenes if x.get('kind') == 'video']
+    сумма = sum(float(x['length']) for x in scenes)
+    if duration and (сумма < duration * 0.75 or сумма > duration * 1.25):
+        out.append(f'сумма длин сцен {сумма:.1f} с, а ролик должен быть {duration} с (±0,5 с)')
+    if len(видео) >= 4:
+        длины = [round(float(x['length']), 1) for x in видео]
+        if max(длины) - min(длины) < 0.25:
+            out.append(f'все сцены одной длины ({длины[0]} с) — нет ритма: короткие склейки в динамике, '
+                       '2–3 с на самом вкусном кадре')
+    for i, x in enumerate(видео):
+        for y in видео[i + 1:]:
+            if x['asset_id'] != y['asset_id']:
+                continue
+            a0, a1 = x['start'], x['start'] + x['length']
+            b0, b1 = y['start'], y['start'] + y['length']
+            if min(a1, b1) - max(a0, b0) > 0.5 * min(x['length'], y['length']):
+                out.append(f'сцены {x["n"]} и {y["n"]} показывают один и тот же кусок материала {x["asset_id"]}')
+                break
+    подряд = [x['n'] for p, x in zip(scenes, scenes[1:]) if x.get('caption') and x.get('caption') == p.get('caption')]
+    if подряд:
+        out.append('одна и та же подпись на соседних сценах ' + ', '.join(map(str, подряд)) + ' — ставь её один раз')
+    return out
+
+
+def _дожать(system: str, message: str, scn: dict, data: dict, assets, duration: int, address: str) -> tuple[dict, dict]:
+    """Один повтор у модели с перечнем ошибок сценария. Хуже не стал — берём новый."""
+    плохо = замечания(scn, duration)
+    if not плохо:
+        return scn, data
+    повтор = _ask_ai(system, message + '\n\nТВОЙ ПРЕЖНИЙ ОТВЕТ:\n' + json.dumps({'scenario': scn}, ensure_ascii=False)
+                     + '\n\nОШИБКИ МОНТАЖА — исправь их и пришли сценарий заново целиком:\n- ' + '\n- '.join(плохо))
+    if not повтор.get('scenario'):
+        return scn, data
+    try:
+        новый = clean_scenario(повтор['scenario'], assets, duration, address)
+    except StudioError:
+        return scn, data
+    if len(замечания(новый, duration)) <= len(плохо):
+        return новый, повтор
+    return scn, data
+
+
 def scenario_length(scn: dict) -> float:
     return round(sum(s['length'] for s in scn.get('scenes', [])) + (scn.get('final') or {}).get('length', 0), 2)
 
@@ -524,6 +577,9 @@ def plan(project: StudioProject) -> StudioProject:
     if data.get('question') and not data.get('scenario'):
         return _set_question(project, str(data['question']))
     scn = clean_scenario(data.get('scenario') or {}, assets, project.duration, snap.get('address', ''))
+    scn, data = _дожать(_PLAN_PROMPT, '\n\n'.join(parts), scn, data, assets, project.duration, snap.get('address', ''))
+    if _остановлен(project, было):
+        return project
     bad = unknown_prices(scn, kb, project.brief + ' ' + project.answer)
     if bad:
         return _set_question(project, 'В меню нет цены ' + ', '.join(_fmt_price(p) for p in bad)
@@ -561,6 +617,11 @@ def edit(project: StudioProject, instruction: str, scene: int | None = None, by:
     if data.get('question') and not data.get('scenario'):
         return _set_question(project, str(data['question']))
     scn = clean_scenario(data.get('scenario') or {}, assets, project.duration, snap.get('address', ''))
+    if not scene:
+        scn, data = _дожать(_EDIT_PROMPT, '\n\n'.join(parts), scn, data, assets, project.duration,
+                            snap.get('address', ''))
+        if _остановлен(project, было):
+            return project
     if scene and 1 <= scene <= len(base.scenario.get('scenes', [])):
         # Правка одной сцены: остальные — ровно как были, что бы ни прислал ИИ.
         old = [dict(s) for s in base.scenario.get('scenes', [])]

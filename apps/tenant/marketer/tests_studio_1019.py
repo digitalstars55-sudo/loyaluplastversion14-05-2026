@@ -156,6 +156,44 @@ class СценарийЧистится(_Схема):
         self.assertEqual(studio.unknown_prices(scn, KB, 'акция 490 ₽'), [])
 
 
+class Замечания(_Схема):
+    # 24.10.2026: сцены по 1,0 с вперемешку, сумма 9 с при 20 — модель переделывает один раз.
+
+    def _плохой(self, a, b):
+        return {'title': 'Пауза', 'scenes': [
+            {'asset_id': (a if i % 2 == 0 else b).pk, 'start': i // 2, 'length': 1.0, 'caption': ''}
+            for i in range(9)], 'final': {'offer': 'Ждём'}}
+
+    def _хороший(self, a, b):
+        return {'title': 'Пауза', 'scenes': [
+            {'asset_id': a.pk, 'start': 3.0, 'length': 2.5, 'caption': 'Открываем коробку'},
+            {'asset_id': b.pk, 'start': 4.6, 'length': 3.0, 'caption': 'Воздушный срез'},
+            {'asset_id': a.pk, 'start': 0.0, 'length': 1.0, 'caption': ''},
+            {'asset_id': b.pk, 'start': 0.0, 'length': 2.0, 'caption': ''},
+            {'asset_id': a.pk, 'start': 6.0, 'length': 1.5, 'caption': ''}], 'final': {'offer': 'Ждём'}}
+
+    def test_замечания_по_плохому_сценарию(self):
+        p = _project(duration=10)
+        a, b = _asset(p), _asset(p)
+        плохо = studio.замечания(studio.clean_scenario(self._плохой(a, b), [a, b], 10), 10)
+        self.assertTrue(any('одной длины' in x for x in плохо), плохо)
+        self.assertFalse(studio.замечания(studio.clean_scenario(self._хороший(a, b), [a, b], 10), 10))
+
+    @patch('apps.tenant.marketer.studio._kb_text', return_value=KB)
+    def test_план_переделывается_один_раз(self, _kb):
+        p = _project(duration=10)
+        a, b = _asset(p), _asset(p)
+        ответы = [{'scenario': self._плохой(a, b)}, {'scenario': self._хороший(a, b)}]
+        with patch('apps.tenant.marketer.studio._ask_ai', side_effect=ответы) as ии, \
+                patch('apps.tenant.marketer.studio.direct', return_value=''), \
+                patch('apps.tenant.marketer.studio.wait_seen', side_effect=lambda x: x):
+            studio.plan(p)
+        self.assertEqual(ии.call_count, 2)
+        self.assertIn('ОШИБКИ МОНТАЖА', ии.call_args_list[1].args[1])
+        p.refresh_from_db()
+        self.assertEqual([s['length'] for s in p.current_version.scenario['scenes']], [2.5, 3.0, 1.0, 2.0, 1.5])
+
+
 @patch('apps.tenant.marketer.studio._kb_text', return_value=KB)
 class План(_Схема):
 

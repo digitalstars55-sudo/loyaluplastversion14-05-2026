@@ -48,6 +48,12 @@ WORK = Path(os.environ.get('STUDIO_WORK_DIR', Path.home() / '.local/state/studio
 NAME = os.environ.get('STUDIO_WORKER_NAME', socket.gethostname())
 IDLE_SLEEP = 15
 RENDER_TIMEOUT = 20 * 60
+#: Качество HyperFrames. 24.10.2026: было `draft` — HEVC ~1 Мбит/с на 1080×1920, кубики на еде и не везде
+#: играет; `standard` — H.264 CRF 16 (как «looks» по умолчанию у hyperframes).
+RENDER_QUALITY = os.environ.get('STUDIO_RENDER_QUALITY', 'standard')
+#: iPhone снимает в HDR (HLG, BT.2020) — без `--sdr` hyperframes отдаёт HDR-HEVC 10 бит: в ВК, Телеграме и
+#: браузерах на Windows блёклый или не играет (24.10.2026, проект 2 LevOne). Соцсетям нужен обычный SDR H.264.
+RENDER_SDR = os.environ.get('STUDIO_RENDER_SDR', '1') != '0'
 SHRINK_TIMEOUT = 10 * 60
 # Сколько раз сборщик может умереть на одном ролике (нехватка памяти, убит), прежде чем ролик
 # получит честную ошибку. Без этого сервер возвращал его в очередь бесконечно (26 падений 23.10).
@@ -284,7 +290,8 @@ def render_all(job: dict, root: Path, files: dict, report=lambda stage, pct: Non
         shutil.copytree(root / 'fonts', d / 'fonts')
         (d / 'index.html').write_text(compose.build(job, fmt, files), encoding='utf-8')
         mp4 = root / f'{fmt}.mp4'
-        res = subprocess.run([HF, 'render', '--quality', 'draft', '--workers', '1', '-o', str(mp4), str(d)],
+        res = subprocess.run([HF, 'render', '--quality', RENDER_QUALITY, *(['--sdr'] if RENDER_SDR else []), '--workers', '1',
+                              '-o', str(mp4), str(d)],
                              capture_output=True, text=True, timeout=RENDER_TIMEOUT)
         if res.returncode != 0 or not mp4.exists():
             tail = (res.stderr or res.stdout or '').strip().splitlines()[-6:]
