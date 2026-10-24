@@ -435,3 +435,104 @@ class Публикация(_Схема):
         p = self._готовый()
         sp.запланировать(p, [{'channel': 'vk', 'at': первый.isoformat()}], None)
         self.assertEqual(tz.localtime(sp.свободный_слот(now)).day, 20)
+
+
+class Досборка(_Схема):
+    # 24.10.2026 «монтаж до идеала»: повтор куска уходит на свободное место, длина добирается без модели.
+
+    def test_повтор_на_свободное_место_и_добор_длины(self):
+        p = _project(duration=10)
+        a = _asset(p)
+        a.duration = 12.0
+        a.save(update_fields=['duration'])
+        scn = studio.clean_scenario({'title': 'x', 'scenes': [
+            {'asset_id': a.pk, 'start': 3.0, 'length': 3.0, 'caption': 'Коробка', 'transition': 'fade'},
+            {'asset_id': a.pk, 'start': 3.5, 'length': 1.0, 'caption': '', 'transition': 'fade'},
+            {'asset_id': a.pk, 'start': 8.0, 'length': 1.0, 'caption': '', 'transition': 'fade'},
+        ], 'final': {'offer': 'Ждём'}}, [a], 10)
+        scn = studio.досборка(scn, [a], 10)
+        куски = [(s['start'], s['start'] + s['length']) for s in scn['scenes']]
+        for i, (a0, a1) in enumerate(куски):
+            for b0, b1 in куски[i + 1:]:
+                self.assertLessEqual(min(a1, b1) - max(a0, b0), 0.01, куски)
+        self.assertAlmostEqual(sum(s['length'] for s in scn['scenes']), 10, delta=0.5)
+        self.assertEqual([s['n'] for s in scn['scenes']], list(range(1, len(scn['scenes']) + 1)))
+
+    def test_добор_не_наезжает_на_следующий_кусок(self):
+        # Живой прогон 24.10: сцена 2,1–3,7 и следующая с 3,65 — добор тянул первую до 6,0.
+        p = _project(duration=12)
+        a = _asset(p)
+        scn = studio.clean_scenario({'scenes': [
+            {'asset_id': a.pk, 'start': 2.1, 'length': 1.6, 'transition': 'fade'},
+            {'asset_id': a.pk, 'start': 3.65, 'length': 0.9, 'transition': 'fade'},
+        ], 'final': {}}, [a], 12)
+        scn = studio.досборка(scn, [a], 12)
+        (a0, a1), (b0, b1) = [(s['start'], s['start'] + s['length']) for s in scn['scenes']]
+        self.assertLessEqual(a1, b0 + 0.06, scn['scenes'])
+
+    def test_краешек_обрезается(self):
+        p = _project(duration=6)
+        a = _asset(p)
+        scn = studio.clean_scenario({'scenes': [
+            {'asset_id': a.pk, 'start': 5.3, 'length': 1.8, 'transition': 'fade'},
+            {'asset_id': a.pk, 'start': 0.0, 'length': 2.0, 'transition': 'fade'},
+            {'asset_id': a.pk, 'start': 6.2, 'length': 2.15, 'transition': 'fade', 'caption': 'Мякиш'},
+        ], 'final': {}}, [a], 6)
+        scn = studio.досборка(scn, [a], 6)
+        s3 = scn['scenes'][2]
+        self.assertEqual((s3['start'], s3['caption']), (7.1, 'Мякиш'))
+
+    def test_музыка_не_кадр(self):
+        p = _project(duration=10)
+        a = _asset(p)
+        m = StudioAsset.objects.create(project=p, kind=StudioAsset.Kind.MUSIC, file='m.mp3', duration=30)
+        scn = studio.clean_scenario({'scenes': [{'asset_id': m.pk, 'start': 0, 'length': 3},
+                                                {'asset_id': a.pk, 'start': 0, 'length': 3}],
+                                     'music_mood': 'warm  jazz', 'final': {}}, [a, m], 10)
+        self.assertEqual([s['asset_id'] for s in scn['scenes']], [a.pk])
+        self.assertEqual(scn['music_mood'], 'warm jazz')
+
+
+class МузыкаИИ(_Схема):
+    def _scn(self, **kw):
+        return dict({'scenes': [{'length': 8.0}], 'final': {'length': 2.5}, 'music': 'brand',
+                     'music_mood': 'warm jazz'}, **kw)
+
+    def test_делает_трек_и_берёт_прежний_при_той_же_длине(self):
+        from apps.tenant.marketer import studio_music
+        p = _project()
+        scn = self._scn()
+        with patch.object(studio_music, 'дорожка', return_value=b'ID3fake') as gen:
+            studio_music.подобрать(p, scn, brand_music=False)
+            self.assertEqual(gen.call_count, 1)
+            asset = StudioAsset.objects.get(pk=scn['music_asset'])
+            self.assertEqual((asset.kind, asset.created_by), ('music', studio_music.AUTHOR))
+            again = self._scn()
+            studio_music.подобрать(p, again, brand_music=False, previous=scn)
+            self.assertEqual((gen.call_count, again['music_asset']), (1, asset.pk))
+            other = self._scn(music_mood='rock')
+            studio_music.подобрать(p, other, brand_music=False, previous=scn)
+            self.assertEqual(gen.call_count, 2)
+
+    def test_не_делает_при_своей_музыке_без_музыки_и_при_сбое(self):
+        from apps.tenant.marketer import studio_music
+        p = _project()
+        with patch.object(studio_music, 'дорожка', side_effect=RuntimeError('HTTP 500')) as gen:
+            for scn, own in ((self._scn(), True), (self._scn(music='none'), False)):
+                studio_music.подобрать(p, scn, brand_music=own)
+                self.assertNotIn('music_asset', scn)
+            self.assertEqual(gen.call_count, 0)
+            scn = self._scn()
+            studio_music.подобрать(p, scn, brand_music=False)      # сбой — ролик без музыки, не падаем
+            self.assertNotIn('music_asset', scn)
+
+    def test_сборщик_получает_трек_проекта(self):
+        from apps.tenant.marketer import studio_music
+        p = _project()
+        m = StudioAsset.objects.create(project=p, kind=StudioAsset.Kind.MUSIC, file='ai.mp3',
+                                       created_by=studio_music.AUTHOR)
+        v = studio._new_version(p, {'scenes': [], 'final': {}, 'music': 'brand', 'music_asset': m.pk})
+        self.assertIn('music', W.job_payload(self.tenant.schema_name, v)['brand'])
+        люди = StudioAsset.objects.create(project=p, kind=StudioAsset.Kind.MUSIC, file='own.mp3', created_by='Левон')
+        self.assertTrue(studio_music.своя_музыка(p, {}))
+        self.assertEqual(studio_music.файл(v).name, люди.file.name)

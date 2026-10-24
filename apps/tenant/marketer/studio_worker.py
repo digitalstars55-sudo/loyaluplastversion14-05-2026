@@ -64,8 +64,15 @@ def _schemas() -> list[str]:
     return [t.schema_name for t in beat_tenants()]
 
 
+def _brand_name(schema: str) -> str:
+    """Название сети для финала без логотипа (строка из публичной схемы)."""
+    from django_tenants.utils import get_tenant_model
+    return (get_tenant_model().objects.filter(schema_name=schema).values_list('name', flat=True).first() or '')[:40]
+
+
 def job_payload(schema: str, version) -> dict:
     """Всё, что сборщику нужно для одной версии: сценарий, стиль, ссылки на файлы."""
+    from apps.tenant.marketer import studio_music
     from apps.tenant.marketer.models import StudioAsset, StudioStyle
     project = version.project
     base = f'/api/v1/studio-worker/{schema}/{version.pk}/file/'
@@ -77,13 +84,16 @@ def job_payload(schema: str, version) -> dict:
     style = StudioStyle.objects.order_by('pk').first()
     snap = dict(version.style_snapshot or {})
     brand = {}
-    for key in ('logo', 'logo_dark', 'music'):
+    for key in ('logo', 'logo_dark'):
         if snap.get(key) or (style and getattr(style, key)):
             brand[key] = f'{base}{key}/'
+    if studio_music.файл(version):
+        brand['music'] = f'{base}music/'
     return {
         'schema': schema, 'version_id': version.pk, 'number': version.number,
         'project_id': project.pk, 'title': project.title, 'kind': project.kind,
         'duration': project.duration, 'scenario': version.scenario, 'style': snap,
+        'brand_name': _brand_name(schema),
         'assets': assets, 'brand': brand, 'formats': ['9x16', '1x1', '16x9', '6s'],
     }
 
@@ -172,7 +182,12 @@ class StudioFileView(_VersionView):
         if key.startswith('asset-') and key[6:].isdigit():
             asset = StudioAsset.objects.filter(pk=int(key[6:]), project=version.project).first()
             f = asset.file if asset else None
-        elif key in ('logo', 'logo_dark', 'music'):
+        elif key == 'music':
+            from apps.tenant.marketer import studio_music
+            f = studio_music.файл(version)
+            if f:
+                return FileResponse(f.open('rb'), filename=f.name.rsplit('/', 1)[-1])
+        elif key in ('logo', 'logo_dark'):
             name = (version.style_snapshot or {}).get(key)
             style = StudioStyle.objects.order_by('pk').first()
             if name:

@@ -220,15 +220,29 @@ def build(job: dict, fmt: str, files: dict) -> str:
     body += overlays + caps + sounds
     logo = files.get('logo_dark') or files.get('logo') or ''
     final_len = round(total - final_at, 2)
+    # Финал на размытом первом (самом сильном) кадре, а не на плоском фоне (24.10.2026: «обрывается в пустоту»).
+    hook = next((x for x in scenes if x.get('asset_id') and files.get(f"asset-{x['asset_id']}")), None)
+    if hook is not None:
+        src = html.escape(files[f"asset-{hook['asset_id']}"])
+        if hook.get('kind') == 'video':
+            body.append(f'<video id="fbg" class="clip media final-bg" src="{src}" muted playsinline '
+                        f'data-start="{final_at}" data-duration="{final_len}" '
+                        f'data-media-start="{float(hook.get("start") or 0)}" data-track-index="1"></video>')
+        else:
+            body.append(f'<div id="fbg" class="clip" data-start="{final_at}" data-duration="{final_len}" '
+                        f'data-track-index="1"><img class="photo final-bg" src="{src}" alt=""></div>')
     parts = []
     if logo:
         parts.append(f'<img id="f-logo" class="logo" src="{html.escape(logo)}" alt="">')
+    elif final.get('brand') or job.get('brand_name'):
+        parts.append(f'<div id="f-logo" class="wordmark">{html.escape(final.get("brand") or job["brand_name"])}</div>')
     if final.get('offer'):
         parts.append(f'<div id="f-offer" class="offer">{html.escape(final["offer"])}</div>')
     if final.get('address'):
         parts.append(f'<div id="f-addr" class="addr">{html.escape(final["address"])}</div>')
-    body.append(f'<div id="final" class="clip final" data-start="{final_at}" data-duration="{final_len}" '
-                f'data-track-index="1"><div class="final-in">{"".join(parts)}</div></div>')
+    body.append(f'<div id="final" class="clip final{" final-over" if hook is not None else ""}" '
+                f'data-start="{final_at}" data-duration="{final_len}" '
+                f'data-track-index="6"><div class="final-in">{"".join(parts)}</div></div>')
     for i, el in enumerate(('f-logo', 'f-offer', 'f-addr')):
         if any(f'id="{el}"' in p for p in parts):
             tweens.append(f'tl.fromTo("#{el}", {{"y": 30, "opacity": 0}}, '
@@ -241,7 +255,7 @@ def build(job: dict, fmt: str, files: dict) -> str:
         auto = json.dumps({'version': 1, 'lanes': [{'target': 'volume', 'points': [
             {'t': 0, 'v': 0}, {'t': 0.4, 'v': 1}, {'t': round(fade_from, 2), 'v': 1}, {'t': total, 'v': 0}]}]})
         body.append(f'<audio id="music" src="{html.escape(music)}" data-start="0" data-duration="{total}" '
-                    f'data-track-index="3" data-volume="0.6" data-automation=\'{auto}\'></audio>')
+                    f'data-track-index="3" data-volume="0.9" data-automation=\'{auto}\'></audio>')
 
     css = f"""
 @font-face {{ font-family: "Brand"; src: url("fonts/Manrope.ttf") format("truetype"); font-weight: 200 800; }}
@@ -276,6 +290,11 @@ body {{ margin: 0; background: {bg}; }}
 .final {{ display: flex; align-items: center; justify-content: center; background: {bg}; }}
 .final-in {{ display: flex; flex-direction: column; align-items: center; gap: {round(unit * 0.04)}px;
             max-width: 82%; text-align: center; }}
+.final-over {{ background: linear-gradient(180deg, {bg}8c 0%, {bg}cc 100%); }}
+.final-bg {{ filter: blur({round(unit * 0.03)}px) brightness(0.8) saturate(1.1); transform: scale(1.15); }}
+.wordmark {{ color: {accent}; font-size: {round(offer_size * 1.45)}px; font-weight: 800; letter-spacing: -0.01em;
+            line-height: 1; text-shadow: 0 6px 30px rgba(0,0,0,0.35); }}
+.offer, .addr {{ text-shadow: 0 3px 18px rgba(0,0,0,0.45); }}
 .logo {{ display: block; max-width: {round(unit * 0.5)}px; max-height: {round(unit * 0.22)}px; object-fit: contain; }}
 .offer {{ color: {light}; font-size: {offer_size}px; font-weight: 800; line-height: 1.1; text-wrap: balance; }}
 .addr {{ color: {accent}; font-size: {addr_size}px; font-weight: 600; }}

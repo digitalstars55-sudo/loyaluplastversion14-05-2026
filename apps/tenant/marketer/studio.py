@@ -26,6 +26,7 @@ from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
 
+from apps.tenant.marketer import studio_music
 from apps.tenant.marketer.models import (
     StudioAsset,
     StudioProject,
@@ -148,7 +149,7 @@ _PLAN_PROMPT = """Ты — режиссёр монтажа коротких ро
 
 ЖЕЛЕЗНЫЕ ПРАВИЛА:
 1. Факты (блюда, цены, акции, адреса, часы) — ТОЛЬКО из базы знаний сети и задания. Ничего не выдумывай.
-2. Если для ролика не хватает факта, без которого он врёт (цена, условие акции, дата), — НЕ пиши сценарий, задай ОДИН короткий вопрос: {"question": "..."}.
+2. Вопрос задавай ТОЛЬКО если без факта ролик соврёт (цена, условие акции, дата) — тогда НЕ пиши сценарий, задай ОДИН короткий вопрос: {"question": "..."}. Про логотип, музыку, шрифты, цвета, материалы и формат НЕ спрашивай никогда — работай с тем, что есть (нет логотипа — финал с названием сети).
 3. Используй только переданные материалы (по их id). Видео режь кусками: "start" — с какой секунды файла, "length" — сколько секунд в ролике. Фото — "start": 0.
 4. Ритм склеек, титры, финал, цвета и запреты — из СТИЛЯ БРЕНДА. Правила «Запомнено для бренда» обязательны.
 5. Титр — до 6 слов, без хэштегов и эмодзи. Не на каждой сцене. Титр говорит о деле (блюдо, вкус, повод, предложение из базы знаний) — без пустых фраз вроде «Сделайте паузу».
@@ -170,20 +171,24 @@ _PLAN_PROMPT = """Ты — режиссёр монтажа коротких ро
 - "grade" ролика — цвет: none, warm (тёплый, еда), cinematic (кино, контраст и виньетка), bright (светлый,
   кофейня), vivid (сочный), bw (чёрно-белый). Еду обычно warm или vivid.
 - "sfx": true — звуки на переходах (вжух, удар) поверх музыки; для динамичного ролика.
+- "music": "brand" — всегда, кроме прямой просьбы владельца «без музыки» ("none"). Нет трека бренда — программа
+  сама сделает инструментал с лицензией по "music_mood": 8–20 слов ПО-АНГЛИЙСКИ — жанр, инструменты, темп
+  (BPM под ритм склеек), настроение; без вокала. Пример: "warm acoustic pop, light claps, soft bass, 105 BPM, sunny".
 - Хук: первые 1–1,5 с — самый сильный кадр, часто с zoom или flash и титром-интригой (big или pop).
 - Ритм: склейки в такт — короткие 0,6–1,2 с в динамике, 2–3 с на «вкусном» кадре; финал не обрывай.
 
 Ответ — строго JSON без markdown, ОДИН из двух:
 {"question": "что уточнить"}
 или
-{"scenario": {"title": "...", "scenes": [{"asset_id": 1, "start": 0.0, "length": 1.2, "caption": "", "motion": "none", "transition": "cut", "caption_pos": "bottom"}], "final": {"offer": "одно предложение", "address": "адрес"}, "music": "brand" | "none", "caption_style": "plate", "grade": "warm", "sfx": false, "post": "текст поста к ролику для ВК и Телеграма: 200–600 знаков, по голосу бренда из базы знаний, те же факты, что в ролике"}}"""
+{"scenario": {"title": "...", "scenes": [{"asset_id": 1, "start": 0.0, "length": 1.2, "caption": "", "motion": "none", "transition": "cut", "caption_pos": "bottom"}], "final": {"brand": "название сети, как пишет сама сеть", "offer": "одно предложение", "address": "адрес"}, "music": "brand", "music_mood": "...", "caption_style": "plate", "grade": "warm", "sfx": false, "post": "текст поста к ролику для ВК и Телеграма: 200–600 знаков, по голосу бренда из базы знаний, те же факты, что в ролике"}}"""
 
 _EDIT_PROMPT = """Ты — режиссёр монтажа коротких роликов кафе. Тебе дают сценарий ролика (JSON) и правку владельца словами.
 Внеси ТОЛЬКО эту правку, остальное оставь как было. Факты — только из базы знаний и прежнего сценария; новых цен не придумывай.
 Ты умеешь всё, что в сценарии: переход у каждой сцены ("transition": cut, fade, zoom, slide_left, slide_up, whip, flash,
 blur), движение ("motion": zoom_in, zoom_out, pan_left, pan_right, none — и для видео), место титра ("caption_pos":
 bottom, center, top), стиль титров ролика ("caption_style": plate, pop, words, big), цвет ("grade": none, warm,
-cinematic, bright, vivid, bw), звуки на переходах ("sfx": true/false), музыку, порядок и длину сцен, финал.
+cinematic, bright, vivid, bw), звуки на переходах ("sfx": true/false), музыку ("music": brand/none и
+"music_mood" — настроение трека по-английски: жанр, инструменты, темп), порядок и длину сцен, финал.
 «Красивые переходы / анимацию / динамичнее» — делай этими средствами, разнообразно и со смыслом. Не отказывай.
 Если правка ОБЩАЯ («переделай», «нормально», «заново», «красиво», «динамичнее», «не нравится») — перестрой сценарий
 целиком: лучшие моменты по раскадровке материалов, длина ролика из сценария, разный ритм сцен (короткие склейки
@@ -360,6 +365,8 @@ def clean_scenario(raw: dict, assets, duration: int, address: str = '') -> dict:
         asset = by_id.get(aid) if aid else None
         if aid and asset is None:
             continue  # чужой или выдуманный материал
+        if asset is not None and asset.kind == StudioAsset.Kind.MUSIC:
+            continue  # музыка — дорожка, а не кадр
         length = min(max(_num(item.get('length'), 1.0), MIN_SCENE), MAX_SCENE)
         start = max(_num(item.get('start'), 0.0), 0.0)
         if asset and asset.kind == StudioAsset.Kind.VIDEO and asset.duration:
@@ -390,11 +397,13 @@ def clean_scenario(raw: dict, assets, duration: int, address: str = '') -> dict:
         'duration': duration,
         'scenes': scenes,
         'final': {
+            'brand': str(final.get('brand') or '').strip()[:40],
             'offer': str(final.get('offer') or '').strip()[:120],
             'address': str(final.get('address') or address or '').strip()[:200],
             'length': 2.5,
         },
         'music': 'none' if raw.get('music') == 'none' else 'brand',
+        'music_mood': re.sub(r'\s+', ' ', str(raw.get('music_mood') or '')).strip()[:200],
         'post': str(raw.get('post') or '').strip()[:1500],
         'caption_style': raw.get('caption_style') if raw.get('caption_style') in CAPTION_STYLES else 'plate',
         'grade': raw.get('grade') if raw.get('grade') in GRADES else 'none',
@@ -425,6 +434,78 @@ def _merge_runs(scenes: list[dict]) -> list[dict]:
     for i, s in enumerate(out, 1):
         s['n'] = i
     return out
+
+
+def _занято(scenes: list[dict], asset_id) -> list[tuple[float, float]]:
+    return sorted((x['start'], x['start'] + x['length']) for x in scenes
+                  if x['asset_id'] == asset_id and x['kind'] == 'video')
+
+
+def _без_повторов(scenes: list[dict], by_id: dict) -> list[dict]:
+    """Кусок, который уже был в ролике, — на свободное место того же видео; места нет — сцену убираем.
+
+    24.10.2026: модель после переделки всё равно показывала коробку дважды (3,85–7,35 и 3,9–4,7 с).
+    """
+    out: list[dict] = []
+    for s in scenes:
+        if s['kind'] != 'video' or not s['asset_id']:
+            out.append(s)
+            continue
+        было = _занято(out, s['asset_id'])
+        a0, a1 = s['start'], s['start'] + s['length']
+        for b0, b1 in было:            # краешек чужого куска — обрезаем (живой прогон: общие 0,9 с)
+            if b0 <= a0 < b1 <= a1 - MIN_SCENE:
+                a0 = b1
+            elif a0 + MIN_SCENE <= b0 < a1 <= b1:
+                a1 = b0
+        if not any(min(a1, b1) - max(a0, b0) > 0.05 for b0, b1 in было):
+            out.append(dict(s, start=round(a0, 2), length=round(a1 - a0, 2)))
+            continue
+        конец = float(getattr(by_id.get(s['asset_id']), 'duration', 0) or 0)
+        место, t = None, 0.0
+        for b0, b1 in было + [(конец, конец)]:
+            if b0 - t >= s['length']:
+                место = t
+                break
+            t = max(t, b1)
+        if место is not None:
+            out.append(dict(s, start=round(место, 2)))
+    for i, s in enumerate(out, 1):
+        s['n'] = i
+    return out
+
+
+def _дотянуть(scenes: list[dict], by_id: dict, duration: int) -> list[dict]:
+    """Не хватает длины до заказанной — дотягиваем сцены, где у материала есть запас (без новых повторов)."""
+    нехватка = duration - sum(float(s['length']) for s in scenes)
+    for _ in range(4):
+        if нехватка <= 0.5 or not scenes:
+            break
+        запас = {}
+        for s in scenes:
+            if s['kind'] == 'video':
+                конец = float(getattr(by_id.get(s['asset_id']), 'duration', 0) or 0)
+                дальше = min([b0 for b0, _b1 in _занято(scenes, s['asset_id']) if b0 > s['start'] + 0.01]
+                             + [конец])
+                запас[s['n']] = max(min(дальше - s['start'] - s['length'], MAX_SCENE - s['length']), 0.0)
+            else:
+                запас[s['n']] = max(MAX_SCENE - s['length'], 0.0)
+        всего = sum(запас.values())
+        if всего < 0.05:
+            break
+        доля = min(нехватка / всего, 1.0)
+        for s in scenes:
+            прибавка = round(запас[s['n']] * доля, 2)
+            s['length'] = round(s['length'] + прибавка, 2)
+            нехватка -= прибавка
+    return scenes
+
+
+def досборка(scn: dict, assets, duration: int) -> dict:
+    """Сценарий целиком: убрать повторы кусков и добрать длину до заказанной — без лишнего вызова модели."""
+    by_id = {a.pk: a for a in assets}
+    scn['scenes'] = _дотянуть(_без_повторов(scn.get('scenes') or [], by_id), by_id, duration)
+    return scn
 
 
 def замечания(scn: dict, duration: int) -> list[str]:
@@ -578,6 +659,7 @@ def plan(project: StudioProject) -> StudioProject:
         return _set_question(project, str(data['question']))
     scn = clean_scenario(data.get('scenario') or {}, assets, project.duration, snap.get('address', ''))
     scn, data = _дожать(_PLAN_PROMPT, '\n\n'.join(parts), scn, data, assets, project.duration, snap.get('address', ''))
+    scn = досборка(scn, assets, project.duration)
     if _остановлен(project, было):
         return project
     bad = unknown_prices(scn, kb, project.brief + ' ' + project.answer)
@@ -588,6 +670,9 @@ def plan(project: StudioProject) -> StudioProject:
         scn['title'] = project.title
     if бриф:
         scn['director'] = бриф
+    studio_music.подобрать(project, scn, studio_music.своя_музыка(project, snap))
+    if _остановлен(project, было):
+        return project
     _new_version(project, scn, changelog=['Первая версия по брифу режиссёра' if бриф else 'Первая версия по заданию'])
     return project
 
@@ -620,6 +705,7 @@ def edit(project: StudioProject, instruction: str, scene: int | None = None, by:
     if not scene:
         scn, data = _дожать(_EDIT_PROMPT, '\n\n'.join(parts), scn, data, assets, project.duration,
                             snap.get('address', ''))
+        scn = досборка(scn, assets, project.duration)
         if _остановлен(project, было):
             return project
     if scene and 1 <= scene <= len(base.scenario.get('scenes', [])):
@@ -637,6 +723,10 @@ def edit(project: StudioProject, instruction: str, scene: int | None = None, by:
     scn['title'] = scn['title'] or base.scenario.get('title') or project.title
     if base.scenario.get('director'):
         scn['director'] = base.scenario['director']
+    if scene:
+        for key in ('music', 'music_mood'):
+            scn[key] = base.scenario.get(key, scn.get(key))
+    studio_music.подобрать(project, scn, studio_music.своя_музыка(project, snap), previous=base.scenario)
     changelog = [str(c).strip()[:200] for c in (data.get('changelog') or []) if str(c).strip()]
     _new_version(project, scn, instruction=instruction, scene=scene,
                  changelog=changelog or [instruction.strip()[:200]],
