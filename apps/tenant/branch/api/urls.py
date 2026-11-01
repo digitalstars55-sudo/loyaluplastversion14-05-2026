@@ -14,6 +14,8 @@ from .views import (
     VKSubscriptionStatusView,
 )
 
+from .wallet_views import ClientWalletView, ИзменившиесяView, ЖурналView, КартаДляТелефонаView, РегистрацияView, СкачатьКартуView
+
 urlpatterns = [
     path('branches/<int:branch_id>/', BranchInfoView.as_view(), name='branch-info'),
     path('client/',                   ClientView.as_view(),      name='client'),
@@ -28,6 +30,12 @@ urlpatterns = [
     path('review-proofs/<int:pk>/reject/',  ReviewProofRejectView.as_view(), name='review-proof-reject'),
     path('review-proofs/<int:pk>/resend/',  ReviewProofResendView.as_view(), name='review-proof-resend'),
     # Карта гостя для кассы, режим iikoCard «Карта гостя» — client_pos_card.py
+    path('client/wallet/',            ClientWalletView.as_view(), name='client-wallet'),
+    path('wallet/pass/<str:serial>/', СкачатьКартуView.as_view(), name='wallet-pass'),
+    path('wallet/apple/v1/devices/<str:device>/registrations/<str:pass_type>/<str:serial>', РегистрацияView.as_view(), name='wallet-register'),
+    path('wallet/apple/v1/devices/<str:device>/registrations/<str:pass_type>', ИзменившиесяView.as_view(), name='wallet-updated'),
+    path('wallet/apple/v1/passes/<str:pass_type>/<str:serial>', КартаДляТелефонаView.as_view(), name='wallet-latest'),
+    path('wallet/apple/v1/log', ЖурналView.as_view(), name='wallet-log'),
     path('client/pos-card/',          ClientPosCardView.as_view(), name='client-pos-card'),
     path('client/vk-sync/',           VKSyncView.as_view(),      name='client-vk-sync'),
     path('client/vk-subscription-status/', VKSubscriptionStatusView.as_view(), name='client-vk-subscription-status'),

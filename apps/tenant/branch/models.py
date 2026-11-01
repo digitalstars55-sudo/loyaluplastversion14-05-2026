@@ -2119,3 +2119,30 @@ class GuestNote(TimeStampedModel):
 
     def __str__(self):
         return f'{self.get_kind_display()}: {self.text[:40]}'
+
+
+class WalletPass(models.Model):
+    """Карта гостя в Apple Wallet: серийный номер и ключ, которым телефон просит обновление."""
+    client = models.OneToOneField('guest.Client', on_delete=models.CASCADE, related_name='wallet_pass', verbose_name='Гость')
+    serial = models.CharField('Серийный номер', max_length=40, unique=True)
+    auth_token = models.CharField('Ключ обновления', max_length=64)
+    host = models.CharField('Адрес сети', max_length=255, blank=True, default='')
+    changed_at = models.DateTimeField('Карта изменилась', auto_now_add=True)
+    created_at = models.DateTimeField('Создана', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Wallet-карта'
+        verbose_name_plural = 'Wallet-карты'
+
+
+class WalletDevice(models.Model):
+    """Телефон, на котором лежит карта: сюда уходит пуш об изменении баланса."""
+    wallet_pass = models.ForeignKey(WalletPass, on_delete=models.CASCADE, related_name='devices', verbose_name='Карта')
+    device_id = models.CharField('Устройство', max_length=128)
+    push_token = models.CharField('Токен пуша', max_length=256)
+    created_at = models.DateTimeField('Добавлена', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Устройство Wallet'
+        verbose_name_plural = 'Устройства Wallet'
+        constraints = [models.UniqueConstraint(fields=['wallet_pass', 'device_id'], name='wallet_device_once')]

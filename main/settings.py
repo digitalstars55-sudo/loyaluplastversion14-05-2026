@@ -325,6 +325,15 @@ VK_SIGN_EXEMPT_PATHS = tuple(
 # ── Распределитель входа /go/ (apps/shared/guest/go.py) ──────────────────────
 # Куда вести гостя из браузера: веб-версия мини-аппа (тот же бандл).
 GUEST_WEB_BASE_URL = os.getenv('GUEST_WEB_BASE_URL', 'https://loyalupp.ru')
+
+# Карта гостя в Wallet (01.11.2026): пути к файлам сертификата, значения не в коде.
+WALLET_PASS_TYPE_ID = os.getenv('WALLET_PASS_TYPE_ID', '')
+WALLET_TEAM_ID = os.getenv('WALLET_TEAM_ID', '')
+WALLET_PASS_CERT = os.getenv('WALLET_PASS_CERT', '')
+WALLET_PASS_KEY = os.getenv('WALLET_PASS_KEY', '')
+WALLET_WWDR_CERT = os.getenv('WALLET_WWDR_CERT', '')
+WALLET_GOOGLE_ISSUER_ID = os.getenv('WALLET_GOOGLE_ISSUER_ID', '')
+WALLET_GOOGLE_SA_JSON = os.getenv('WALLET_GOOGLE_SA_JSON', '')
 # Страница, которую ВК открывает внутри себя для мини-приложения (проверка доступности /go).
 VK_MINI_APP_HOST = os.getenv('VK_MINI_APP_HOST', 'https://levonework.ru/')
 # Телеграм-мини-апп гостя: `https://t.me/<бот>/<приложение>`. Пусто — в Телеграме

@@ -724,7 +724,9 @@ class GuestListAPIView(APIView):
             qs = qs.filter(
                 Q(first_name__icontains=search) |
                 Q(last_name__icontains=search) |
-                Q(vk_id__icontains=search)
+                Q(vk_id__icontains=search) |
+                # Хостес ищет гостя по телефону брони: только цифры, не короче 7, чтобы не выдавать всех подряд.
+                (Q(phone__icontains=search) if search.isdigit() and len(search) >= 7 else Q(pk__in=[]))
             )
         qs = qs.order_by('-created_at', '-pk')
         total = qs.count()

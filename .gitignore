@@ -29,3 +29,6 @@ backups/
 backup_*.sql
 host-pre-rsync-*.tar.gz
 .DS_Store
+
+# Сертификаты Wallet: только на сервере
+secrets/

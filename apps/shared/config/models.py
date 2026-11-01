@@ -409,6 +409,11 @@ class ClientConfig(models.Model):
         help_text='Пароль пользователя API из кабинета iiko.',
     )
 
+    wallet_enabled = models.BooleanField(
+        default=False, db_default=False, verbose_name='Карта гостя в Wallet',
+        help_text='Кнопка «Добавить в Wallet» в профиле гостя. Нужны ключи WALLET_* на сервере.',
+    )
+
     # iikoCard — связь гостя LoyalUP с его картой iiko (волна 2 ТЗ маркетолога,
     # решение владельца 14.10.2026: за флагом сети, по умолчанию выключено).
     # «Только связь» — читаем гостя и его заказы, ничего в iiko не пишем.

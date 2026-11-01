@@ -1109,3 +1109,15 @@ def guest_occasions_daily_task() -> dict:
                 итог[tenant.schema_name] = r
     logger.info('guest_occasions_daily: %s', итог)
     return итог
+
+
+@shared_task(name='branch.wallet_push')
+def wallet_push(schema_name, client_id):
+    """Баллы изменились: телефоны с Wallet-картой заберут свежую."""
+    from django_tenants.utils import schema_context
+
+    from . import wallet
+    from .models import WalletPass
+    with schema_context(schema_name):
+        wp = WalletPass.objects.filter(client_id=client_id).first()
+        return wallet.пуш_apns(wp) if wp else 0
