@@ -6,6 +6,7 @@ from django.urls import path
 
 from .branch_edit import BranchDetailAPIView
 from .views import (
+    ExternalReviewDraftAPIView,
     AutoBroadcastRulesAPIView,
     AutoBroadcastRuleDetailAPIView,
     AutoBroadcastRulePreviewAPIView,
@@ -116,6 +117,11 @@ urlpatterns = [
     ),
 
     # AI drafts for review replies
+    path(
+        'analytics/reviews/external-draft/',
+        ExternalReviewDraftAPIView.as_view(),
+        name='analytics-review-external-draft',
+    ),
     path(
         'analytics/reviews/<int:review_id>/regenerate-draft/',
         RegenerateReviewDraftAPIView.as_view(),

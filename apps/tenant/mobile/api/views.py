@@ -1456,6 +1456,62 @@ class RegenerateReviewDraftAPIView(APIView):
         return Response({'draft_text': text, 'auto_send_status': auto_send_status})
 
 
+class ExternalReviewDraftAPIView(APIView):
+    """
+    POST /api/v1/analytics/reviews/external-draft/ {text, rating, source, branch, instruction}
+
+    Ответ на отзыв с карт по базе знаний и тону сети (02.11.2026, владелец: «ответы как в
+    лоялап»). Отзыв живёт в CheckUp, здесь ничего не сохраняется: только текст черновика.
+    """
+    permission_classes = [IsAuthenticated, HasFeatureAccess.factory('reviews')]
+
+    def post(self, request):
+        import os
+        from django.conf import settings as _settings
+        from django.db import connection
+        from apps.shared.ai import openai_compat as anthropic
+        from apps.shared.ai.usage import cached_system, log_usage
+        from apps.tenant.analytics.ai_service import _get_knowledge_base_text
+        from apps.tenant.analytics.auto_reply import DRAFT_MODEL, build_draft_prompt_parts
+        from apps.tenant.branch.models import ReviewAutoReplyConfig
+
+        данные = request.data or {}
+        текст = str(данные.get('text') or '').strip()[:2000]
+        оценка = данные.get('rating')
+        оценка = int(оценка) if str(оценка or '').isdigit() and 1 <= int(оценка) <= 5 else None
+        if not текст and not оценка:
+            return Response({'error': 'В отзыве нет ни текста, ни оценки'}, status=status.HTTP_400_BAD_REQUEST)
+        площадка = {'YANDEX': 'Яндекс Карты', 'TWOGIS': '2ГИС'}.get(str(данные.get('source') or ''), '')
+        указание = str(данные.get('instruction') or '')[:1000]
+        if площадка:
+            указание = f'Отзыв с площадки {площадка}, ответ увидят все. {указание}'.strip()
+        try:
+            тон = ReviewAutoReplyConfig.get_singleton().ai_tone
+        except Exception:
+            тон = 'friendly'
+        system_prompt, user_message = build_draft_prompt_parts(
+            [{'source': str(данные.get('source') or ''), 'text': текст, 'rating': оценка}],
+            ai_tone=тон,
+            company_name=str(данные.get('branch') or '') or getattr(connection.tenant, 'name', 'наше заведение'),
+            kb_text=_get_knowledge_base_text(),
+            instruction=указание,
+        )
+        api_key = getattr(_settings, 'OPENAI_API_KEY', None)
+        if not api_key:
+            return Response({'error': 'OPENAI_API_KEY не настроен'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        proxy_url = os.getenv('OPENAI_BASE_URL', '')
+        client = anthropic.Anthropic(api_key=api_key, base_url=proxy_url) if proxy_url else anthropic.Anthropic(api_key=api_key)
+        try:
+            message = client.messages.create(
+                model=DRAFT_MODEL, max_tokens=2048, system=cached_system(system_prompt),
+                messages=[{'role': 'user', 'content': user_message}],
+            )
+            log_usage('draft_external', message)
+            return Response({'text': message.content[0].text.strip()})
+        except Exception as e:
+            return Response({'error': f'Ошибка AI: {e}'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
 class RejectReviewDraftAPIView(APIView):
     """
     POST /api/v1/analytics/reviews/{review_id}/reject-draft/
