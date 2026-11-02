@@ -889,6 +889,8 @@ class TransactionSource(models.TextChoices):
     PHONE    = 'phone',    'Номер телефона'   # №78: спасибо за номер, данный через ВК
     RECEIPT  = 'receipt',  'Чек'              # скан QR фискального чека
     POS      = 'pos',      'Заказ на кассе'   # заказ по карте гостя в iikoCard
+    REFERRAL = 'referral', 'Приглашение друга'
+    LEVEL    = 'level',    'Бонус уровня'
     REVIEW   = 'review',   'Отзыв на картах'  # волна 3: подтверждённый скриншот отзыва
 
 
@@ -2146,3 +2148,67 @@ class WalletDevice(models.Model):
         verbose_name = 'Устройство Wallet'
         verbose_name_plural = 'Устройства Wallet'
         constraints = [models.UniqueConstraint(fields=['wallet_pass', 'device_id'], name='wallet_device_once')]
+
+
+# ── Рефералка и сертификаты (этап 1, 02.11.2026) ───────────────────────────
+
+class ReferralReward(models.Model):
+    """Друг сделал первый подтверждённый заказ: монеты обоим, один раз на друга."""
+
+    friend = models.OneToOneField(
+        ClientBranch, on_delete=models.CASCADE, related_name='referral_reward', verbose_name='Друг')
+    inviter = models.ForeignKey(
+        ClientBranch, on_delete=models.CASCADE, related_name='referral_rewards', verbose_name='Пригласил')
+    friend_coins = models.PositiveIntegerField(default=0, verbose_name='Монет другу')
+    inviter_coins = models.PositiveIntegerField(default=0, verbose_name='Монет пригласившему')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name='Когда')
+
+    class Meta:
+        verbose_name = 'Награда за друга'
+        verbose_name_plural = 'Награды за друзей'
+        ordering = ['-created_at']
+
+
+def _gen_certificate_code() -> str:
+    import secrets
+    алфавит = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
+    return ''.join(secrets.choice(алфавит) for _ in range(12))
+
+
+class GiftCertificate(models.Model):
+    """Подарочный сертификат: номинал и остаток в рублях. Оплату принимает касса, в iiko не пишем."""
+
+    code = models.CharField(max_length=16, unique=True, default=_gen_certificate_code, verbose_name='Код')
+    nominal = models.PositiveIntegerField(verbose_name='Номинал, ₽')
+    balance = models.PositiveIntegerField(verbose_name='Остаток, ₽')
+    expires_at = models.DateField(null=True, blank=True, verbose_name='Действует до')
+    buyer_name = models.CharField(max_length=120, blank=True, verbose_name='Покупатель')
+    recipient_name = models.CharField(max_length=120, blank=True, verbose_name='Кому')
+    recipient_phone = models.CharField(max_length=32, blank=True, verbose_name='Телефон получателя')
+    note = models.CharField(max_length=255, blank=True, verbose_name='Заметка')
+    issued_by = models.CharField(max_length=150, blank=True, verbose_name='Кто выпустил')
+    voided_at = models.DateTimeField(null=True, blank=True, verbose_name='Отменён')
+    voided_by = models.CharField(max_length=150, blank=True, verbose_name='Кто отменил')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name='Выпущен')
+
+    class Meta:
+        verbose_name = 'Подарочный сертификат'
+        verbose_name_plural = 'Подарочные сертификаты'
+        ordering = ['-created_at']
+
+
+class GiftCertificateUse(models.Model):
+    """Списание с сертификата. Строки не меняются: остаток можно сверить по ним."""
+
+    certificate = models.ForeignKey(
+        GiftCertificate, on_delete=models.CASCADE, related_name='uses', verbose_name='Сертификат')
+    amount = models.PositiveIntegerField(verbose_name='Сумма, ₽')
+    branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Точка')
+    who = models.CharField(max_length=150, blank=True, verbose_name='Кто списал')
+    comment = models.CharField(max_length=255, blank=True, verbose_name='Комментарий')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name='Когда')
+
+    class Meta:
+        verbose_name = 'Списание с сертификата'
+        verbose_name_plural = 'Списания с сертификатов'
+        ordering = ['-created_at']

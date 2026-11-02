@@ -58,6 +58,9 @@ FLAG_FIELDS = (
     'brand_color', 'brand_color_secondary',
     # Волна 3 (14.10.2026): баллы за отзыв на картах по скриншоту.
     'review_proof_enabled', 'review_proof_coins',
+    # Этап 1 (02.11.2026): приглашение друга, уровни, сертификаты.
+    'referral_enabled', 'referral_inviter_coins', 'referral_friend_coins',
+    'levels_enabled', 'certificates_enabled',
     # 15.10.2026: подарок-извинение за низкую оценку и основная площадка /go.
     'apology_gift_enabled', 'apology_gift_max_rating', 'apology_gift_tier', 'apology_gift_text',
     'guest_primary_channel', 'stoplist_guard_enabled',

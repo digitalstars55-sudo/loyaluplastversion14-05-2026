@@ -409,6 +409,26 @@ class ClientConfig(models.Model):
         help_text='Пароль пользователя API из кабинета iiko.',
     )
 
+    # Этап 1 (02.11.2026): всё выключено, пока сеть не включит сама.
+    referral_enabled = models.BooleanField(
+        default=False, db_default=False, verbose_name='Приглашение друга',
+        help_text='Личная ссылка гостя. Монеты обоим после первого подтверждённого заказа друга: чек или карта на кассе.',
+    )
+    referral_inviter_coins = models.PositiveIntegerField(default=100, db_default=100, verbose_name='Монет пригласившему')
+    referral_friend_coins = models.PositiveIntegerField(default=100, db_default=100, verbose_name='Монет другу')
+    levels_enabled = models.BooleanField(
+        default=False, db_default=False, verbose_name='Уровни гостей',
+        help_text='Уровень считается по визитам за 365 дней. Бонус начисляется сверх монет за чек или карту.',
+    )
+    levels = models.JSONField(
+        default=list, blank=True, verbose_name='Уровни',
+        help_text='[{"name": "Свой", "visits": 5, "bonus_pct": 5}]. Пусто — стандартные три уровня.',
+    )
+    certificates_enabled = models.BooleanField(
+        default=False, db_default=False, verbose_name='Подарочные сертификаты',
+        help_text='Выпуск и списание в кабинете. Оплату принимает касса, в iiko ничего не пишется.',
+    )
+
     wallet_enabled = models.BooleanField(
         default=False, db_default=False, verbose_name='Карта гостя в Wallet',
         help_text='Кнопка «Добавить в Wallet» в профиле гостя. Нужны ключи WALLET_* на сервере.',

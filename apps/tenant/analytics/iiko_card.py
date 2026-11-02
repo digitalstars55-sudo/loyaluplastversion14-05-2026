@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import time
 from datetime import timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
@@ -75,7 +76,14 @@ class IikoCloudClient:
         self._last = time.monotonic()
 
     def _auth(self) -> str:
-        resp = self.http.post(f'{BASE_URL}/access_token', json={'apiLogin': self.api_login})
+        # 02.11.2026 iiko закрыл старый вход для ключа levone: нужны данные приложения с портала разработчика.
+        app_id, secret = os.environ.get('IIKO_APP_ID', ''), os.environ.get('IIKO_CLIENT_SECRET', '')
+        resp = None
+        if app_id and secret:
+            resp = self.http.post(f"{BASE_URL.removesuffix('/api/1')}/api/v2/access_token",
+                                  json={'apiKey': self.api_login, 'appId': app_id, 'clientSecret': secret})
+        if resp is None or resp.status_code != 200:
+            resp = self.http.post(f'{BASE_URL}/access_token', json={'apiLogin': self.api_login})
         if resp.status_code != 200:
             raise IikoCloudError(f'вход в iiko Cloud: HTTP {resp.status_code}')
         token = (resp.json() or {}).get('token')

@@ -14,6 +14,9 @@ from .views import (
     VKSubscriptionStatusView,
 )
 
+from .loyalty_extra_views import (
+    CertificateListView, CertificatePublicView, CertificateRedeemView, CertificateVoidView, ClientLoyaltyExtraView,
+)
 from .wallet_views import ClientWalletView, ИзменившиесяView, ЖурналView, КартаДляТелефонаView, РегистрацияView, СкачатьКартуView
 
 urlpatterns = [
@@ -30,6 +33,12 @@ urlpatterns = [
     path('review-proofs/<int:pk>/reject/',  ReviewProofRejectView.as_view(), name='review-proof-reject'),
     path('review-proofs/<int:pk>/resend/',  ReviewProofResendView.as_view(), name='review-proof-resend'),
     # Карта гостя для кассы, режим iikoCard «Карта гостя» — client_pos_card.py
+    # Этап 1 (02.11.2026): уровень и приглашение гостя, подарочные сертификаты — loyalty_extra_views.py
+    path('client/loyalty-extra/', ClientLoyaltyExtraView.as_view(), name='client-loyalty-extra'),
+    path('certificates/', CertificateListView.as_view(), name='certificates'),
+    path('certificates/<int:pk>/redeem/', CertificateRedeemView.as_view(), name='certificate-redeem'),
+    path('certificates/<int:pk>/void/', CertificateVoidView.as_view(), name='certificate-void'),
+    path('public/certificate/<str:code>/', CertificatePublicView.as_view(), name='certificate-public'),
     path('client/wallet/',            ClientWalletView.as_view(), name='client-wallet'),
     path('wallet/pass/<str:serial>/', СкачатьКартуView.as_view(), name='wallet-pass'),
     path('wallet/apple/v1/devices/<str:device>/registrations/<str:pass_type>/<str:serial>', РегистрацияView.as_view(), name='wallet-register'),

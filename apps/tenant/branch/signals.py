@@ -20,9 +20,22 @@ def wallet_on_coins(sender, instance, created, **kwargs):
     if not getattr(settings, 'WALLET_PASS_CERT', ''):
         return
     from . import wallet
-    client_id = getattr(getattr(instance, 'client_branch', None), 'client_id', None)
+    # У транзакции поле `client` — это профиль гостя на точке; его `client_id` и есть гость.
+    client_id = getattr(getattr(instance, 'client', None), 'client_id', None)
     if client_id:
         try:
             wallet.отметить_изменение(client_id)
         except Exception:  # noqa: BLE001 — карта не должна мешать начислению
             wallet.log.warning('wallet: не отметили изменение', exc_info=True)
+
+
+@receiver(post_save, sender='branch.CoinTransaction')
+def stage1_on_order(sender, instance, created, **kwargs):
+    """Подтверждённый заказ: бонус уровня и награда за приглашённого друга."""
+    if not created:
+        return
+    from . import loyalty_extra
+    try:
+        loyalty_extra.после_заказа(instance)
+    except Exception:  # noqa: BLE001 — бонус не должен ломать начисление за чек
+        loyalty_extra.log.warning('stage1: не начислили бонус за заказ', exc_info=True)
