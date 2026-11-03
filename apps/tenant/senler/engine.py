@@ -563,6 +563,11 @@ def phone_request_keyboard(c: Candidate) -> dict | None:
         'buttons': [[{
             'action': {'type': 'callback', 'label': label, 'payload': build_payload(link)},
             'color': 'primary',
+        }], [{
+            # Цвет есть только у callback, но не каждый клиент ВК открывает мини-апп по её
+            # ответу (Сурова, 03.11.2026: три нажатия, ВК ответил 1, приложение не запустилось).
+            # Обычная ссылка открывается всегда.
+            'action': {'type': 'open_link', 'label': 'Не открылось? Открыть по ссылке', 'link': link},
         }]],
     }
 

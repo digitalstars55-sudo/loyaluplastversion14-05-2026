@@ -32,6 +32,10 @@ class PhoneRequestKeyboardTest(SimpleTestCase):
         self.assertEqual(payload['url'], 'https://vk.com/app53418653/#/?company=100&branch=239014483&source=rfm&phone=true')
         self.assertLessEqual(len(btn['payload']), 255)
         self.assertEqual(btn['label'], 'Оставить номер · +50 баллов')
+        запасная = kb['buttons'][1][0]['action']
+        self.assertEqual(запасная['type'], 'open_link')
+        self.assertEqual(запасная['link'], payload['url'])
+        self.assertLessEqual(len(запасная['label']), 40)
 
     def test_label_without_reward(self):
         with patch.object(engine, '_tenant_client_id', return_value=100), \
