@@ -4,6 +4,10 @@
     GET  /api/v1/certificates/?q=          POST /api/v1/certificates/
     POST /api/v1/certificates/<id>/redeem/ {amount, branch_id?, comment?}
     POST /api/v1/certificates/<id>/void/
+    GET/PATCH /api/v1/certificates/settings/   — номиналы, срок, где принимают, логотип
+    GET/POST  /api/v1/certificates/designs/    — картинки и логотип: загрузка multipart `image`
+    POST /api/v1/certificates/designs/generate/ {prompt, style} — четыре варианта от ИИ
+    DELETE /api/v1/certificates/designs/<id>/
     GET  /api/v1/public/certificate/<code>/  — страница для получателя, доступ по коду
 Выключенный флаг сети отвечает 404.
 """
@@ -19,8 +23,9 @@ from rest_framework.views import APIView
 
 from apps.shared.users.access import current_schema_name, user_allowed_branches
 
+from .. import certificates as CERT
 from .. import loyalty_extra as LE
-from ..models import Branch, ClientBranch, GiftCertificate, GiftCertificateUse
+from ..models import Branch, ClientBranch, GiftCertificate, GiftCertificateDesign, GiftCertificateUse
 from .client_phone import _err
 from .client_receipt import _guest
 
@@ -73,12 +78,14 @@ def _ряд(c, request=None) -> dict:
         'id': c.pk, 'code': c.code, 'nominal': c.nominal, 'balance': c.balance, 'status': статус,
         'expires_at': c.expires_at.isoformat() if c.expires_at else None, 'buyer_name': c.buyer_name,
         'recipient_name': c.recipient_name, 'recipient_phone': c.recipient_phone, 'note': c.note,
-        'issued_by': c.issued_by, 'created_at': c.created_at.isoformat(),
+        'issued_by': c.issued_by, 'created_at': c.created_at.isoformat(), 'message': c.message,
+        'design_id': c.design_id, 'issued_branch': c.issued_branch_id,
         'uses': [{'amount': u.amount, 'who': u.who, 'comment': u.comment, 'created_at': u.created_at.isoformat(),
                   'branch': u.branch.name if u.branch_id else ''} for u in c.uses.all()],
     }
     if request is not None:
-        ряд['url'] = request.build_absolute_uri(f'/api/v1/public/certificate/{c.code}/')
+        # Прокси кабинета ходит сюда без tls: гостю ссылка нужна рабочая, https.
+        ряд['url'] = request.build_absolute_uri(f'/api/v1/public/certificate/{c.code}/').replace('http://', 'https://', 1)
     return ряд
 
 
@@ -118,10 +125,24 @@ class CertificateListView(_Кабинет):
                 срок = None
             if срок is None or срок < timezone.localdate():
                 return _err('bad_date', 'Срок действия указан неверно.', status.HTTP_400_BAD_REQUEST)
+        картинка = None
+        if d.get('design_id'):
+            картинка = GiftCertificateDesign.objects.filter(
+                pk=d.get('design_id'), kind=GiftCertificateDesign.Kind.DESIGN,
+                status=GiftCertificateDesign.Status.READY).first()
+            if картинка is None:
+                return _err('bad_design', 'Картинка не найдена.', status.HTTP_400_BAD_REQUEST)
+        точка = None
+        if d.get('branch_id'):
+            разрешено = user_allowed_branches(request.user, current_schema_name())
+            точка = Branch.objects.filter(pk=d.get('branch_id')).first()
+            if точка is None or (разрешено is not None and точка.pk not in разрешено):
+                return _err('bad_branch', 'Нет доступа к точке.', status.HTTP_403_FORBIDDEN)
         c = GiftCertificate.objects.create(
             nominal=номинал, balance=номинал, expires_at=срок, buyer_name=str(d.get('buyer_name') or '')[:120],
             recipient_name=str(d.get('recipient_name') or '')[:120],
             recipient_phone=str(d.get('recipient_phone') or '')[:32], note=str(d.get('note') or '')[:255],
+            message=str(d.get('message') or '')[:255], design=картинка, issued_branch=точка,
             issued_by=_who(request.user))
         return Response(_ряд(c, request), status=status.HTTP_201_CREATED)
 
@@ -152,6 +173,9 @@ class CertificateRedeemView(_Кабинет):
                 return _err('expired', 'Срок сертификата закончился.', status.HTTP_409_CONFLICT)
             if сумма > c.balance:
                 return _err('not_enough', f'На сертификате осталось {c.balance} ₽.', status.HTTP_409_CONFLICT)
+            отказ = CERT.почему_нельзя_списать(c, сумма, точка, _config())
+            if отказ:
+                return _err(отказ[0], отказ[1], status.HTTP_409_CONFLICT)
             c.balance -= сумма
             c.save(update_fields=['balance'])
             GiftCertificateUse.objects.create(certificate=c, amount=сумма, branch=точка, who=_who(request.user),
@@ -173,6 +197,81 @@ class CertificateVoidView(_Кабинет):
         return Response(_ряд(c, request))
 
 
+def _файл(d, request) -> dict:
+    return {'id': d.pk, 'kind': d.kind, 'source': d.source, 'status': d.status, 'error': d.error,
+            'image_url': request.build_absolute_uri(d.image.url) if d.image else None,
+            'prompt': d.prompt, 'created_at': d.created_at.isoformat()}
+
+
+class CertificateSettingsView(_Кабинет):
+
+    def get(self, request):
+        return Response(CERT.настройки(_config()))
+
+    def patch(self, request):
+        cfg = _config()
+        try:
+            итог = CERT.проверить_настройки(CERT.настройки(cfg), request.data or {})
+        except CERT.НеверныеНастройки as e:
+            return _err('bad_settings', str(e), status.HTTP_400_BAD_REQUEST)
+        cfg.certificate_settings = итог
+        cfg.save(update_fields=['certificate_settings'])
+        return Response(итог)
+
+
+class CertificateDesignListView(_Кабинет):
+
+    def get(self, request):
+        вид = request.query_params.get('kind')
+        qs = GiftCertificateDesign.objects.all()
+        if вид in GiftCertificateDesign.Kind.values:
+            qs = qs.filter(kind=вид)
+        return Response({'results': [_файл(d, request) for d in qs[:60]]})
+
+    def post(self, request):
+        файл = request.FILES.get('image')
+        if файл is None:
+            return _err('no_file', 'Нет файла.', status.HTTP_400_BAD_REQUEST)
+        вид = request.data.get('kind') or GiftCertificateDesign.Kind.DESIGN
+        if вид not in GiftCertificateDesign.Kind.values:
+            return _err('bad_kind', 'Неизвестный вид файла.', status.HTTP_400_BAD_REQUEST)
+        try:
+            содержимое = CERT.подготовить_файл(файл, вид)
+        except CERT.НеверныеНастройки as e:
+            return _err('bad_image', str(e), status.HTTP_400_BAD_REQUEST)
+        d = GiftCertificateDesign(kind=вид, created_by=_who(request.user))
+        d.image.save(содержимое.name, содержимое, save=False)
+        d.save()
+        return Response(_файл(d, request), status=status.HTTP_201_CREATED)
+
+
+class CertificateDesignGenerateView(_Кабинет):
+
+    def post(self, request):
+        пожелание = str(request.data.get('prompt') or '').strip()[:300]
+        if not пожелание:
+            return _err('no_prompt', 'Напишите, что должно быть на картинке.', status.HTTP_400_BAD_REQUEST)
+        сеть = getattr(getattr(connection, 'tenant', None), 'name', '') or ''
+        задание = CERT.задание_ии(пожелание, str(request.data.get('style') or ''), сеть)
+        варианты = [GiftCertificateDesign.objects.create(
+            source=GiftCertificateDesign.Source.AI, status=GiftCertificateDesign.Status.PENDING,
+            prompt=пожелание, created_by=_who(request.user)) for _ in range(CERT.ВАРИАНТОВ_ИИ)]
+        from ..tasks import draw_certificate_designs
+        draw_certificate_designs.delay(current_schema_name(), [d.pk for d in варианты], задание)
+        return Response({'results': [_файл(d, request) for d in варианты]}, status=status.HTTP_202_ACCEPTED)
+
+
+class CertificateDesignDetailView(_Кабинет):
+
+    def delete(self, request, pk: int):
+        d = GiftCertificateDesign.objects.filter(pk=pk).first()
+        if d is None:
+            raise Http404
+        # Выпущенные сертификаты теряют только ссылку и показываются на фирменном фоне.
+        d.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class CertificatePublicView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -184,11 +283,27 @@ class CertificatePublicView(APIView):
             raise Http404
         сеть = escape(getattr(getattr(connection, 'tenant', None), 'name', ''))
         действует = 'Отменён' if c.voided_at else (f'до {c.expires_at:%d.%m.%Y}' if c.expires_at else 'без срока')
+        н = CERT.настройки(cfg)
+        картинка = c.design.image.url if c.design_id and c.design.image else ''
+        логотип_ряд = GiftCertificateDesign.objects.filter(pk=н['logo_id']).first() if н['logo_id'] else None
+        логотип = логотип_ряд.image.url if логотип_ряд and логотип_ряд.image else ''
+        угол = {'tl': 'top:14px;left:14px', 'tr': 'top:14px;right:14px', 'bl': 'bottom:14px;left:14px',
+                'br': 'bottom:14px;right:14px'}.get(н['logo_corner'], 'top:14px;right:14px')
+        фон = (f"background:linear-gradient(90deg,rgba(15,23,33,.82),rgba(15,23,33,.35)),url('{escape(картинка)}') center/cover"
+               if картинка else 'background:linear-gradient(135deg,#1B2838,#2D3F55)')
+        лого_html = f'<img class="l" style="{угол}" src="{escape(логотип)}" alt="">' if логотип else ''
+        кому = ' '.join(x for x in (escape(c.recipient_name), escape(c.message)) if x)
+        кому_html = f'<p class="m">{кому}</p>' if кому else ''
         return HttpResponse(f'''<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Подарочный сертификат</title>
 <style>body{{margin:0;background:#FDF8F0;color:#1B2838;font:16px/1.5 -apple-system,Roboto,sans-serif}}
-main{{max-width:420px;margin:0 auto;padding:32px 16px;text-align:center}}
-.c{{background:#fff;border:1px solid #EDE8DF;border-radius:20px;padding:28px 20px}}
-b{{display:block;font-size:44px;line-height:1.1;margin:12px 0}}code{{display:block;font-size:24px;letter-spacing:2px;margin:16px 0;font-weight:700;word-break:break-all}}
-p{{margin:4px 0;color:#5F6B7A}}</style></head><body><main><div class="c"><p>{сеть}</p><p>Подарочный сертификат</p>
-<b>{c.balance} ₽</b><p>Номинал {c.nominal} ₽ · {действует}</p><code>{c.code}</code><p>Покажите код при оплате.</p></div></main></body></html>''')
+main{{max-width:520px;margin:0 auto;padding:32px 16px}}
+.c{{position:relative;{фон};color:#fff;border-radius:20px;padding:24px;aspect-ratio:3/2;display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box;overflow:hidden}}
+.l{{position:absolute;max-width:30%;max-height:22%;object-fit:contain}}
+small{{letter-spacing:.06em;text-transform:uppercase;opacity:.85;font-size:11px;font-weight:700;display:block;max-width:64%}}
+b{{display:block;font-size:44px;line-height:1.1}}.m{{margin:6px 0 0;font-weight:600;max-width:80%}}
+code{{font-size:15px;letter-spacing:2px;font-weight:700;opacity:.92;word-break:break-all}}
+p.n{{margin:14px 4px 0;color:#5F6B7A;text-align:center;font-size:14px}}</style></head><body><main>
+<div class="c">{лого_html}<small>Подарочный сертификат · {сеть}</small>
+<div><b>{c.balance} ₽</b>{кому_html}</div><code>{c.code} · {действует}</code></div>
+<p class="n">Номинал {c.nominal} ₽. Покажите код при оплате.</p></main></body></html>''')

@@ -15,7 +15,8 @@ from .views import (
 )
 
 from .loyalty_extra_views import (
-    CertificateListView, CertificatePublicView, CertificateRedeemView, CertificateVoidView, ClientLoyaltyExtraView,
+    CertificateDesignDetailView, CertificateDesignGenerateView, CertificateDesignListView, CertificateListView,
+    CertificatePublicView, CertificateRedeemView, CertificateSettingsView, CertificateVoidView, ClientLoyaltyExtraView,
 )
 from .wallet_views import ClientWalletView, ИзменившиесяView, ЖурналView, КартаДляТелефонаView, РегистрацияView, СкачатьКартуView
 
@@ -36,6 +37,10 @@ urlpatterns = [
     # Этап 1 (02.11.2026): уровень и приглашение гостя, подарочные сертификаты — loyalty_extra_views.py
     path('client/loyalty-extra/', ClientLoyaltyExtraView.as_view(), name='client-loyalty-extra'),
     path('certificates/', CertificateListView.as_view(), name='certificates'),
+    path('certificates/settings/', CertificateSettingsView.as_view(), name='certificate-settings'),
+    path('certificates/designs/', CertificateDesignListView.as_view(), name='certificate-designs'),
+    path('certificates/designs/generate/', CertificateDesignGenerateView.as_view(), name='certificate-designs-generate'),
+    path('certificates/designs/<int:pk>/', CertificateDesignDetailView.as_view(), name='certificate-design'),
     path('certificates/<int:pk>/redeem/', CertificateRedeemView.as_view(), name='certificate-redeem'),
     path('certificates/<int:pk>/void/', CertificateVoidView.as_view(), name='certificate-void'),
     path('public/certificate/<str:code>/', CertificatePublicView.as_view(), name='certificate-public'),

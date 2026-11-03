@@ -428,6 +428,10 @@ class ClientConfig(models.Model):
         default=False, db_default=False, verbose_name='Подарочные сертификаты',
         help_text='Выпуск и списание в кабинете. Оплату принимает касса, в iiko ничего не пишется.',
     )
+    certificate_settings = models.JSONField(
+        default=dict, blank=True, verbose_name='Настройки сертификатов',
+        help_text='Номиналы, срок, где принимают, частичное списание, логотип. См. apps/tenant/branch/certificates.py.',
+    )
 
     wallet_enabled = models.BooleanField(
         default=False, db_default=False, verbose_name='Карта гостя в Wallet',

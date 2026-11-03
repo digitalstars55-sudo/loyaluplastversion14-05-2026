@@ -440,6 +440,16 @@ def reconcile_branch_messages(branch_id: int, max_pages: int = MAX_PAGES_FULL) -
 from celery import shared_task
 
 
+@shared_task(name='apps.tenant.branch.tasks.draw_certificate_designs', time_limit=900, soft_time_limit=840)
+def draw_certificate_designs(schema_name: str, ids: list, prompt: str) -> int:
+    """Четыре варианта картинки сертификата. Кабинет опрашивает список, пока все не готовы."""
+    from django_tenants.utils import schema_context
+
+    from .certificates import нарисовать_варианты
+    with schema_context(schema_name):
+        return нарисовать_варианты(ids, prompt)
+
+
 @shared_task(
     name='apps.tenant.branch.tasks.poll_vk_messages_task',
     bind=True,

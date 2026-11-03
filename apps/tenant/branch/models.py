@@ -2175,6 +2175,37 @@ def _gen_certificate_code() -> str:
     return ''.join(secrets.choice(алфавит) for _ in range(12))
 
 
+class GiftCertificateDesign(models.Model):
+    """Картинка сертификата или логотип сети: своя загрузка либо вариант от ИИ."""
+
+    class Kind(models.TextChoices):
+        DESIGN = 'design', 'Картинка'
+        LOGO = 'logo', 'Логотип'
+
+    class Source(models.TextChoices):
+        UPLOAD = 'upload', 'Загружена'
+        AI = 'ai', 'ИИ'
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Рисуется'
+        READY = 'ready', 'Готова'
+        FAILED = 'failed', 'Не получилась'
+
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.DESIGN, verbose_name='Вид')
+    source = models.CharField(max_length=10, choices=Source.choices, default=Source.UPLOAD, verbose_name='Откуда')
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.READY, verbose_name='Статус')
+    image = models.ImageField(upload_to='certificates/', blank=True, verbose_name='Файл')
+    prompt = models.CharField(max_length=500, blank=True, verbose_name='Задание ИИ')
+    error = models.CharField(max_length=255, blank=True, verbose_name='Причина сбоя')
+    created_by = models.CharField(max_length=150, blank=True, verbose_name='Кто добавил')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Добавлена')
+
+    class Meta:
+        verbose_name = 'Картинка сертификата'
+        verbose_name_plural = 'Картинки сертификатов'
+        ordering = ['-created_at']
+
+
 class GiftCertificate(models.Model):
     """Подарочный сертификат: номинал и остаток в рублях. Оплату принимает касса, в iiko не пишем."""
 
@@ -2186,6 +2217,14 @@ class GiftCertificate(models.Model):
     recipient_name = models.CharField(max_length=120, blank=True, verbose_name='Кому')
     recipient_phone = models.CharField(max_length=32, blank=True, verbose_name='Телефон получателя')
     note = models.CharField(max_length=255, blank=True, verbose_name='Заметка')
+    message = models.CharField(max_length=255, blank=True, verbose_name='Пожелание получателю')
+    design = models.ForeignKey(
+        GiftCertificateDesign, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='+', verbose_name='Картинка')
+    # Точка выдачи: нужна, когда сеть принимает сертификат только там, где его купили.
+    issued_branch = models.ForeignKey(
+        Branch, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='+', verbose_name='Точка выдачи')
     issued_by = models.CharField(max_length=150, blank=True, verbose_name='Кто выпустил')
     voided_at = models.DateTimeField(null=True, blank=True, verbose_name='Отменён')
     voided_by = models.CharField(max_length=150, blank=True, verbose_name='Кто отменил')
