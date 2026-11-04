@@ -1,3 +1,4 @@
+import logging
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -7,6 +8,9 @@ from django_tenants.utils import schema_context
 from apps.shared.clients.models import Company
 from .serializers import WebhookRequestSerializer, DeliverySerializer
 from .services import BranchNotFound, register_delivery, verify_webhook_signature
+
+
+logger = logging.getLogger(__name__)
 
 
 class PublicDeliveryWebhook(APIView):
@@ -39,6 +43,9 @@ class PublicDeliveryWebhook(APIView):
                 resp_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
                 return Response(DeliverySerializer(delivery).data, status=resp_status)
 
+        # Номер точки в журнале: без него не понять, какой сети не хватает привязки.
+        logger.warning('delivery webhook: точка не найдена source=%s branch_id=%s',
+                       s.validated_data.get('source'), s.validated_data.get('branch_id'))
         return Response(
             {'detail': 'Торговая точка не найдена.'},
             status=status.HTTP_404_NOT_FOUND,

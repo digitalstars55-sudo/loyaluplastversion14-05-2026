@@ -49,6 +49,9 @@ class ReviewListSerializer(serializers.ModelSerializer):
     branch_name   = serializers.SerializerMethodField()
     customer_name = serializers.SerializerMethodField()
     text          = serializers.SerializerMethodField()
+    # Фото последнего сообщения: гость мог прислать картинку без текста (04.11.2026).
+    photos        = serializers.SerializerMethodField()
+    has_photo     = serializers.SerializerMethodField()
     rating        = serializers.SerializerMethodField()
     source        = serializers.SerializerMethodField()
     sources       = serializers.SerializerMethodField()
@@ -90,6 +93,8 @@ class ReviewListSerializer(serializers.ModelSerializer):
             'customer_name',
             'vk_sender_id',
             'text',
+            'photos',
+            'has_photo',
             'rating',
             # Вердикт CheckUp (контракт 5.2): статус/менеджер/текст/дата — пусто, пока жалоба не разобрана.
             'checkup_status',
@@ -215,6 +220,28 @@ class ReviewListSerializer(serializers.ModelSerializer):
     def get_text(self, obj) -> str:
         msg = self._last_message(obj)
         return msg.text if msg else ''
+
+    def get_photos(self, obj) -> list[str]:
+        """Адреса фото последнего сообщения. Срок хранения вышел — адреса нет, `has_photo` остаётся."""
+        msg = self._last_message(obj)
+        if not msg:
+            return []
+        req = self.context.get('request')
+        out = []
+        for a in msg.display_attachments():
+            url = a['url']
+            if a['type'] != 'photo' or not url:
+                continue
+            if req is not None and url.startswith('/'):
+                url = req.build_absolute_uri(url)
+            if url.startswith('http://'):
+                url = 'https://' + url[len('http://'):]
+            out.append(url)
+        return out
+
+    def get_has_photo(self, obj) -> bool:
+        msg = self._last_message(obj)
+        return bool(msg and any(a.get('type', 'photo') == 'photo' for a in (msg.attachments or [])))
 
     def get_rating(self, obj) -> int | None:
         msg = self._last_message(obj)

@@ -236,3 +236,29 @@ class CustomPeriodTest(SimpleTestCase):
             with self.assertRaises(ValidationError) as ctx:
                 _parse_date_range(start, end)
             self.assertIn('Свой период', str(ctx.exception.detail))
+
+
+class ReviewPhotoFieldsTest(TestCase):
+    """Гость прислал картинку без текста: карточка должна это показать (04.11.2026)."""
+
+    def _поля(self, attachments):
+        from apps.tenant.branch.models import TestimonialMessage
+        from apps.tenant.mobile.api.serializers import ReviewListSerializer
+        сообщение = TestimonialMessage(source='VK_MESSAGE', text='', attachments=attachments)
+        беседа = SimpleNamespace(_last_msg_cache=сообщение)
+        с = ReviewListSerializer(context={'request': SimpleNamespace(
+            build_absolute_uri=lambda u: 'http://levone.levelupapp.ru' + u)})
+        return с.get_photos(беседа), с.get_has_photo(беседа)
+
+    def test_скачанное_фото_отдаётся_по_https(self):
+        фото, есть = self._поля([{'type': 'photo', 'file': 'vk_attachments/levone/1_0.jpg'}])
+        self.assertEqual(фото, ['https://levone.levelupapp.ru/media/vk_attachments/levone/1_0.jpg'])
+        self.assertTrue(есть)
+
+    def test_срок_хранения_вышел_адреса_нет_признак_остаётся(self):
+        фото, есть = self._поля([{'type': 'photo', 'purged': True}])
+        self.assertEqual(фото, [])
+        self.assertTrue(есть)
+
+    def test_без_вложений_пусто(self):
+        self.assertEqual(self._поля([]), ([], False))
