@@ -1951,6 +1951,15 @@ class RFMCampaignAPIView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        # Мозг маркетинга CheckUp (04.11.2026): не больше N сообщений одному гостю за 7 дней.
+        skipped_by_cap = 0
+        cap = _int_param('weekly_cap')
+        if cap:
+            client_ids, skipped_by_cap = rfm_campaigns.within_weekly_cap(client_ids, cap)
+            if not client_ids:
+                return Response({'error': f'Всем гостям сегмента уже ушло {cap} сообщения за неделю'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
         mode_label = ' (доставка)' if mode == 'delivery' else ''
         cell = f'{segment.emoji} {segment.name}'
         if r_score is not None and f_score is not None:
@@ -1993,6 +2002,7 @@ class RFMCampaignAPIView(APIView):
             'ok': True,
             'queued': True,
             'campaign': _rfm_campaign_summary(campaign, request=request),
+            'skipped_by_cap': skipped_by_cap,
         })
 
 
@@ -2433,7 +2443,12 @@ class CampaignStatsAPIView(APIView):
             return Response({'detail': 'Период: start ≤ end, ГГГГ-ММ-ДД, не длиннее года.'}, status=400)
         zone = tz.get_current_timezone()
         # Управляющий с доступом к части точек видит только своих получателей.
-        branch_ids = effective_branch_ids(request.user, current_schema_name(), None)
+        raw = request.query_params.get('branch_ids') or ''
+        try:
+            requested = [int(x) for x in raw.split(',') if x.strip()]
+        except ValueError:
+            return Response({'detail': 'branch_ids: числа через запятую.'}, status=400)
+        branch_ids = effective_branch_ids(request.user, current_schema_name(), requested or None)
         out = campaign_stats.build(tz.make_aware(datetime.combine(start, time.min), zone),
                                    tz.make_aware(datetime.combine(end + timedelta(days=1), time.min), zone),
                                    branch_ids=branch_ids or None)

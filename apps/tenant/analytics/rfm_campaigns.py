@@ -41,6 +41,34 @@ logger = logging.getLogger(__name__)
 CANCEL_CHECK_EVERY = 25
 
 
+def within_weekly_cap(client_ids, cap, now=None):
+    """Гости, которым за 7 дней ушло меньше `cap` сообщений. → (оставшиеся, сколько отсеяно).
+
+    Считаем все дороги: рассылки, авторассылки и сообщения прошлых RFM-кампаний.
+    """
+    from apps.tenant.senler.models import AutoBroadcastLog, BroadcastRecipient, RecipientStatus
+    from apps.shared.guest.models import Client
+
+    now = now or timezone.now()
+    since = now - timedelta(days=7)
+    counts = {}
+    for cid, n in (BroadcastRecipient.objects
+                   .filter(status=RecipientStatus.SENT, sent_at__gte=since, client_branch__client_id__in=client_ids)
+                   .values_list('client_branch__client_id').annotate(n=Count('id'))):
+        counts[cid] = counts.get(cid, 0) + n
+    for cid, n in (RFMCampaignMember.objects
+                   .filter(message_status='sent', assigned_at__gte=since, client_id__in=client_ids)
+                   .values_list('client_id').annotate(n=Count('id'))):
+        counts[cid] = counts.get(cid, 0) + n
+    vk = dict(Client.objects.filter(pk__in=client_ids).exclude(vk_id=None).values_list('vk_id', 'pk'))
+    for vk_id, n in (AutoBroadcastLog.objects.filter(vk_id__in=list(vk), sent_at__gte=since)
+                     .values_list('vk_id').annotate(n=Count('id'))):
+        pk = vk.get(vk_id)
+        counts[pk] = counts.get(pk, 0) + n
+    keep = [c for c in client_ids if counts.get(c, 0) < cap]
+    return keep, len(client_ids) - len(keep)
+
+
 def build_campaign_name(*, segment_label, reward_label) -> str:
     today = timezone.localdate().strftime('%d.%m.%Y')
     cell = segment_label or 'RF-ячейка'
