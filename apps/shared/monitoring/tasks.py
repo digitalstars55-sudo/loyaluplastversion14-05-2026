@@ -29,6 +29,8 @@ from .checks import (
     check_tls,
     check_vk_callbacks,
     fetch_vk_callback_servers,
+    heal_vk_callbacks,
+    vk_api_call,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,30 @@ def _collect_tenant_groups() -> list[tuple[str, int, str]]:
     return groups
 
 
+def _sync_confirmation_code(schema_name: str, group_id: int, code: str) -> int:
+    """Свежий код подтверждения ВК во все конфиги группы в схеме тенанта."""
+    from django_tenants.utils import schema_context
+
+    from apps.tenant.senler.models import SenlerConfig
+
+    with schema_context(schema_name):
+        return (SenlerConfig.objects.filter(vk_group_id=group_id)
+                .exclude(vk_callback_confirmation=code)
+                .update(vk_callback_confirmation=code))
+
+
+def _heal_vk_callbacks() -> list[dict]:
+    """Обёртка для задачи: сбой самовосстановления не должен отменять обход."""
+    try:
+        actions = heal_vk_callbacks(_collect_tenant_groups(), vk_api_call, _sync_confirmation_code)
+    except Exception as e:
+        logger.exception('monitoring: самовосстановление callback ВК упало: %s', e)
+        return [{'error': str(e)[:200]}]
+    if actions:
+        logger.warning('monitoring: callback ВК, самовосстановление: %s', actions)
+    return actions
+
+
 def _safe(name: str, func) -> list[Finding]:
     """Прогнать проверку; её падение превратить в сигнал, а не в упавшую задачу."""
     try:
@@ -124,6 +150,7 @@ def platform_health_check_task() -> dict:
     if not settings.PLATFORM_MONITOR_ENABLED:
         return {'skipped': 'disabled'}
 
+    healed = _heal_vk_callbacks()
     findings = platform_health_report()
     now = timezone.now()
 
@@ -136,5 +163,6 @@ def platform_health_check_task() -> dict:
     result = dict(stats)
     result['checked'] = len(findings)
     result['keys'] = [f.key for f in findings]
+    result['vk_healed'] = healed
     logger.info('platform_health_check: %s', result)
     return result

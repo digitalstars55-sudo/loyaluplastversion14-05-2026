@@ -341,7 +341,9 @@ def check_vk_callbacks(tenant_groups, fetch_servers) -> list[Finding]:
             continue
 
         ours = [s for s in servers if OUR_CALLBACK_MARKER in (s.get('url') or '')]
-        broken = [s for s in ours if s.get('status') != 'ok']
+        # 'wait' = ВК только что отправил подтверждение после переподключения,
+        # итог будет видно на следующем обходе; это не поломка.
+        broken = [s for s in ours if s.get('status') not in ('ok', 'wait')]
         if not broken:
             continue
 
@@ -354,7 +356,8 @@ def check_vk_callbacks(tenant_groups, fetch_servers) -> list[Finding]:
             severity=SEVERITY_CRITICAL,
             title=f'Callback ВК отключён: {schema_name}',
             body=f'{schema_name} (группа {group_id}): {details}. '
-                 f'Сообщения гостей и отзывы из ВК не доходят — реактивировать через editCallbackServer.',
+                 f'Автопереподключение не помогло. Сообщения гостей всё равно забирает резервный опрос раз в 2 минуты, '
+                 f'но события, которые приходят только через callback, теряются. Проверить код подтверждения и секрет.',
             data={
                 'schema_name': schema_name,
                 'group_id': group_id,
@@ -366,6 +369,69 @@ def check_vk_callbacks(tenant_groups, fetch_servers) -> list[Finding]:
         ))
 
     return findings
+
+
+def heal_vk_callbacks(tenant_groups, vk_call, sync_code) -> list[dict]:
+    """
+    Самовосстановление callback ВК. Вызывается ПЕРЕД check_vk_callbacks.
+
+    История (07.11.2026): у 7 из 11 групп наш callback висел в failed до 37 дней.
+    Переподключить его руками не получалось: ВК при переподключении присылает
+    `confirmation`, а мы отвечали кодом подтверждения, сохранённым при первом
+    подключении. ВК со временем выдаёт группе НОВЫЙ код, старый не принимает —
+    сервер сразу снова падал в failed. Поэтому здесь два шага:
+
+      1. Код подтверждения берём у ВК (`groups.getCallbackConfirmationCode`) и
+         кладём во все конфиги группы через sync_code, если он поменялся.
+      2. Наш сервер в failed/unconfigured переподключаем `editCallbackServer` с
+         теми же url, названием и секретом, которые ВК уже знает. ВК пришлёт
+         подтверждение, обработчик ответит свежим кодом.
+
+    vk_call(method, **params) -> response; sync_code(schema, group_id, code) -> сколько
+    конфигов обновлено. Чужие серверы (Senler и прочие) не трогаем. Ошибка по одной
+    группе не мешает остальным. Возвращает журнал действий для лога.
+    """
+    actions: list[dict] = []
+    for schema_name, group_id, token in tenant_groups:
+        entry = {'schema_name': schema_name, 'group_id': group_id}
+        try:
+            code = (vk_call('groups.getCallbackConfirmationCode', group_id=group_id,
+                            access_token=token) or {}).get('code') or ''
+            if code:
+                entry['codes_updated'] = sync_code(schema_name, group_id, code)
+            servers = (vk_call('groups.getCallbackServers', group_id=group_id,
+                               access_token=token) or {}).get('items') or []
+            for s in servers:
+                if OUR_CALLBACK_MARKER not in (s.get('url') or ''):
+                    continue
+                if s.get('status') in ('ok', 'wait'):
+                    continue
+                if not code:
+                    entry.setdefault('skipped', []).append(s.get('id'))
+                    continue
+                params = {'group_id': group_id, 'server_id': s.get('id'), 'url': s.get('url'),
+                          'title': s.get('title') or 'LoyalUP', 'access_token': token}
+                if s.get('secret_key'):
+                    params['secret_key'] = s['secret_key']
+                vk_call('groups.editCallbackServer', **params)
+                entry.setdefault('reconnected', []).append(s.get('id'))
+        except Exception as e:
+            entry['error'] = str(e)[:200]
+        if len(entry) > 2:
+            actions.append(entry)
+    return actions
+
+
+def vk_api_call(method: str, **params):
+    """POST к API ВК. Токен уходит в теле запроса, не в url и не в логи."""
+    params = dict(params, v=VK_API_VERSION)
+    data = urllib.parse.urlencode(params).encode()
+    with urllib.request.urlopen(f'https://api.vk.com/method/{method}', data=data,
+                                timeout=NET_TIMEOUT) as resp:
+        payload = json.loads(resp.read())
+    if 'error' in payload:
+        raise RuntimeError(payload['error'].get('error_msg', 'VK API error'))
+    return payload.get('response')
 
 
 # ── 5. Доступность входа ──────────────────────────────────────────────────────

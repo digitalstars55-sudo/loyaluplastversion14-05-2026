@@ -26,6 +26,7 @@ from .checks import (
     check_tenants_paid,
     check_tls,
     check_vk_callbacks,
+    heal_vk_callbacks,
 )
 from .models import MonitorAlertState
 
@@ -228,6 +229,82 @@ class CheckVkCallbacksTest(SimpleTestCase):
 
         found = check_vk_callbacks([('shavuha', 222, 'tok'), ('levone', 111, 'tok')], fetch)
         self.assertEqual(set(_by_key(found)), {'vkcb:shavuha:222:error', 'vkcb:levone:111'})
+
+
+class HealVkCallbacksTest(SimpleTestCase):
+    """Самовосстановление: свежий код подтверждения и переподключение только своего сервера."""
+
+    def _api(self, servers, code='abc12345'):
+        calls = []
+
+        def vk_call(method, **params):
+            calls.append((method, params))
+            if method == 'groups.getCallbackConfirmationCode':
+                return {'code': code}
+            if method == 'groups.getCallbackServers':
+                return {'items': servers}
+            return 1
+        return vk_call, calls
+
+    def test_failed_ours_is_reconnected_with_same_url_and_secret(self):
+        vk_call, calls = self._api([{'id': 19, 'url': 'https://a.levelupapp.ru/api/v1/vk/callback/',
+                                     'title': 'LoyalUP', 'status': 'failed', 'secret_key': 's3'}])
+        synced = []
+        out = heal_vk_callbacks([('a', 111, 'tok')], vk_call,
+                                lambda s, g, c: synced.append((s, g, c)) or 2)
+        edit = [p for m, p in calls if m == 'groups.editCallbackServer']
+        self.assertEqual(len(edit), 1)
+        self.assertEqual(edit[0]['server_id'], 19)
+        self.assertEqual(edit[0]['url'], 'https://a.levelupapp.ru/api/v1/vk/callback/')
+        self.assertEqual(edit[0]['secret_key'], 's3')
+        self.assertEqual(synced, [('a', 111, 'abc12345')])
+        self.assertEqual(out[0]['reconnected'], [19])
+
+    def test_code_is_synced_before_reconnect(self):
+        order = []
+        vk_call, calls = self._api([{'id': 1, 'url': 'https://a.levelupapp.ru/cb', 'status': 'failed'}])
+
+        def tracking(method, **params):
+            order.append(method)
+            return vk_call(method, **params)
+        heal_vk_callbacks([('a', 111, 'tok')], tracking, lambda s, g, c: order.append('sync') or 1)
+        self.assertLess(order.index('sync'), order.index('groups.editCallbackServer'))
+
+    def test_ok_wait_and_foreign_servers_are_not_touched(self):
+        vk_call, calls = self._api([
+            {'id': 1, 'url': 'https://a.levelupapp.ru/cb', 'status': 'ok'},
+            {'id': 2, 'url': 'https://a.levelupapp.ru/cb', 'status': 'wait'},
+            {'id': 3, 'url': 'https://callback.senler.ru/x', 'status': 'failed'},
+        ])
+        heal_vk_callbacks([('a', 111, 'tok')], vk_call, lambda s, g, c: 0)
+        self.assertFalse([m for m, _ in calls if m == 'groups.editCallbackServer'])
+
+    def test_no_code_means_no_reconnect(self):
+        vk_call, calls = self._api([{'id': 1, 'url': 'https://a.levelupapp.ru/cb', 'status': 'failed'}], code='')
+        out = heal_vk_callbacks([('a', 111, 'tok')], vk_call, lambda s, g, c: 0)
+        self.assertFalse([m for m, _ in calls if m == 'groups.editCallbackServer'])
+        self.assertEqual(out[0]['skipped'], [1])
+
+    def test_one_group_error_does_not_stop_others(self):
+        def vk_call(method, **params):
+            if params.get('group_id') == 222:
+                raise RuntimeError('нет прав')
+            if method == 'groups.getCallbackConfirmationCode':
+                return {'code': 'c'}
+            if method == 'groups.getCallbackServers':
+                return {'items': [{'id': 5, 'url': 'https://b.levelupapp.ru/cb', 'status': 'failed'}]}
+            return 1
+        out = heal_vk_callbacks([('x', 222, 't'), ('b', 111, 't')], vk_call, lambda s, g, c: 0)
+        by = {e['group_id']: e for e in out}
+        self.assertIn('error', by[222])
+        self.assertEqual(by[111]['reconnected'], [5])
+
+    def test_wait_status_is_not_an_alert(self):
+        found = check_vk_callbacks(
+            [('levone', 111, 'tok')],
+            lambda gid, tok: [{'url': 'https://levone.levelupapp.ru/cb', 'status': 'wait', 'title': 'LoyalUP'}],
+        )
+        self.assertEqual(found, [])
 
 
 # ── Доступность входа ─────────────────────────────────────────────────────────
