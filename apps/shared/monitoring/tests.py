@@ -299,6 +299,10 @@ class HealVkCallbacksTest(SimpleTestCase):
         self.assertIn('error', by[222])
         self.assertEqual(by[111]['reconnected'], [5])
 
+    def test_nothing_to_do_leaves_no_journal_entry(self):
+        vk_call, _ = self._api([{'id': 1, 'url': 'https://a.levelupapp.ru/cb', 'status': 'ok'}])
+        self.assertEqual(heal_vk_callbacks([('a', 111, 'tok')], vk_call, lambda s, g, c: 0), [])
+
     def test_wait_status_is_not_an_alert(self):
         found = check_vk_callbacks(
             [('levone', 111, 'tok')],

@@ -398,7 +398,9 @@ def heal_vk_callbacks(tenant_groups, vk_call, sync_code) -> list[dict]:
             code = (vk_call('groups.getCallbackConfirmationCode', group_id=group_id,
                             access_token=token) or {}).get('code') or ''
             if code:
-                entry['codes_updated'] = sync_code(schema_name, group_id, code)
+                updated = sync_code(schema_name, group_id, code)
+                if updated:
+                    entry['codes_updated'] = updated
             servers = (vk_call('groups.getCallbackServers', group_id=group_id,
                                access_token=token) or {}).get('items') or []
             for s in servers:
