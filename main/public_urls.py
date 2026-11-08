@@ -4,6 +4,7 @@ from django.urls import include, path
 
 from apps.shared.checkup.views import InternalTenantsView
 from apps.shared.checkup.scans_export import CardOrdersExportView, ScansExportView
+from apps.shared.checkup.guest_card import GuestCardView
 from django.views.generic import TemplateView
 
 from drf_spectacular.views import SpectacularAPIView
@@ -58,6 +59,8 @@ urlpatterns = [
     # свой секрет X-LoyalUP-Export-Secret, сеть — в ?tenant_schema, белый список сетей.
     path('api/v1/internal/checkup/scans/', ScansExportView.as_view(), name='checkup-internal-scans'),
     path('api/v1/internal/checkup/card-orders/', CardOrdersExportView.as_view(), name='checkup-internal-card-orders'),
+    # Карточка звонящего CheckUp (08.11.2026): гость по номеру — свой секрет, свой белый список сетей.
+    path('api/v1/internal/checkup/guest-card/', GuestCardView.as_view(), name='checkup-internal-guest-card'),
     # Вердикт по жалобе CheckUp → LoyalUP (контракт 5.2): на публичном хосте сеть — в теле.
     path('api/v1/internal/complaints/', include('apps.shared.relay.complaints_urls')),
 

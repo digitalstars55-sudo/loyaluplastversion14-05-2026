@@ -528,6 +528,14 @@ CHECKUP_SCANS_EXPORT_TENANTS = [
     s.strip().lower() for s in os.getenv("CHECKUP_SCANS_EXPORT_TENANTS", "").split(",") if s.strip()
 ]
 
+# Карточка звонящего CheckUp (08.11.2026, apps/shared/checkup/guest_card.py): гость сети по номеру —
+# имя, баллы, визиты, подарки, день рождения. Секрет СВОЙ (контракт 4.15); пусто = ручка выключена (503).
+# Сети через запятую; пусто = НИ ОДНОЙ — включается по сети.
+CHECKUP_GUEST_CARD_SECRET = os.getenv("CHECKUP_GUEST_CARD_SECRET", "")
+CHECKUP_GUEST_CARD_TENANTS = [
+    s.strip().lower() for s in os.getenv("CHECKUP_GUEST_CARD_TENANTS", "").split(",") if s.strip()
+]
+
 # Мониторинг платформы (apps.shared.monitoring): сертификаты, домены, оплата
 # сетей, callback ВК, доступность входа. Выключен, пока не задано
 # PLATFORM_MONITOR_ENABLED=1 — задача beat тикает вхолостую.
