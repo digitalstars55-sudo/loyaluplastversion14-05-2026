@@ -164,3 +164,28 @@ class ViewTest(SimpleTestCase):
         ctx.assert_called_once_with('levone')
         self.assertEqual(build.call_args.args[0]['phones'][0], '+79100004118')
         self.assertNotIn('9100004118', ' '.join(logs.output))
+
+
+class FileFallbackTest(SimpleTestCase):
+    """Секрет и сети из файлов рядом с .env.prod, когда в окружении их нет."""
+
+    def test_files_used_when_settings_empty(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / '.env').mkdir()
+            (Path(d) / '.env' / 'checkup_guest_card.secret').write_text('file-secret\n')
+            (Path(d) / '.env' / 'checkup_guest_card.tenants').write_text('levone, ASAP_orel\n')
+            with override_settings(BASE_DIR=Path(d), CHECKUP_GUEST_CARD_SECRET='', CHECKUP_GUEST_CARD_TENANTS=[]):
+                self.assertTrue(GC.secret_matches('file-secret'))
+                self.assertEqual(GC.allowed_tenants(), ['levone', 'asap_orel'])
+            with override_settings(BASE_DIR=Path(d), CHECKUP_GUEST_CARD_SECRET='env-secret'):
+                self.assertFalse(GC.secret_matches('file-secret'))
+
+    def test_no_files_means_disabled(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d, \
+                override_settings(BASE_DIR=Path(d), CHECKUP_GUEST_CARD_SECRET='', CHECKUP_GUEST_CARD_TENANTS=[]):
+            self.assertFalse(GC.card_enabled())
+            self.assertEqual(GC.allowed_tenants(), [])

@@ -21,7 +21,9 @@ CheckUp получает ту же сводку, но баллы вслух не
 `X-LoyalUP-Guest-Secret`): контракт 4.15 — секреты не переиспользуются; эта
 ручка про конкретного человека по номеру, и утечка секрета сканов не должна её
 открывать. Пустой секрет = ручка выключена (503). Сети — `CHECKUP_GUEST_CARD_TENANTS`;
-пустой список = ни одной. Ручка только читает.
+пустой список = ни одной. Нет в окружении — берутся из файлов `.env/checkup_guest_card.secret` и
+`.env/checkup_guest_card.tenants` (сети через запятую), как `elevenlabs.key` у студии: включается без
+пересоздания контейнера. Ручка только читает.
 """
 from __future__ import annotations
 
@@ -29,6 +31,7 @@ import datetime
 import hmac
 import logging
 import re
+from pathlib import Path
 
 from django.conf import settings
 from django.http import JsonResponse
@@ -51,8 +54,17 @@ SECRET_HEADER = 'X-LoyalUP-Guest-Secret'
 
 # ── настройки ────────────────────────────────────────────────────────────────
 
+def _из_файла(имя: str) -> str:
+    """Как `.env/elevenlabs.key` у студии: файл рядом с `.env.prod` читается при каждом запросе,
+    поэтому включение и смена секрета не требуют пересоздавать контейнер web (а с ним и базу)."""
+    try:
+        return (Path(settings.BASE_DIR) / '.env' / имя).read_text().strip()
+    except OSError:
+        return ''
+
+
 def card_secret() -> str:
-    return str(getattr(settings, 'CHECKUP_GUEST_CARD_SECRET', '') or '')
+    return str(getattr(settings, 'CHECKUP_GUEST_CARD_SECRET', '') or '') or _из_файла('checkup_guest_card.secret')
 
 
 def card_enabled() -> bool:
@@ -68,7 +80,7 @@ def secret_matches(provided: str) -> bool:
 
 def allowed_tenants() -> list[str]:
     """Белый список сетей. Пустой = ни одной."""
-    raw = getattr(settings, 'CHECKUP_GUEST_CARD_TENANTS', None) or []
+    raw = getattr(settings, 'CHECKUP_GUEST_CARD_TENANTS', None) or _из_файла('checkup_guest_card.tenants') or []
     if isinstance(raw, str):
         raw = raw.split(',')
     return [s.strip().lower() for s in raw if s and s.strip()]
